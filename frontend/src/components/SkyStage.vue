@@ -438,7 +438,7 @@ onUnmounted(() => {
       @hover="hotId = $event"
       @toggle="toggleFigure"
     />
-    <NameMark v-if="pose === 'login'" :geo="geo" />
+    <NameMark v-if="pose === 'login' || pose === 'cabinet'" :geo="geo" :pose="pose" />
 
     <button
       type="button"

@@ -12,7 +12,11 @@ import { starRadius } from './journey.js'
  * name and the engraving of their Sun sign around it. Placed in the free sky beside the card.
  */
 
-const props = defineProps({ geo: { type: Object, required: true } })
+const props = defineProps({
+  geo: { type: Object, required: true },
+  /** 'login' places the star by the name; 'cabinet' brings it close, left of the panel, and leaves the words to the panel. */
+  pose: { type: String, default: 'login' },
+})
 const { mark } = useSky()
 
 const SIGN_BY_ID = Object.fromEntries(SIGNS.map((sign) => [sign.id, sign]))
@@ -33,6 +37,8 @@ const shown = computed(() => Boolean(name.value || mark.sun))
 /**
  * Where the star stands and how large its sign is drawn. While the name is typed the star
  * keeps the place of the first letter; once the name is set (mark.place) it glides to its own.
+ * In the cabinet the camera comes close: the same drawing, moved and scaled by `k`, so the
+ * pose change reads as a flight onto the star.
  */
 const spot = computed(() => {
   const { W, H, narrow } = props.geo
@@ -61,7 +67,16 @@ const spot = computed(() => {
     y0 = 96 + span / 2
     y1 = Math.max(y0, H * 0.62 - span / 2)
   }
-  return { x: x0 + (x1 - x0) * a, y: y0 + (y1 - y0) * b, span }
+  if (props.pose === 'cabinet') {
+    if (narrow) {
+      const k = 1.3
+      return { x: W * 0.5, y: 76 + (span * k) / 2, span, k }
+    }
+    const k = clamp((H * 0.52) / span, 1.15, 1.6)
+    const panelLeft = W - clamp(W * 0.08, 20, 150) - 420
+    return { x: clamp(W * 0.3, (span * k) / 2 + 24, panelLeft - (span * k) / 2 - 40), y: clamp(H * 0.4, 90 + (span * k) / 2, H), span, k }
+  }
+  return { x: x0 + (x1 - x0) * a, y: y0 + (y1 - y0) * b, span, k: 1 }
 })
 
 /** The star grows with every letter, up to a bright one. */
@@ -100,7 +115,7 @@ const caption = computed(() => {
 </script>
 
 <template>
-  <svg v-if="shown" class="name-mark" :viewBox="`0 0 ${geo.W} ${geo.H}`" aria-hidden="true">
+  <svg v-if="shown" class="name-mark" :class="`is-${pose}`" :viewBox="`0 0 ${geo.W} ${geo.H}`" aria-hidden="true">
     <defs>
       <radialGradient id="mark-halo">
         <stop offset="0" stop-color="#fff1cf" stop-opacity="0.9" />
@@ -114,7 +129,7 @@ const caption = computed(() => {
       </filter>
     </defs>
 
-    <g class="mark" :style="{ transform: `translate(${spot.x.toFixed(1)}px, ${spot.y.toFixed(1)}px)` }">
+    <g class="mark" :style="{ transform: `translate(${spot.x.toFixed(1)}px, ${spot.y.toFixed(1)}px) scale(${spot.k.toFixed(3)})` }">
       <Transition name="sign">
         <g v-if="sign" :key="sign.id" class="sign">
           <g class="sign-art" filter="url(#mark-glow)">
@@ -131,7 +146,7 @@ const caption = computed(() => {
             <line v-for="line in sign.lines" :key="line.key" :x1="line.a.x" :y1="line.a.y" :x2="line.b.x" :y2="line.b.y" />
           </g>
           <circle v-for="(star, index) in sign.stars" :key="index" class="sign-star" :cx="star.x" :cy="star.y" :r="star.r" />
-          <text class="sign-caption" x="0" :y="spot.span / 2 + 30" text-anchor="middle">
+          <text v-if="pose !== 'cabinet'" class="sign-caption" x="0" :y="spot.span / 2 + 30" text-anchor="middle">
             <tspan class="sign-glyph">{{ glyph }}</tspan>
             <tspan dx="8">{{ caption }}</tspan>
           </text>
@@ -162,6 +177,8 @@ const caption = computed(() => {
 }
 
 .mark { transition: transform 1.1s cubic-bezier(0.3, 0.7, 0.2, 1); }
+/* The flight between poses: as long as the sky's own (SkyStage FLIGHT_MS) and on the same curve. */
+.name-mark.is-cabinet .mark { transition: transform 1.4s cubic-bezier(0.65, 0, 0.35, 1); }
 
 .star-halo { animation: star-breathe 4s ease-in-out infinite; transform-origin: 0 0; }
 .star-spike { fill: rgba(255, 236, 196, 0.55); animation: star-breathe 4s ease-in-out infinite; transform-origin: 0 0; }

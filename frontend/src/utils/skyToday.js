@@ -63,3 +63,17 @@ export function skyOn(date = new Date()) {
     phase: phaseName(elongation),
   }
 }
+
+/**
+ * Sun and Moon sign ids for a birth date ('YYYY-MM-DD') and time ('HH:MM' or empty), by the real
+ * longitudes, so a birthday on the cusp gets an honest answer. Without the time the Sun is taken
+ * at noon; the Moon moves a sign in two days, so it waits for the time. Null for a bad date.
+ */
+export function birthSigns(date, time) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return null
+  const known = /^\d{2}:\d{2}/.test(time || '')
+  const at = new Date(`${date}T${known ? time.slice(0, 5) : '12:00'}`)
+  if (Number.isNaN(at.getTime())) return null
+  const { sun, moon } = longitudes(at)
+  return { sun: signOf(sun).id, moon: known ? signOf(moon).id : '' }
+}

@@ -8,7 +8,7 @@ import { writeSession } from '../composables/useSession.js'
 import { useSiteConfig } from '../composables/useSiteConfig.js'
 import { useSky } from '../composables/useSky.js'
 import { useHead } from '../utils/useHead.js'
-import { longitudes, signOf, skyOn } from '../utils/skyToday.js'
+import { birthSigns, skyOn } from '../utils/skyToday.js'
 
 /**
  * Login lies on the same sky as the home page, in its own pose (router meta.sky: 'login').
@@ -23,7 +23,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const route = useRoute()
 const router = useRouter()
 const { config, load } = useSiteConfig()
-const { mark } = useSky()
+const { mark, markUser, clearMark } = useSky()
 
 const mode = ref(route.query.mode === 'register' ? 'register' : 'login')
 const step = ref(1)
@@ -35,6 +35,8 @@ const consent = ref(false)
 const showPassword = ref(false)
 const message = ref('')
 const pending = ref(false)
+/** Set once the sky is entered: the card dissolves and the star stays for the cabinet. */
+const leaving = ref(false)
 
 const registering = computed(() => mode.value === 'register')
 const onSky = computed(() => registering.value && step.value === 2)
@@ -55,13 +57,7 @@ const timeKnown = computed(() => !birth.noTime && /^\d{2}:\d{2}$/.test(birth.tim
  * Signs by the real longitudes, so a birthday on the cusp gets an honest answer. Without the
  * time the Sun is taken at noon; the Moon moves a sign in two days, so it waits for the time.
  */
-const signs = computed(() => {
-  if (!dateKnown.value) return null
-  const at = new Date(`${birth.date}T${timeKnown.value ? birth.time : '12:00'}`)
-  if (Number.isNaN(at.getTime())) return null
-  const { sun, moon } = longitudes(at)
-  return { sun: signOf(sun).id, moon: timeKnown.value ? signOf(moon).id : '' }
-})
+const signs = computed(() => (dateKnown.value ? birthSigns(birth.date, timeKnown.value ? birth.time : '') : null))
 
 watch([registering, name], ([on, value]) => { mark.name = on ? value : '' }, { immediate: true })
 watch([registering, signs], ([on, value]) => {
@@ -129,6 +125,12 @@ async function enter(request) {
     const target = next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/login')
       ? next
       : '/cabinet'
+    // The card dissolves first, then the sky flies on to the cabinet with the person's star.
+    leaving.value = true
+    markUser(result.user)
+    mark.flash += 1
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    await new Promise((resolve) => setTimeout(resolve, reduce ? 0 : 320))
     router.push(target)
   } catch (error) {
     if (error instanceof ApiError && error.code === 'exists') step.value = 1
@@ -181,7 +183,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  Object.assign(mark, { name: '', place: '', sun: '', moon: '' })
+  if (!leaving.value) clearMark()
 })
 </script>
 
@@ -189,7 +191,7 @@ onUnmounted(() => {
   <div class="site">
     <SiteHeader />
     <main class="login">
-      <div class="login-side">
+      <div class="login-side" :class="{ 'is-leaving': leaving }">
         <form class="login-card" novalidate @submit.prevent="submit">
           <span class="card-sheen" aria-hidden="true" />
 
@@ -334,7 +336,14 @@ onUnmounted(() => {
   padding: 110px clamp(20px, 8vw, 150px) 48px;
   pointer-events: none;
 }
-.login-side { display: grid; gap: 16px; width: min(392px, 100%); pointer-events: auto; }
+.login-side {
+  display: grid;
+  gap: 16px;
+  width: min(392px, 100%);
+  pointer-events: auto;
+  transition: opacity 0.32s ease, filter 0.32s ease, transform 0.32s ease;
+}
+.login-side.is-leaving { opacity: 0; filter: blur(6px); transform: translateY(-8px) scale(0.98); pointer-events: none; }
 
 /* The same glass as the home page form, a little deeper: here it is the whole page. */
 .login-card {
@@ -617,5 +626,6 @@ onUnmounted(() => {
 @media (prefers-reduced-motion: reduce) {
   .login-card, .card-sheen, .sky-now { animation: none; }
   .reveal, .mode-thumb { transition: none; }
+  .login-side.is-leaving { filter: none; transform: none; }
 }
 </style>

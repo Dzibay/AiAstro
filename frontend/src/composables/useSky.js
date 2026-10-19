@@ -1,5 +1,6 @@
 import { reactive, ref, shallowRef } from 'vue'
 import { layout } from '../components/hero/sky.js'
+import { birthSigns } from '../utils/skyToday.js'
 
 /**
  * The sky lives once, at App level (SkyStage), and outlives page changes. Pages talk to it here:
@@ -29,6 +30,17 @@ const source = shallowRef(null)
  */
 const mark = reactive({ name: '', place: '', flash: 0, sun: '', moon: '' })
 
+/** Puts a signed-in person on the sky: their star, settled, and their signs if the birth is known. */
+function markUser(user) {
+  const name = (user?.name || '').trim()
+  const signs = user?.birth ? birthSigns(user.birth.date, user.birth.time) : null
+  Object.assign(mark, { name, place: name, sun: signs?.sun || '', moon: signs?.moon || '' })
+}
+
+function clearMark() {
+  Object.assign(mark, { name: '', place: '', sun: '', moon: '' })
+}
+
 export function useSky() {
-  return { geo, journey, warm, openStop, source, mark }
+  return { geo, journey, warm, openStop, source, mark, markUser, clearMark }
 }

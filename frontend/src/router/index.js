@@ -21,6 +21,7 @@ const router = createRouter({
       path: '/cabinet',
       name: 'cabinet',
       component: CabinetView,
+      meta: { sky: 'cabinet' },
       beforeEnter(to) {
         if (!readSession('web')) {
           return { name: 'login', query: { next: to.fullPath } }
