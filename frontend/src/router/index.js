@@ -9,15 +9,15 @@ import BirthPanel from '../views/cabinet/BirthPanel.vue'
 import SectionSoon from '../views/cabinet/SectionSoon.vue'
 import ChartPanel from '../views/cabinet/ChartPanel.vue'
 import ForecastPanel from '../views/cabinet/ForecastPanel.vue'
-import CheckoutView from '../views/CheckoutView.vue'
 import InviteView from '../views/InviteView.vue'
 import PairPanel from '../views/cabinet/PairPanel.vue'
 import ChatPanel from '../views/cabinet/ChatPanel.vue'
 import ProfilePanel from '../views/cabinet/ProfilePanel.vue'
+import SkyPanel from '../views/cabinet/SkyPanel.vue'
 import { SECTIONS } from '../components/cabinet/layout.js'
 import { readSession } from '../composables/useSession.js'
 
-const PANELS = { chart: ChartPanel, forecast: ForecastPanel, pair: PairPanel, chat: ChatPanel }
+const PANELS = { chart: ChartPanel, forecast: ForecastPanel, pair: PairPanel, chat: ChatPanel, sky: SkyPanel }
 
 const router = createRouter({
   history: createWebHistory(),
@@ -54,7 +54,13 @@ const router = createRouter({
         })),
       ],
     },
-    { path: '/checkout/:product', name: 'checkout', component: CheckoutView },
+    // The old checkout page: paying now happens in the cabinet, the pair in «Пара», the rest in «Небосвод».
+    {
+      path: '/checkout/:product',
+      redirect: (to) => (to.params.product === 'synastry'
+        ? { name: 'cabinet-pair', query: to.query.partner ? { partner: to.query.partner } : {} }
+        : { name: 'cabinet-sky' }),
+    },
     // The partner's side of an invitation: no account, the inviter's star on the login sky.
     { path: '/invite/:token', name: 'invite', component: InviteView, meta: { sky: 'login' } },
     { path: '/admin', name: 'admin', component: AdminView },

@@ -161,6 +161,8 @@ export const POSES = {
   'cabinet-forecast': { theta: 0.42, pan: -0.08, frame: [0.48, 1.4, 0.92], narrow: [0.5, 1.02, 0.55] },
   'cabinet-pair': { theta: -1.25, pan: 0.16, frame: [0.6, 1.44, 0.92], narrow: [0.5, 1.02, 0.55] },
   'cabinet-chat': { theta: 0.68, pan: -0.16, frame: [0.44, 1.42, 0.92], narrow: [0.5, 1.02, 0.55] },
+  // «Небосвод»: the planet lowest of all, so the vault above it is free for the dome.
+  'cabinet-sky': { theta: -0.95, pan: 0, frame: [0.52, 1.5, 0.92], narrow: [0.5, 1.04, 0.55] },
 }
 
 export function poseScene(geo, id, userTheta) {

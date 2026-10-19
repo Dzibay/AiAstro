@@ -11,6 +11,7 @@ import { inviteLink, usePartners } from '../../composables/usePartners.js'
 import { useToast } from '../../composables/useToast.js'
 import { formatDate } from '../../utils/format.js'
 import { usePrices } from '../../utils/prices.js'
+import { paidId, usePayment } from '../../composables/usePayment.js'
 
 /**
  * «Пара»: the list of pairs, the two ways to a partner and the pair itself.
@@ -23,7 +24,7 @@ import { usePrices } from '../../utils/prices.js'
 const props = defineProps({
   user: { type: Object, required: true },
 })
-const { synastry: pairPrice, synastrySky: pairSkyPrice } = usePrices()
+const { prices, pay: payOn, synastry: pairPrice, synastrySky: pairSkyPrice } = usePrices()
 
 const route = useRoute()
 const router = useRouter()
@@ -47,6 +48,27 @@ function go(query) {
 }
 
 onMounted(() => load())
+
+/* ---- Buying the reading, and the way back from ЮKassa ---- */
+
+const { result: paid, busy: paying, message: payMessage, start, follow } = usePayment()
+const priceSet = computed(() => Boolean(prices.value[props.user.sky ? 'synastry_sky' : 'synastry']))
+function buy() {
+  if (partner.value && payOn.value && priceSet.value) start({ product: 'synastry', partner: partner.value.id })
+}
+onMounted(() => {
+  const id = paidId(route.query)
+  if (!id) return
+  const pid = partnerId.value
+  router.replace({ name: 'cabinet-pair', query: pid ? { partner: pid } : {} })
+  follow(id, async () => {
+    // The pair is read again, now whole, and the list learns it is bought.
+    delete syntheses[pid]
+    await load(true)
+    if (pid) synastry(pid)
+    push('Разбор открыт — он останется с этой парой навсегда')
+  })
+})
 watch(partner, (value) => {
   if (value?.birth) synastry(value.id)
 }, { immediate: true })
@@ -324,11 +346,19 @@ function status_of(item) {
                 <div :class="{ 'is-mine': !user.sky }"><dt>Отдельно</dt><dd>{{ pairPrice }}</dd></div>
                 <div class="with-sky" :class="{ 'is-mine': user.sky }"><dt>С Небосводом</dt><dd>{{ pairSkyPrice }}</dd></div>
               </dl>
-              <RouterLink class="unlock-cta" :to="{ name: 'checkout', params: { product: 'synastry' }, query: { partner: partner.id } }">
+              <p v-if="paid" class="paid-note" role="status">
+                <template v-if="paid === 'checking'">Сверяемся с ЮKassa…</template>
+                <template v-else-if="paid === 'canceled'">Оплата не прошла, деньги не списаны. Можно попробовать ещё раз.</template>
+                <template v-else-if="paid === 'waiting'">ЮKassa ещё не подтвердила оплату — разбор откроется сам, загляните чуть позже.</template>
+              </p>
+              <button type="button" class="unlock-cta" :disabled="paying || !payOn || !priceSet || paid === 'checking'" @click="buy">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
-                Открыть разбор — {{ user.sky ? pairSkyPrice : pairPrice }}
-              </RouterLink>
-              <RouterLink v-if="!user.sky" class="sky-link" :to="{ name: 'checkout', params: { product: 'sky' } }">
+                <template v-if="paying">Открываем ЮKassa…</template>
+                <template v-else>Открыть разбор — {{ user.sky ? pairSkyPrice : pairPrice }}</template>
+              </button>
+              <p v-if="payMessage" class="pay-error" role="alert">{{ payMessage }}</p>
+              <p v-else-if="!payOn" class="unlock-note">Оплата откроется совсем скоро.</p>
+              <RouterLink v-if="!user.sky" class="sky-link" :to="{ name: 'cabinet-sky' }">
                 С «Небосводом» каждый разбор пары дешевле →
               </RouterLink>
             </div>
@@ -565,8 +595,12 @@ function status_of(item) {
   box-shadow: 0 8px 26px rgba(230, 170, 80, 0.22);
   transition: box-shadow 0.25s ease, transform 0.25s ease;
 }
+.unlock-cta { border: 0; font-family: inherit; cursor: pointer; }
+.unlock-cta:disabled { opacity: 0.5; cursor: default; box-shadow: none; transform: none; }
 .unlock-cta svg { width: 10px; height: 10px; fill: #5a3d12; }
-.unlock-cta:hover { box-shadow: 0 10px 34px rgba(230, 170, 80, 0.38); transform: translateY(-1px); }
+.paid-note { margin: 0; font-family: var(--serif); font-style: italic; font-size: 15.5px; line-height: 1.4; color: #f3dcae; }
+.pay-error { margin: 0; font-size: 13px; color: #f2a48c; }
+.unlock-cta:hover:not(:disabled) { box-shadow: 0 10px 34px rgba(230, 170, 80, 0.38); transform: translateY(-1px); }
 .unlock-cta:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 3px; }
 
 .add-birth {

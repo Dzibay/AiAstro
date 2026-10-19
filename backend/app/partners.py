@@ -4,7 +4,7 @@ An invitation is a partner row without birth data and with a token. Whoever open
 only the inviter's first name, gives their own data with their consent, and the row is filled:
 the link then shows that the star is lit and takes nothing more.
 
-A purchase opens the full reading of one pair. Until payment is connected the operator marks it.
+A purchase opens the full reading of one pair: paid through ЮKassa (payments.py) or marked by the operator.
 """
 
 import secrets

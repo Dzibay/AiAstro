@@ -298,6 +298,11 @@ onUnmounted(() => {
                   <a href="/legal/consent" target="_blank" rel="noopener">персональных данных</a>
                 </span>
               </label>
+              <p class="terms">
+                Создавая кабинет, вы принимаете условия
+                <a href="/legal/offer" target="_blank" rel="noopener">оферты</a> и
+                <a href="/legal/privacy" target="_blank" rel="noopener">политики конфиденциальности</a>.
+              </p>
             </div>
           </Transition>
 
@@ -518,6 +523,8 @@ onUnmounted(() => {
 .consent .check-box { margin-top: 2px; }
 .consent a { color: #f0cd8a; text-decoration: underline; text-decoration-color: rgba(240, 205, 138, 0.4); text-underline-offset: 3px; }
 .consent a:hover { text-decoration-color: currentColor; }
+.terms { margin: 0; font-size: 12.5px; line-height: 18px; color: rgba(226, 220, 210, 0.6); }
+.terms a { color: rgba(240, 205, 138, 0.9); text-decoration: underline; text-decoration-color: rgba(240, 205, 138, 0.35); text-underline-offset: 3px; }
 
 .password { position: relative; display: block; }
 .password input { padding-right: 46px; }

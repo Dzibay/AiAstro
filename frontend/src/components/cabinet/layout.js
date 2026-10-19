@@ -1,15 +1,15 @@
 import { clamp } from '../hero/sky.js'
 
 /**
- * The cabinet as a sky: the person's star and four small constellations around it, one per
+ * The cabinet as a sky: the person's star and five small constellations around it, one per
  * section. On the overview they stand in a ring about the star; once a section is open the
- * star steps back to the corner and the four gather in a fan beside it, so the middle of the
+ * star steps back to the corner and the five gather in a fan beside it, so the middle of the
  * sky is free for the section itself. Both NameMark and CabinetSky place themselves from here.
  */
 
 /**
  * `stars`: [x, y, size] in a unit box around the point; `edges` join them.
- * Each figure hints at its section: a wheel, a sunrise arc, two stars, a line of speech.
+ * Each figure hints at its section: a wheel, a sunrise arc, two stars, a line of speech, a crown.
  */
 export const SECTIONS = [
   {
@@ -43,6 +43,15 @@ export const SECTIONS = [
     title: 'Разговор с астрологом',
     stars: [[-0.95, -0.35, 0.8], [-0.1, -0.85, 1.15], [0.9, -0.2, 0.9], [0.2, 0.55, 0.7], [-0.35, 0.95, 0.55]],
     edges: [[0, 1], [1, 2], [2, 3], [3, 4]],
+  },
+  {
+    // The subscription: the vault of the sky, a crown over the others.
+    id: 'sky',
+    route: 'cabinet-sky',
+    label: 'Небосвод',
+    title: 'Подписка «Небосвод»',
+    stars: [[-0.95, 0.55, 0.7], [-0.6, -0.3, 0.85], [0, -0.95, 1.3], [0.6, -0.3, 0.85], [0.95, 0.55, 0.7], [0, 0.2, 0.6]],
+    edges: [[0, 1], [1, 2], [2, 3], [3, 4], [1, 5], [5, 3]],
   },
 ]
 
@@ -131,7 +140,7 @@ export function cabinetLayout(geo, section) {
   let points
 
   if (narrow) {
-    // The sky is a strip above the sheet; the four stand in a row along its lower edge.
+    // The sky is a strip above the sheet; the five stand in a row along its lower edge.
     const sheet = V * SHEET_TOP
     const rowY = sheet - 46
     if (open) {
@@ -141,13 +150,13 @@ export function cabinetLayout(geo, section) {
       const k = clamp((sheet - 170) / span, 0.55, 1.3)
       star = { x: W / 2, y: 74 + (span * k) / 2, k }
     }
-    points = SECTIONS.map((item, index) => ({ id: item.id, x: W * (0.14 + index * 0.24), y: rowY, s: 0.78 }))
+    points = SECTIONS.map((item, index) => ({ id: item.id, x: W * (0.1 + index * 0.2), y: rowY, s: 0.74 }))
   } else if (open) {
     const k = 0.42
     star = { x: clamp(W * 0.07, 70, 120), y: clamp(H * 0.2, 140, 170), k }
     const reach = clamp(H * 0.28, 160, 210)
     points = SECTIONS.map((item, index) => {
-      const angle = rad(20 + index * 25)
+      const angle = rad(4 + index * 21.5)
       return { id: item.id, x: star.x + reach * Math.cos(angle), y: star.y + reach * Math.sin(angle), s: 0.85 }
     })
   } else {
@@ -157,7 +166,8 @@ export function cabinetLayout(geo, section) {
     star = { x: clamp(W * 0.3, half + 24, right - half), y: clamp(H * 0.42, 100 + half, H - half - 60), k }
     const reach = half + 56
     points = SECTIONS.map((item, index) => {
-      const angle = rad([-140, -40, 40, 140][index])
+      // The four sections at the corners, «Небосвод» under the star (above it the header is too close).
+      const angle = rad([-150, -30, 30, 150, 90][index])
       return {
         id: item.id,
         x: clamp(star.x + reach * Math.cos(angle), 70, right - 20),
@@ -189,7 +199,7 @@ export function wheelSpot(geo) {
   const right = panelLeft(W, 'chart') - 36
   const top = 100
   const bottom = H - 36
-  // The largest wheel that keeps clear of the star and of the four sections with their captions:
+  // The largest wheel that keeps clear of the star and of the five sections with their captions:
   // first as far right as it goes, then sliding left and down along the free sky.
   const clear = (spot) => points.every((point) => Math.hypot(point.x - spot.x, point.y - spot.y) > spot.r + 66)
     && Math.hypot(star.x - spot.x, star.y - spot.y) > spot.r + starHalf + 12

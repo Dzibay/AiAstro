@@ -118,7 +118,7 @@ function setHot(key) {
       <StarCalendar :month="data" />
       <div v-if="data.locked" class="unlock">
         <p class="unlock-note">Открыта первая неделя. Остальные дни месяца и главный транзит каждого — в «Небосводе».</p>
-        <RouterLink class="unlock-cta" :to="{ name: 'checkout', params: { product: 'sky' } }">
+        <RouterLink class="unlock-cta" :to="{ name: 'cabinet-sky' }">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
           Рассеять туман — {{ skyPrice }}
         </RouterLink>
@@ -133,7 +133,7 @@ function setHot(key) {
       </div>
       <div v-if="data.locked" class="unlock">
         <p class="unlock-note">Транзиты открыты всем. Полный текст дня и недели — в «Небосводе».</p>
-        <RouterLink class="unlock-cta" :to="{ name: 'checkout', params: { product: 'sky' } }">
+        <RouterLink class="unlock-cta" :to="{ name: 'cabinet-sky' }">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
           Зажечь Небосвод — {{ skyPrice }}
         </RouterLink>

@@ -3,8 +3,10 @@ from pydantic import BaseModel, Field
 
 from app.accounts import SKY_DAYS, list_users, set_sky
 from app.api.deps import as_http, require_admin
+from app.config import settings
 from app.errors import DomainError
 from app.partners import admin_partners, set_bought
+from app.payments import list_payments
 from app.security import check_admin_password, make_admin_session
 from app.settings_store import list_editable, set_setting
 
@@ -61,6 +63,12 @@ def settings_update(body: SettingIn) -> dict:
         raise as_http(exc) from exc
 
 
+@router.get("/payments", dependencies=[Depends(require_admin)])
+def payments_list() -> dict:
+    """The latest payments and the address to give ЮKassa for its notifications."""
+    return {"items": list_payments(), "notify_url": f"{settings.public_base_url.rstrip('/')}/api/pay/yookassa"}
+
+
 @router.get("/users", dependencies=[Depends(require_admin)])
 def users_list(q: str = Query(default="", max_length=100)) -> dict:
     return {"items": list_users(q)}
@@ -81,7 +89,7 @@ def users_partners(user_id: int) -> dict:
 
 @router.put("/users/{user_id}/partners/{partner_id}/purchase", dependencies=[Depends(require_admin)])
 def users_purchase(user_id: int, partner_id: int, body: BoughtIn) -> dict:
-    """Marks the reading of this pair as bought (or takes the mark back) until payment is connected."""
+    """Marks the reading of this pair as bought by hand (a gift, a refund) or takes the mark back."""
     try:
         return set_bought(user_id, partner_id, body.bought)
     except DomainError as exc:

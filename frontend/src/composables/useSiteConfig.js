@@ -5,7 +5,8 @@ export const fallbackConfig = {
   site_name: 'Астра',
   tagline: 'Натальная карта обычным языком',
   support_email: '',
-  prices: { sky: '', synastry: '', synastry_sky: '' },
+  prices: { sky: '', sky_3: '', sky_12: '', synastry: '', synastry_sky: '' },
+  pay: false,
   ready: false,
 }
 

@@ -15,5 +15,7 @@ export function usePrices() {
     sky: computed(() => label('sky')),
     synastry: computed(() => label('synastry')),
     synastrySky: computed(() => label('synastry_sky')),
+    /** Whether the shop is set up in the admin: the pay buttons wait for it. */
+    pay: computed(() => Boolean(config.value?.pay)),
   }
 }

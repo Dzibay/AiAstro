@@ -1,37 +1,10 @@
 from fastapi import APIRouter, HTTPException
 
+from app import legal
 from app.config import settings
 from app.settings_store import public_config
 
 router = APIRouter(prefix="/site")
-
-_LEGAL = {
-    "privacy": {
-        "title": "Конфиденциальность",
-        "paragraphs": [
-            "Сервис хранит почту, имя и необратимый хеш пароля, чтобы открывать личный кабинет.",
-            "Сессия — подписанный токен в браузере. Отдельной таблицы сессий нет.",
-            "Эти данные не передаются для рекламы и не продаются. Сторонних счётчиков на сайте нет.",
-            "Удалить кабинет со всеми данными можно в настройках профиля или написав на почту поддержки из подвала.",
-        ],
-    },
-    "offer": {
-        "title": "Оферта",
-        "paragraphs": [
-            "Регистрация кабинета бесплатная. Оплата в этой версии не подключена.",
-            "Тексты сайта носят информационный характер и не заменяют консультацию врача, юриста или финансового специалиста.",
-            "Расчёт натальной карты в этой версии не выполняется. В кабинете видно только учётную запись.",
-        ],
-    },
-    "consent": {
-        "title": "Согласие",
-        "paragraphs": [
-            "Создавая кабинет, вы соглашаетесь на обработку почты и имени для входа в сервис.",
-            "В браузере сохраняются отметка о согласии с сообщением внизу экрана и токен сессии.",
-            "Согласие можно отозвать, удалив данные сайта в браузере и написав на почту поддержки.",
-        ],
-    },
-}
 
 
 @router.get("/config")
@@ -39,13 +12,28 @@ def site_config() -> dict:
     return public_config(settings.site_name)
 
 
+def _fill(value, names: dict):
+    if isinstance(value, str):
+        return value.format(**names)
+    if isinstance(value, list):
+        return [_fill(item, names) for item in value]
+    return {key: _fill(item, names) for key, item in value.items()}
+
+
 @router.get("/legal/{page}")
 def legal_page(page: str) -> dict:
-    document = _LEGAL.get(page)
+    document = legal.DOCUMENTS.get(page)
     if document is None:
         raise HTTPException(status_code=404, detail="missing")
-    contact = public_config(settings.site_name)["support_email"]
-    paragraphs = list(document["paragraphs"])
-    if contact:
-        paragraphs.append(f"Почта поддержки: {contact}.")
-    return {"slug": page, "title": document["title"], "paragraphs": paragraphs}
+    config = public_config(settings.site_name)
+    names = {"site": settings.site_name, "url": settings.public_base_url.rstrip("/")}
+    sections = _fill(document["sections"], names)
+    if config["support_email"]:
+        sections.append({"id": "contacts", "title": "Контакты", "items": [f"Почта поддержки: {config['support_email']}."]})
+    return {
+        "slug": page,
+        "title": document["title"],
+        "lead": _fill(document["lead"], names),
+        "updated": legal.UPDATED,
+        "sections": sections,
+    }

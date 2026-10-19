@@ -5,6 +5,7 @@ import SiteHeader from '../components/SiteHeader.vue'
 import CabinetSky from '../components/cabinet/CabinetSky.vue'
 import NatalWheel from '../components/cabinet/NatalWheel.vue'
 import PairSky from '../components/cabinet/PairSky.vue'
+import SkyDome from '../components/sky/SkyDome.vue'
 import { ROUTE_ORDER, SECTION_BY_ID } from '../components/cabinet/layout.js'
 import { webApi } from '../api/web.js'
 import { ApiError, errorText } from '../api/http.js'
@@ -255,6 +256,9 @@ const sheetStyle = computed(() => {
       <PairSky v-if="user && section === 'pair'" :stars="pairStars" :tone="pairTone" :aspect="hotAspect" />
     </Transition>
     <Transition name="wheel">
+      <SkyDome v-if="user && section === 'sky'" :lit="user.sky" />
+    </Transition>
+    <Transition name="wheel">
       <NatalWheel v-if="showWheel" :key="section" :chart="chart" :selected="selected" :forecast="transitSky" @select="selectPoint" />
     </Transition>
     <CabinetSky v-if="user" :section="section" :birth-open="birthOpen" />
@@ -409,7 +413,7 @@ const sheetStyle = computed(() => {
 @keyframes card-sheen { to { transform: translateX(100%); } }
 
 @media (max-width: 760px) {
-  /* A sheet from the bottom, under the strip of sky with the star and the four sections. */
+  /* A sheet from the bottom, under the strip of sky with the star and the five sections. */
   .cabinet { display: block; min-height: 0; padding: 0; }
   .cabinet-panel {
     position: fixed;

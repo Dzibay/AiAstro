@@ -5,7 +5,7 @@ import { useSky } from '../../composables/useSky.js'
 import { SECTION_BY_ID, cabinetLayout, mixLayout, starScale } from './layout.js'
 
 /**
- * The cabinet's menu, drawn on the sky: four small constellations about the person's star
+ * The cabinet's menu, drawn on the sky: five small constellations about the person's star
  * (NameMark draws the star itself, from the same layout). Hovered or focused, a constellation
  * lights up and a gold thread runs to it from the star; the open section keeps its thread.
  * Choosing one flies the points to their new places with the sky, on its curve and in its time.

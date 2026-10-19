@@ -1,19 +1,17 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
 import StarPassport from '../../components/sky/StarPassport.vue'
 import NewcomerPath from '../../components/sky/NewcomerPath.vue'
-import SkyVault from '../../components/sky/SkyVault.vue'
-import SkyCompare from '../../components/sky/SkyCompare.vue'
 import { useSky } from '../../composables/useSky.js'
 import { useForecast } from '../../composables/useForecast.js'
 import { ROMAN } from '../../components/cabinet/astro.js'
 import { SIGNS } from '../../utils/skyToday.js'
-import { usePrices } from '../../utils/prices.js'
+import { skyEnding, skyLine } from '../../utils/skyTerm.js'
 
 /**
- * The overview: a greeting, the star passport, the first steps, the state of «Небосвод» and the
+ * The overview: a greeting, the star passport, the first steps, a line about «Небосвод» and the
  * way out. The sections themselves are on the sky.
  */
 
@@ -23,7 +21,6 @@ const props = defineProps({
 const emit = defineEmits(['logout'])
 
 const { mark } = useSky()
-const { sky: skyPrice } = usePrices()
 const SIGN_BY_ID = Object.fromEntries(SIGNS.map((sign) => [sign.id, sign]))
 
 const signLine = computed(() => {
@@ -47,26 +44,12 @@ const moonLine = computed(() => {
 
 /* ---- «Небосвод» ---- */
 
-const untilFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' })
-const daysLeft = computed(() => {
-  if (!props.user.sky || !props.user.sky_until) return 0
-  return Math.max(0, Math.ceil((new Date(props.user.sky_until) - Date.now()) / 86400000))
+/** One line about the subscription; its own section on the sky says the rest. */
+const skyState = computed(() => (props.user.sky ? `Небосвод ${skyLine(props.user)}` : 'Небосвод пока не зажжён — горит одна ваша карта'))
+const skyMore = computed(() => {
+  if (!props.user.sky) return 'Что он зажжёт'
+  return skyEnding(props.user) ? 'Продлить' : 'Что входит'
 })
-function daysWord(n) {
-  const tens = n % 100
-  const ones = n % 10
-  if (tens > 10 && tens < 20) return 'дней'
-  if (ones === 1) return 'день'
-  return ones > 1 && ones < 5 ? 'дня' : 'дней'
-}
-const skyLine = computed(() => {
-  if (!props.user.sky) return 'пока не зажжён'
-  const until = untilFormat.format(new Date(props.user.sky_until))
-  return `горит до ${until}, ${daysLeft.value === 0 ? 'последний день' : `ещё ${daysLeft.value} ${daysWord(daysLeft.value)}`}`
-})
-/** The last few days: the renewal comes forward, gold instead of quiet. */
-const ending = computed(() => props.user.sky && daysLeft.value <= 5)
-const compareOpen = ref(false)
 
 /** A city typed without picking a suggestion: the chart will need its coordinates. */
 const unplaced = computed(() => Boolean(props.user.birth?.place && props.user.birth.lat == null))
@@ -97,29 +80,11 @@ const unplaced = computed(() => Boolean(props.user.birth?.place && props.user.bi
 
     <NewcomerPath :user="user" />
 
-    <section class="sky-card" :class="{ 'is-lit': user.sky }" aria-labelledby="sky-title">
-      <div class="sky-head">
-        <h2 id="sky-title" class="sky-title">Небосвод</h2>
-        <p class="sky-state">{{ skyLine }}</p>
-      </div>
-      <SkyVault :lit="user.sky" />
-
-      <div class="sky-actions">
-        <RouterLink v-if="!user.sky" class="gold-cta" :to="{ name: 'checkout', params: { product: 'sky' } }">
-          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
-          Зажечь Небосвод — {{ skyPrice }}
-        </RouterLink>
-        <RouterLink v-else :class="ending ? 'gold-cta' : 'soft-link'" :to="{ name: 'checkout', params: { product: 'sky' } }">
-          Продлить Небосвод
-        </RouterLink>
-        <button type="button" class="compare-toggle" :aria-expanded="compareOpen" aria-controls="sky-compare" @click="compareOpen = !compareOpen">
-          {{ compareOpen ? 'Свернуть' : user.sky ? 'Что входит' : 'Сравнить с бесплатным' }}
-        </button>
-      </div>
-      <div v-show="compareOpen" id="sky-compare">
-        <SkyCompare :lit="user.sky" />
-      </div>
-    </section>
+    <RouterLink class="today sky-line" :class="{ 'is-lit': user.sky, 'is-ending': user.sky && skyMore === 'Продлить' }" :to="{ name: 'cabinet-sky' }">
+      <svg class="sky-crown" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
+      <span>{{ skyState }}</span>
+      <span class="today-more">{{ skyMore }}</span>
+    </RouterLink>
 
     <div class="leave">
       <RouterLink class="settings" :to="{ name: 'cabinet-profile' }">
@@ -172,58 +137,11 @@ const unplaced = computed(() => Boolean(props.user.birth?.place && props.user.bi
 .inline:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 2px; border-radius: 4px; }
 .hint { margin: -8px 0 0; font-size: 12.5px; line-height: 1.5; color: rgba(233, 194, 124, 0.75); }
 
-/* «Небосвод»: the vault of the subscription, its state and the way to light it. */
-.sky-card { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid rgba(240, 210, 150, 0.12); }
-.sky-head { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; }
-.sky-title { margin: 0; font-family: var(--caps); font-weight: 600; font-size: 16px; letter-spacing: 0.1em; color: rgba(240, 205, 138, 0.85); }
-.sky-state { margin: 0; font-family: var(--serif); font-style: italic; font-size: 15.5px; color: rgba(226, 220, 210, 0.6); }
-.is-lit .sky-state { color: #f3dcae; }
-.sky-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 16px; }
-.gold-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 20px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, #f4dba6, #dcb36c);
-  color: #2b1d0b;
-  font-size: 14.5px;
-  font-weight: 600;
-  text-decoration: none;
-  box-shadow: 0 8px 26px rgba(230, 170, 80, 0.22);
-  transition: box-shadow 0.25s ease, transform 0.25s ease;
-}
-.gold-cta svg { width: 10px; height: 10px; fill: #5a3d12; }
-.gold-cta:hover { box-shadow: 0 10px 34px rgba(230, 170, 80, 0.38); transform: translateY(-1px); }
-.gold-cta:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 3px; }
-.soft-link {
-  display: inline-flex;
-  align-items: center;
-  padding: 8px 16px;
-  border-radius: 999px;
-  border: 1px solid rgba(240, 205, 138, 0.5);
-  background: rgba(240, 205, 138, 0.06);
-  font-size: 13.5px;
-  color: #f3dcae;
-  text-decoration: none;
-  transition: background 0.25s ease, border-color 0.25s ease;
-}
-.soft-link:hover { background: rgba(240, 205, 138, 0.12); border-color: rgba(240, 205, 138, 0.8); }
-.soft-link:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 3px; }
-.compare-toggle {
-  padding: 4px 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  color: rgba(240, 205, 138, 0.85);
-  text-decoration: underline;
-  text-decoration-color: rgba(240, 205, 138, 0.35);
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-.compare-toggle:hover { text-decoration-color: currentColor; }
-.compare-toggle:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 2px; border-radius: 4px; }
+/* «Небосвод» in one line, the same as the day's: gold once it burns. */
+.sky-crown { grid-row: span 2; width: 18px; height: 18px; fill: rgba(214, 222, 238, 0.45); transition: fill 0.4s ease; }
+.sky-line.is-lit .sky-crown { fill: #f0cd8a; filter: drop-shadow(0 0 6px rgba(255, 205, 120, 0.8)); }
+.sky-line:not(.is-lit) { font-size: 16px; color: rgba(239, 231, 216, 0.8); }
+.sky-line.is-ending { border-color: rgba(240, 205, 138, 0.45); }
 
 /* The one thing to do when the sky is still empty: an outlined gold pill, the main CTA is the form's. */
 .add-birth {
@@ -277,9 +195,6 @@ const unplaced = computed(() => Boolean(props.user.birth?.place && props.user.bi
 .logout:focus-visible { outline: 2px solid #f0cd8a; outline-offset: 3px; }
 
 @media (max-width: 760px) {
-  .logout, .add-birth, .gold-cta, .soft-link, .settings, .compare-toggle { min-height: 44px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .gold-cta { transition: none; }
+  .logout, .add-birth, .settings { min-height: 44px; }
 }
 </style>

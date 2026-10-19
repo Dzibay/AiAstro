@@ -5,16 +5,26 @@ from app.errors import DomainError
 
 TTL_SECONDS = 10
 
+# key: (label, default, group). The admin page lays the groups out under their own headings.
 FIELDS = {
-    "site_name": ("Название", "Астра"),
-    "tagline": ("Подзаголовок", "Натальная карта обычным языком"),
-    "support_email": ("Почта поддержки", ""),
-    # Prices are shown, not charged: whole roubles as text, empty keeps «от … ₽» on the site.
-    "price_sky": ("Цена «Небосвода», ₽ в месяц", ""),
-    "price_synastry": ("Цена разбора пары, ₽", ""),
-    "price_synastry_sky": ("Цена разбора пары с «Небосводом», ₽", ""),
+    "site_name": ("Название", "Астра", "site"),
+    "tagline": ("Подзаголовок", "Натальная карта обычным языком", "site"),
+    "support_email": ("Почта поддержки", "", "site"),
+    # Whole roubles as text; an empty price keeps «от … ₽» on the site and that tariff unpaid.
+    "price_sky": ("«Небосвод» на месяц, ₽", "", "prices"),
+    "price_sky_3": ("«Небосвод» на 3 месяца, ₽", "", "prices"),
+    "price_sky_12": ("«Небосвод» на 12 месяцев, ₽", "", "prices"),
+    "price_synastry": ("Разбор пары, ₽", "", "prices"),
+    "price_synastry_sky": ("Разбор пары с «Небосводом», ₽", "", "prices"),
+    # ЮKassa: payment opens once both are set. The receipt codes are ЮKassa's own (54-ФЗ).
+    "yookassa_shop_id": ("shopId магазина", "", "pay"),
+    "yookassa_secret_key": ("Секретный ключ", "", "pay"),
+    "receipt_vat_code": ("Ставка НДС в чеке, код ЮKassa (1 — без НДС)", "1", "pay"),
+    "receipt_tax_system": ("Система налогообложения, код ЮKassa 1–6 (пусто — не передавать)", "", "pay"),
 }
-PRICES = ("price_sky", "price_synastry", "price_synastry_sky")
+PRICES = ("price_sky", "price_sky_3", "price_sky_12", "price_synastry", "price_synastry_sky")
+# Never sent back to the page: the admin sees only whether it is set.
+SECRETS = ("yookassa_secret_key",)
 
 _cache: dict[str, str] = {}
 _loaded = False
@@ -43,15 +53,33 @@ def public_config(fallback_name: str) -> dict:
         "tagline": data.get("tagline") or FIELDS["tagline"][1],
         "support_email": data.get("support_email") or "",
         "prices": {key.removeprefix("price_"): data.get(key) or "" for key in PRICES},
+        "pay": payments_on(data),
     }
+
+
+def payments_on(data: dict[str, str] | None = None) -> bool:
+    data = data if data is not None else get_settings()
+    return bool(data.get("yookassa_shop_id") and data.get("yookassa_secret_key"))
+
+
+def setting(key: str) -> str:
+    return get_settings().get(key) or FIELDS[key][1]
 
 
 def list_editable() -> list[dict[str, str]]:
     data = get_settings()
     items = []
-    for key, (label, default) in FIELDS.items():
-        items.append({"key": key, "label": label, "value": data.get(key, default)})
+    for key, (label, default, group) in FIELDS.items():
+        value = data.get(key, default)
+        if key in SECRETS:
+            items.append({"key": key, "label": label, "group": group, "value": "", "secret": True, "filled": bool(value)})
+        else:
+            items.append({"key": key, "label": label, "group": group, "value": value})
     return items
+
+
+def _digits(value: str, longest: int) -> bool:
+    return value.isascii() and value.isdigit() and len(value) <= longest
 
 
 def set_setting(key: str, value: str) -> dict[str, str]:
@@ -61,7 +89,18 @@ def set_setting(key: str, value: str) -> dict[str, str]:
     cleaned = " ".join(value.split())
     if key == "support_email":
         cleaned = cleaned.lower()
-    if key in PRICES and cleaned and not (cleaned.isascii() and cleaned.isdigit() and len(cleaned) <= 7):
+    if key in PRICES and cleaned and not _digits(cleaned, 7):
+        raise DomainError("setting")
+    if key == "yookassa_shop_id" and cleaned and not _digits(cleaned, 12):
+        raise DomainError("setting")
+    # live_… or test_…: the key ЮKassa gives in «Интеграция → Ключи API».
+    if key == "yookassa_secret_key" and cleaned and not (
+        cleaned.isascii() and " " not in cleaned and cleaned.startswith(("live_", "test_")) and len(cleaned) <= 120
+    ):
+        raise DomainError("setting")
+    if key == "receipt_vat_code" and not (_digits(cleaned, 2) and 1 <= int(cleaned) <= 12):
+        raise DomainError("setting")
+    if key == "receipt_tax_system" and cleaned and not (_digits(cleaned, 1) and 1 <= int(cleaned) <= 6):
         raise DomainError("setting")
     if len(cleaned) > 300:
         raise DomainError("setting")
@@ -76,5 +115,7 @@ def set_setting(key: str, value: str) -> dict[str, str]:
     _cache[key] = cleaned
     _loaded = True
     _loaded_at = time.monotonic()
-    label = FIELDS[key][0]
-    return {"key": key, "label": label, "value": cleaned}
+    label, _, group = FIELDS[key]
+    if key in SECRETS:
+        return {"key": key, "label": label, "group": group, "value": "", "secret": True, "filled": bool(cleaned)}
+    return {"key": key, "label": label, "group": group, "value": cleaned}

@@ -8,6 +8,7 @@ from app.api.deps import as_http, require_web_user
 from app.charts import chart_item, chart_of, forecast_of, month_of
 from app.chat import LENGTH, ask, history
 from app.errors import DomainError
+from app.payments import create_payment, payment_of
 from app.partners import create_partner, delete_partner, fill_invite, invite, list_partners, open_invite, synastry_of
 from app.places import search
 from app.security import make_web_session
@@ -64,6 +65,12 @@ class PasswordIn(BaseModel):
 
 class DeleteIn(BaseModel):
     password: str = Field(max_length=200)
+
+
+class PaymentIn(BaseModel):
+    # sky1, sky3, sky12 or synastry; the pair's reading names its partner.
+    product: str = Field(max_length=16)
+    partner: int | None = None
 
 
 class LoginIn(BaseModel):
@@ -259,6 +266,24 @@ def ask_astrologer(body: QuestionIn, user_id: int = Depends(require_web_user)) -
     """A question and its answer; without «Небосвод» only the trial ones (402 trial_over after them)."""
     try:
         return ask(user_id, body.text)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.post("/me/payments")
+def pay(body: PaymentIn, user_id: int = Depends(require_web_user)) -> dict:
+    """Creates the payment at ЮKassa: the page sends the person on to `url` and gets them back with `id`."""
+    try:
+        return create_payment(user_id, body.product, body.partner)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/me/payments/{payment_id}")
+def payment(payment_id: int, user_id: int = Depends(require_web_user)) -> dict:
+    """After the return from ЮKassa: pending, succeeded (the purchase is already applied) or canceled."""
+    try:
+        return payment_of(user_id, payment_id)
     except DomainError as exc:
         raise as_http(exc) from exc
 
