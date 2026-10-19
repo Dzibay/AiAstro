@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /cabinet
+Disallow: /login
+Disallow: /legal/
+
+Sitemap: __ORIGIN__/sitemap.xml
