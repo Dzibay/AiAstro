@@ -61,12 +61,12 @@ export const SECTION_BY_ID = Object.fromEntries(SECTIONS.map((section) => [secti
 export const ROUTE_ORDER = ['cabinet', ...SECTIONS.map((section) => section.route)]
 
 /** The panel hugs the right edge (CabinetView): its width and its gap to the edge. */
-/** The panel's width (CabinetView): the overview is short, the sections are read, so they are wider. */
-export function panelWidth(W, section) {
-  return section ? clamp(W * 0.36, 420, 500) : 420
+/** One width for the overview and every section (CabinetView). */
+export function panelWidth(W) {
+  return clamp(W * 0.36, 420, 500)
 }
-export function panelLeft(W, section = '') {
-  return W - clamp(W * 0.08, 20, 150) - panelWidth(W, section)
+export function panelLeft(W) {
+  return W - clamp(W * 0.08, 20, 150) - panelWidth(W)
 }
 
 /** On phones the sky is kept at least 780px tall for the home page; the sheet follows the window. */
@@ -144,7 +144,7 @@ export function cabinetLayout(geo, section) {
     const sheet = V * SHEET_TOP
     const rowY = sheet - 46
     if (open) {
-      const k = 0.5
+      const k = 0.65
       star = { x: 26 + (span * k) / 2, y: 70 + (span * k) / 2, k }
     } else {
       const k = clamp((sheet - 170) / span, 0.55, 1.3)
@@ -152,8 +152,10 @@ export function cabinetLayout(geo, section) {
     }
     points = SECTIONS.map((item, index) => ({ id: item.id, x: W * (0.1 + index * 0.2), y: rowY, s: 0.74 }))
   } else if (open) {
-    const k = 0.42
-    star = { x: clamp(W * 0.07, 70, 120), y: clamp(H * 0.2, 140, 170), k }
+    // Large enough for a detailed sign (Pisces) to read; kept below the header and off the left edge.
+    const k = 0.55
+    const half = (span * k) / 2
+    star = { x: Math.max(clamp(W * 0.07, 70, 120), 24 + half), y: Math.max(clamp(H * 0.2, 140, 170), 92 + half), k }
     const reach = clamp(H * 0.28, 160, 210)
     points = SECTIONS.map((item, index) => {
       const angle = rad(4 + index * 21.5)
@@ -196,7 +198,7 @@ export function wheelSpot(geo) {
     const x = clamp(Math.max(W / 2, star.x + starHalf + NAME_ROOM + r), r + 8, W - r - 8)
     return { x, y: (top + bottom) / 2, r }
   }
-  const right = panelLeft(W, 'chart') - 36
+  const right = panelLeft(W) - 36
   const top = 100
   const bottom = H - 36
   // The largest wheel that keeps clear of the star and of the five sections with their captions:

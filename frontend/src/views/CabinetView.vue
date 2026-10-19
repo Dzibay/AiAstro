@@ -76,6 +76,13 @@ const pairStars = computed(() => {
   return partners.value.map(star)
 })
 const pairTone = computed(() => syntheses[Number(route.query.partner)]?.data?.tone || '')
+/** A partner's star pressed on the sky opens its pair, as its row in the panel does. */
+function openPair(id) {
+  router.push({ name: 'cabinet-pair', query: { partner: id } })
+}
+function hoverPair(id) {
+  hot.value = id
+}
 function selectPoint(id) {
   router.push({ name: 'cabinet-chart', params: id && id !== selected.value ? { item: id } : {} })
 }
@@ -253,7 +260,7 @@ const sheetStyle = computed(() => {
   <div class="site">
     <SiteHeader />
     <Transition name="wheel">
-      <PairSky v-if="user && section === 'pair'" :stars="pairStars" :tone="pairTone" :aspect="hotAspect" />
+      <PairSky v-if="user && section === 'pair'" :stars="pairStars" :tone="pairTone" :aspect="hotAspect" @select="openPair" @hover="hoverPair" />
     </Transition>
     <Transition name="wheel">
       <SkyDome v-if="user && section === 'sky'" :lit="user.sky" />
@@ -267,7 +274,7 @@ const sheetStyle = computed(() => {
       <section
         ref="panel"
         class="cabinet-panel"
-        :class="{ 'is-up': up, 'is-full': forcedUp, 'is-wide': section }"
+        :class="{ 'is-up': up, 'is-full': forcedUp }"
         :style="sheetStyle"
         aria-live="polite"
         @touchstart.passive="onTouchStart"
@@ -332,8 +339,8 @@ const sheetStyle = computed(() => {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
-  width: min(420px, 100%);
-  transition: width 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
+  /* One width for the overview and the sections (layout.js, panelWidth): read, not glanced at. */
+  width: min(clamp(420px, 36vw, 500px), 100%);
   max-height: calc(100vh - 150px);
   overflow: hidden;
   padding: 24px 26px;
@@ -349,8 +356,6 @@ const sheetStyle = computed(() => {
   pointer-events: auto;
   animation: card-in 0.9s cubic-bezier(0.3, 0.7, 0.2, 1) 0.9s both;
 }
-/* The sections are read, not glanced at: a wider page (layout.js, panelWidth). */
-.cabinet-panel.is-wide { width: min(clamp(420px, 36vw, 500px), 100%); }
 .cabinet-panel.is-full { height: calc(100vh - 150px); }
 .cabinet-panel::before {
   content: '';
@@ -385,10 +390,11 @@ const sheetStyle = computed(() => {
 .close:hover { color: #f0cd8a; background: rgba(240, 205, 138, 0.08); }
 .close:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 1px; }
 
+/* Reaches into the card's padding, so the glow of buttons at its edges is not cut square. */
 .panel-scroll {
   min-height: 0;
-  margin: 0 -10px;
-  padding: 0 10px 2px;
+  margin: 0 -20px -20px;
+  padding: 0 20px 22px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -430,8 +436,8 @@ const sheetStyle = computed(() => {
     transition: height 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
     animation-name: sheet-in;
   }
-  .cabinet-panel.is-wide { width: auto; }
   .cabinet-panel.is-up { height: calc(100vh - 72px); height: calc(100svh - 72px); }
+  .panel-scroll { margin: 0 -14px -14px; padding: 0 14px 16px; }
   .cabinet-panel::before { inset: 6px 6px 0; border-bottom: 0; border-radius: 17px 17px 0 0; }
   .sheet-handle {
     display: block;

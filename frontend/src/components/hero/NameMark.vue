@@ -2,9 +2,7 @@
 import { computed } from 'vue'
 import { useSky } from '../../composables/useSky.js'
 import { SIGNS } from '../../utils/skyToday.js'
-import { PROJECTED, ZODIAC_BY_ID } from './zodiac.js'
-import { ZODIAC_ART } from './zodiacArt.js'
-import { starRadius } from './journey.js'
+import { signFigure } from './signFigure.js'
 import { cabinetLayout, loginSpot, starScale } from '../cabinet/layout.js'
 
 /**
@@ -44,24 +42,7 @@ const sun = computed(() => SIGN_BY_ID[mark.sun] || null)
 const moon = computed(() => SIGN_BY_ID[mark.moon] || null)
 
 /** The sign drawn around the star, in the star's own coordinates. */
-const sign = computed(() => {
-  const id = mark.sun
-  const figure = ZODIAC_BY_ID[id]
-  if (!figure) return null
-  const span = spot.value.span
-  const map = ([x, y]) => `${((x / 1000 - 0.5) * span).toFixed(1)} ${((y / 1000 - 0.5) * span).toFixed(1)}`
-  const stars = PROJECTED[id].map((p, index) => ({
-    x: p.x * span,
-    y: p.y * span,
-    r: starRadius(figure.stars[index].mag) * 0.8,
-  }))
-  return {
-    id,
-    art: (ZODIAC_ART[id] || []).map((stroke, index) => ({ index, kind: stroke.kind, d: `M${stroke.pts.map(map).join('L')}` })),
-    lines: figure.edges.map(([i, j]) => ({ key: `${i}-${j}`, a: stars[i], b: stars[j] })),
-    stars,
-  }
-})
+const sign = computed(() => signFigure(mark.sun, spot.value.span))
 
 // U+FE0E keeps the sign a glyph instead of a coloured emoji on Windows.
 const glyph = computed(() => (sun.value ? `${sun.value.glyph}\uFE0E` : ''))

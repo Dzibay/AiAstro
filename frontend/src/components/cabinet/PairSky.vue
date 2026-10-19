@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useSky } from '../../composables/useSky.js'
 import { birthSigns } from '../../utils/skyToday.js'
 import { clamp } from '../hero/sky.js'
+import { signFigure } from '../hero/signFigure.js'
 import { ASPECTS, POINTS, SIGN_BY_ID } from './astro.js'
 import { cabinetLayout, wheelSpot } from './layout.js'
 
@@ -13,6 +14,10 @@ import { cabinetLayout, wheelSpot } from './layout.js'
  *
  * One star while a pair is open or typed in; the whole list of pairs, in an arc, otherwise.
  * A star still waiting for its invitation is a hollow ring on a dotted thread.
+ *
+ * In the list every star can be pressed to open its pair (`select`), and the pointer over it
+ * lights its row in the panel (`hover`). The one open pair wears the engraving of its Sun sign,
+ * as the person's own star does.
  */
 
 const props = defineProps({
@@ -27,6 +32,8 @@ const props = defineProps({
   /** The room for the partners' stars, { x, y, r }: the wheel's spot by default. */
   area: { type: Object, default: null },
 })
+
+const emit = defineEmits(['select', 'hover'])
 
 const { geo } = useSky()
 const reduce = ref(false)
@@ -51,6 +58,12 @@ function delayOf(id) {
 
 const COLOURS = { easy: '#f0cd8a', tense: '#e08a76', mixed: '#eab48a', calm: '#e6e0f4' }
 
+/** The partner's sign as large as the person's own in a section, but never wider than the free sky. */
+const signSpan = computed(() => {
+  const { star } = cabinetLayout(geo.value, 'pair')
+  return Math.min(star.span * star.k, room.value.r * 1.7)
+})
+
 const drawn = computed(() => {
   const { x: cx, y: cy, r } = room.value
   const from = origin.value
@@ -74,6 +87,7 @@ const drawn = computed(() => {
     const sun = signs ? SIGN_BY_ID[signs.sun] : null
     const single = n === 1
     return {
+      figure: single && star.lit && signs ? signFigure(signs.sun, signSpan.value) : null,
       ...star,
       x,
       y,
@@ -102,6 +116,12 @@ const label = computed(() => {
   }
 })
 
+const pickable = computed(() => drawn.value.length > 1)
+function pick(star) {
+  emit('hover', null)
+  emit('select', star.id)
+}
+
 const aria = computed(() => {
   const names = props.stars.filter((star) => star.name).map((star) => star.name)
   return names.length ? `Ваша звезда и ${names.length === 1 ? 'звезда' : 'звёзды'}: ${names.join(', ')}` : ''
@@ -120,6 +140,11 @@ const aria = computed(() => {
     :aria-label="aria"
   >
     <defs>
+      <filter id="pair-sign-glow" x="-10%" y="-10%" width="120%" height="120%">
+        <feGaussianBlur stdDeviation="2.2" result="b" />
+        <feColorMatrix in="b" type="matrix" values="1 0 0 0 0  0 0.78 0 0 0  0 0 0.6 0 0  0 0 0 0.9 0" result="g" />
+        <feMerge><feMergeNode in="g" /><feMergeNode in="SourceGraphic" /></feMerge>
+      </filter>
       <radialGradient id="pair-halo">
         <stop offset="0" stop-color="#fff4ee" stop-opacity="0.9" />
         <stop offset="0.25" stop-color="#ffc9b8" stop-opacity="0.32" />
@@ -138,6 +163,22 @@ const aria = computed(() => {
       <path class="thread" :d="star.d" pathLength="1" />
 
       <g class="partner" :style="{ transform: `translate(${fixed(star.x)}px, ${fixed(star.y)}px)` }">
+        <g v-if="star.figure" :key="star.figure.id" class="sign">
+          <g class="sign-art" filter="url(#pair-sign-glow)">
+            <path
+              v-for="stroke in star.figure.art"
+              :key="stroke.index"
+              :class="`art-${stroke.kind}`"
+              :d="stroke.d"
+              pathLength="1"
+              :style="{ '--i': stroke.index / Math.max(1, star.figure.art.length - 1) }"
+            />
+          </g>
+          <g class="sign-lines">
+            <line v-for="line in star.figure.lines" :key="line.key" :x1="line.a.x" :y1="line.a.y" :x2="line.b.x" :y2="line.b.y" />
+          </g>
+          <circle v-for="(dot, index) in star.figure.stars" :key="index" class="sign-star" :cx="dot.x" :cy="dot.y" :r="dot.r" />
+        </g>
         <template v-if="star.lit">
           <circle class="partner-halo" :r="star.radius * 7" fill="url(#pair-halo)" />
           <path
@@ -163,6 +204,25 @@ const aria = computed(() => {
           :y="star.below ? star.radius * 3 + 40 : 26"
           :text-anchor="star.below ? 'middle' : 'start'"
         >{{ star.lit ? star.sun : 'звезда ещё не зажглась' }}</text>
+
+        <g
+          v-if="pickable"
+          class="partner-hit"
+          role="button"
+          tabindex="-1"
+          :aria-label="`Открыть пару: ${star.name}`"
+          @click="pick(star)"
+          @pointerenter="emit('hover', star.id)"
+          @pointerleave="emit('hover', null)"
+        >
+          <circle r="26" />
+          <rect
+            :x="star.below ? -[...star.name].length * 5.5 - 8 : star.radius * 3 + 4"
+            :y="star.below ? star.radius * 3 + 2 : -16"
+            :width="[...star.name].length * 11 + 16"
+            height="28"
+          />
+        </g>
       </g>
     </g>
 
@@ -241,6 +301,26 @@ const aria = computed(() => {
   stroke-width: 4px;
 }
 
+/* The open pair's sign: the same engraving as the person's own, a shade rosier. */
+.partner > .sign { --o: 1; }
+.sign-art path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw 1.8s cubic-bezier(0.4, 0.1, 0.2, 1) calc(var(--d0) + 1.3s + var(--i) * 0.9s) forwards;
+}
+.art-outline { stroke: #f2cdb4; stroke-width: 1.15; opacity: 0.8; }
+.art-detail { stroke: #e8bfa6; stroke-width: 0.8; opacity: 0.55; }
+.art-hatch { stroke: #d9ad96; stroke-width: 0.6; opacity: 0.35; }
+.sign-lines line { stroke: #ecd2c4; stroke-width: 0.8; stroke-linecap: round; opacity: 0.35; }
+.sign-star { fill: #fff1ea; filter: drop-shadow(0 0 3px rgba(255, 190, 160, 0.9)); }
+
+/* A star in the list opens its pair: the circle around it and its name answer the pointer. */
+.partner > .partner-hit { --o: 1; pointer-events: auto; cursor: pointer; }
+.partner-hit circle, .partner-hit rect { fill: transparent; }
+
 .aspect-label {
   font-family: 'Segoe UI Symbol', 'Noto Sans Symbols', 'Noto Sans Symbols 2', sans-serif;
   font-size: 17px;
@@ -274,4 +354,5 @@ const aria = computed(() => {
 .motion-off .thread, .motion-off .thread-glow { stroke-dashoffset: 0; }
 .motion-off .partner-flash { display: none; }
 .motion-off .partner { transition: none; }
+.motion-off .sign-art path { animation: none; stroke-dashoffset: 0; }
 </style>

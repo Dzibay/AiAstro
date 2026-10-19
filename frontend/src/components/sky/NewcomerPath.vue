@@ -2,6 +2,7 @@
 import { computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { usePartners } from '../../composables/usePartners.js'
+import { useChat } from '../../composables/useChat.js'
 import { stepDone } from '../../utils/newcomer.js'
 
 /**
@@ -14,9 +15,13 @@ const props = defineProps({
 })
 
 const { partners, status: partnersStatus, load: loadPartners } = usePartners()
+const { chat, load: loadChat } = useChat()
 onMounted(() => {
   if (props.user.birth) loadPartners()
+  // The question may have been asked before the path existed or on another device: the history knows.
+  if (!stepDone(props.user.id, 'chat')) loadChat()
 })
+const asked = computed(() => stepDone(props.user.id, 'chat') || chat.items.some((item) => item.role === 'user'))
 
 const steps = computed(() => {
   const birth = props.user.birth
@@ -30,14 +35,16 @@ const steps = computed(() => {
       to: { name: 'cabinet-birth' },
     },
     { id: 'sun', name: 'Прочитать своё Солнце', why: 'главное о вашем характере', done: stepDone(props.user.id, 'sun'), to: { name: 'cabinet-chart', params: { item: 'sun' } } },
-    { id: 'chat', name: 'Задать вопрос астрологу', why: 'два вопроса — в подарок', done: stepDone(props.user.id, 'chat'), to: { name: 'cabinet-chat' } },
+    { id: 'chat', name: 'Задать вопрос астрологу', why: 'два вопроса — в подарок', done: asked.value, to: { name: 'cabinet-chat' } },
     { id: 'pair', name: 'Добавить партнёра', why: 'увидеть пару по сферам жизни', done: partners.value.length > 0, to: { name: 'cabinet-pair', query: { add: '' } } },
   ]
 })
 const count = computed(() => steps.value.filter((step) => step.done).length)
 const next = computed(() => steps.value.find((step) => !step.done) || null)
-// The partners' step is unknown until the list is in: do not flash a path that will vanish.
-const visible = computed(() => next.value && (!props.user.birth || partnersStatus.value !== 'loading'))
+// The partners' and the question's steps are unknown until their lists are in: do not flash a path that will vanish.
+const visible = computed(
+  () => next.value && (!props.user.birth || partnersStatus.value !== 'loading') && (asked.value || chat.status !== 'loading'),
+)
 </script>
 
 <template>
