@@ -225,6 +225,7 @@ function fit() {
 .message p + p { margin-top: 10px; }
 /* The person's words: the plain face, in a soft bubble to the right. */
 .from-you {
+  font-family: var(--book);
   justify-self: end;
   max-width: 86%;
   padding: 9px 14px;
@@ -332,7 +333,7 @@ function fit() {
 .loading { margin: 0; font-family: var(--serif); font-style: italic; font-size: 17px; color: rgba(242, 228, 200, 0.75); }
 
 .unlock { display: grid; gap: 12px; justify-items: start; }
-.unlock-note { margin: 0; font-size: 13px; line-height: 1.5; color: rgba(233, 194, 124, 0.8); }
+.unlock-note { margin: 0; font-size: 13.5px; line-height: 1.5; color: rgba(233, 194, 124, 0.8); }
 .unlock-cta, .add-birth {
   display: inline-flex;
   align-items: center;

@@ -15,7 +15,7 @@ defineProps({
 </template>
 
 <style scoped>
-.panel-head { display: grid; gap: 8px; }
+.panel-head { display: grid; gap: 8px; text-align: center; }
 .panel-title {
   margin: 0;
   font-family: var(--serif);

@@ -36,16 +36,17 @@ const birthLine = computed(() => {
 
 const linkTo = (id) => ({ name: 'cabinet-chart', params: { item: id } })
 
-/** «Весы 18°24′» */
-const where = (point) => `${SIGN_BY_ID[point.sign].name} ${degrees(point.deg)}`
+/** «в Весах, 18°24′» */
+const where = (point) => `${SIGN_BY_ID[point.sign].in}, ${degrees(point.deg)}`
 
 const bigThree = computed(() => ['sun', 'moon', 'asc'].map((id) => ({ id, point: byId.value[id] || null, ...POINTS[id] })))
 
 const planets = computed(() => (chart.value ? chart.value.points : []))
 
+/** A row of stars for each: lit as many as the planets, the rest dim, five at least. */
 function bars(list, counts) {
-  const top = Math.max(1, ...Object.values(counts))
-  return list.map((entry) => ({ ...entry, count: counts[entry.id], share: counts[entry.id] / top }))
+  const slots = Math.max(5, ...Object.values(counts))
+  return list.map((entry) => ({ ...entry, count: counts[entry.id], slots }))
 }
 const elements = computed(() => (chart.value ? bars(ELEMENTS, chart.value.balance.elements) : []))
 const modes = computed(() => (chart.value ? bars(MODES, chart.value.balance.modes) : []))
@@ -208,15 +209,17 @@ function setHot(id) {
 
       <section class="block balance" aria-labelledby="balance-title">
         <h3 id="balance-title" class="block-title">Стихии и кресты</h3>
-        <div class="bars">
-          <div v-for="group in [elements, modes]" :key="group[0].id" class="bar-group">
-            <div v-for="entry in group" :key="entry.id" class="bar">
-              <span class="bar-name">{{ entry.name }}</span>
-              <span class="bar-track" aria-hidden="true"><span class="bar-fill" :class="`fill-${entry.id}`" :style="{ '--share': entry.share }" /></span>
-              <span class="bar-count">{{ entry.count }}</span>
+        <dl class="stars">
+          <div v-for="group in [elements, modes]" :key="group[0].id" class="star-group">
+            <div v-for="entry in group" :key="entry.id" class="star-row">
+              <dt>{{ entry.name }}</dt>
+              <dd>
+                <span class="visually-hidden">{{ entry.count }}</span>
+                <span aria-hidden="true">{{ '✦'.repeat(entry.count) }}<span class="star-off">{{ '✦'.repeat(entry.slots - entry.count) }}</span></span>
+              </dd>
             </div>
           </div>
-        </div>
+        </dl>
       </section>
 
       <section class="block" aria-labelledby="planets-title">
@@ -233,10 +236,7 @@ function setHot(id) {
             >
               <span class="row-glyph" aria-hidden="true">{{ POINTS[point.id].glyph }}</span>
               <span class="row-name">{{ POINTS[point.id].name }}</span>
-              <span class="row-where">
-                <span class="row-sign" aria-hidden="true">{{ SIGN_BY_ID[point.sign].glyph }}</span>
-                {{ where(point) }}<template v-if="point.approx"> ≈</template>
-              </span>
+              <span class="row-where">{{ where(point) }}<template v-if="point.approx"> ≈</template></span>
               <span class="row-house">{{ point.house ? ROMAN[point.house - 1] : '' }}</span>
               <span class="row-retro" :title="point.retro && point.id !== 'node' ? 'Попятное движение' : undefined">
                 {{ point.retro && point.id !== 'node' ? 'R' : '' }}
@@ -254,8 +254,8 @@ function setHot(id) {
 
 .loading { margin: 0; font-family: var(--serif); font-style: italic; font-size: 17px; color: rgba(242, 228, 200, 0.75); }
 .error { margin: 0; font-size: 14px; color: #f2a48c; }
-.note { margin: 0; font-size: 13px; line-height: 1.5; color: rgba(233, 194, 124, 0.8); }
-.quiet-text { margin: 0; font-size: 14px; line-height: 1.5; color: rgba(226, 220, 210, 0.62); }
+.note { margin: 0; font-size: 13.5px; line-height: 1.6; color: rgba(233, 194, 124, 0.8); }
+.quiet-text { margin: 0; font-size: 14.5px; line-height: 1.6; color: rgba(226, 220, 210, 0.62); }
 
 .inline {
   color: #f0cd8a;
@@ -266,16 +266,6 @@ function setHot(id) {
 }
 .inline:hover { text-decoration-color: currentColor; }
 .inline:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 2px; border-radius: 4px; }
-
-.block { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid rgba(240, 210, 150, 0.12); }
-.block-title {
-  margin: 0;
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: rgba(233, 194, 124, 0.7);
-}
 
 .title-glyph {
   margin-right: 4px;
@@ -300,70 +290,62 @@ function setHot(id) {
 .back:hover { color: #f0cd8a; }
 .back:focus-visible { outline: 1px solid #f0cd8a; border-radius: 6px; }
 
-/* Sun, Moon, Ascendant: three small cells, each a way into its reading. */
+/* Sun, Moon, Ascendant: three centred entries, no frames, each a way into its reading. */
 .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .three-item {
   display: grid;
   justify-items: center;
-  gap: 2px;
-  padding: 10px 6px;
-  border-radius: 14px;
-  border: 1px solid rgba(240, 210, 150, 0.14);
+  gap: 3px;
+  padding: 6px 4px;
+  border-radius: 12px;
   color: #efe7d8;
   text-decoration: none;
-  transition: border-color 0.25s ease, background 0.25s ease;
+  transition: background 0.25s ease;
 }
-a.three-item:hover { border-color: rgba(240, 205, 138, 0.5); background: rgba(240, 205, 138, 0.06); }
+a.three-item:hover { background: rgba(240, 205, 138, 0.06); }
+a.three-item:hover .three-sign { color: #f0cd8a; }
 a.three-item:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 2px; }
-.three-item.is-off { opacity: 0.5; }
+.three-item.is-off { opacity: 0.45; }
 .three-glyph { font-family: 'Segoe UI Symbol', 'Noto Sans Symbols', sans-serif; font-size: 20px; line-height: 1.2; color: #f0cd8a; }
-.three-name { font-size: 11px; color: rgba(226, 220, 210, 0.6); }
-.three-sign { font-family: var(--serif); font-style: italic; font-size: 17px; color: #f6efe2; }
+.three-name { font-family: var(--caps); font-size: 14px; letter-spacing: 0.1em; color: rgba(226, 220, 210, 0.66); }
+.three-sign { font-family: var(--serif); font-style: italic; font-size: 22px; line-height: 1.1; color: #f6efe2; transition: color 0.25s ease; }
 
-.bars { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-.bar-group { display: grid; gap: 7px; align-content: start; }
-.bar { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; column-gap: 8px; row-gap: 3px; font-size: 12.5px; }
-.bar-name { color: rgba(226, 220, 210, 0.72); }
-.bar-count { color: #efe7d8; font-variant-numeric: tabular-nums; }
-.bar-track { grid-column: 1 / -1; height: 3px; border-radius: 2px; background: rgba(240, 210, 150, 0.1); overflow: hidden; }
-.bar-fill {
-  display: block;
-  height: 100%;
-  width: calc(var(--share) * 100%);
-  border-radius: inherit;
-  background: linear-gradient(90deg, rgba(240, 205, 138, 0.5), #f0cd8a);
-  transform-origin: left;
-  animation: grow 0.9s cubic-bezier(0.3, 0.7, 0.2, 1) 0.3s both;
-}
+/* The elements and the crosses as rows of stars: lit for each planet, the rest dim. */
+.stars { display: grid; gap: 12px; margin: 0; }
+.star-group { display: grid; gap: 4px; }
+.star-row { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; font-family: var(--book); font-size: 14.5px; }
+.star-row dt { color: #efe7d8; }
+.star-row dd { margin: 0; letter-spacing: 0.18em; color: #f0cd8a; white-space: nowrap; }
+.star-off { color: rgba(240, 205, 138, 0.2); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 .planet-list, .aspect-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .planet-row {
   display: grid;
   grid-template-columns: 22px 1fr auto 34px 12px;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
-  padding: 7px 8px;
+  padding: 6px 8px;
   margin: 0 -8px;
   border-radius: 10px;
   color: #efe7d8;
   text-decoration: none;
-  font-size: 14px;
+  font-family: var(--book);
+  font-size: 15px;
   transition: background 0.2s ease;
 }
 .planet-row:hover { background: rgba(240, 205, 138, 0.07); }
 .planet-row:focus-visible { outline: 1px solid #f0cd8a; outline-offset: -1px; }
-.row-glyph, .row-sign { font-family: 'Segoe UI Symbol', 'Noto Sans Symbols', sans-serif; color: #f0cd8a; text-align: center; }
-.row-glyph { font-size: 16px; }
-.row-sign { margin-right: 2px; font-size: 13px; opacity: 0.8; }
-.row-where { color: rgba(239, 231, 216, 0.85); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.row-house { font-family: var(--serif); font-style: italic; color: rgba(233, 194, 124, 0.8); text-align: right; }
-.row-retro { font-family: var(--serif); font-style: italic; font-size: 13px; color: rgba(233, 194, 124, 0.8); }
+.row-glyph { font-family: 'Segoe UI Symbol', 'Noto Sans Symbols', sans-serif; font-size: 16px; color: #f0cd8a; text-align: center; }
+.row-where { font-family: var(--serif); font-style: italic; font-size: 17px; color: rgba(239, 231, 216, 0.75); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.row-house { font-family: var(--caps); font-size: 15px; color: rgba(233, 194, 124, 0.8); text-align: right; }
+.row-retro { font-family: var(--serif); font-style: italic; font-size: 14px; color: rgba(233, 194, 124, 0.8); }
 
-.aspect-list li { display: grid; grid-template-columns: 22px 1fr auto; align-items: baseline; gap: 8px; padding: 5px 0; font-size: 14px; }
+.aspect-list li { display: grid; grid-template-columns: 22px 1fr auto; align-items: baseline; gap: 8px; padding: 5px 0; font-family: var(--book); font-size: 15px; }
 .aspect-glyph { font-family: 'Segoe UI Symbol', 'Noto Sans Symbols', sans-serif; text-align: center; }
 .tone-easy, .tone-joint { color: #f0cd8a; }
 .tone-tense { color: #d98b7a; }
-.orb { font-size: 12px; color: rgba(226, 220, 210, 0.55); font-variant-numeric: tabular-nums; }
+.orb { font-family: var(--serif); font-style: italic; font-size: 15px; color: rgba(226, 220, 210, 0.55); font-variant-numeric: tabular-nums; }
 
 .add-birth {
   justify-self: start;
@@ -383,13 +365,8 @@ a.three-item:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 2px; }
 .add-birth:hover { background: rgba(240, 205, 138, 0.12); border-color: rgba(240, 205, 138, 0.8); }
 .add-birth:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 3px; }
 
-@keyframes grow { from { transform: scaleX(0); } }
-
 @media (max-width: 760px) {
-  .planet-row { min-height: 44px; }
+  .planet-row { min-height: 44px; align-items: center; }
   .back { min-height: 44px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .bar-fill { animation: none; }
 }
 </style>

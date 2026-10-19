@@ -1,0 +1,48 @@
+/*
+ * The cabinet's text as a classical folio: book serif for reading, centred small-caps headings
+ * between gold rules, a fleuron between sections. Shared by every panel, so the scoped styles
+ * keep only what is their own.
+ */
+
+:root {
+  --book: "PT Serif", Georgia, serif;
+  --caps: "Cormorant SC", "Cormorant Garamond", Georgia, serif;
+}
+
+.cabinet-panel .block { display: grid; gap: 14px; }
+.cabinet-panel .block::before {
+  content: "· ❦ ·";
+  margin-bottom: 4px;
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1;
+  letter-spacing: 0.5em;
+  text-indent: 0.5em;
+  text-align: center;
+  color: rgba(240, 205, 138, 0.55);
+}
+
+.cabinet-panel .block-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  font-family: var(--caps);
+  font-weight: 500;
+  font-size: 16px;
+  line-height: 1.2;
+  letter-spacing: 0.16em;
+  text-transform: none;
+  color: #f0cd8a;
+}
+.cabinet-panel .block-title::before,
+.cabinet-panel .block-title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(240, 205, 138, 0.45), transparent);
+}
+
+.cabinet-panel :is(.note, .quiet-text, .unlock-note, .soon-note) { font-family: var(--book); }
+.cabinet-panel .note { font-style: italic; text-align: center; }
+.cabinet-panel .unlock-note { font-style: italic; }

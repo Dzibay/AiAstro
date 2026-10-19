@@ -349,7 +349,7 @@ function status_of(item) {
         </li>
       </ul>
       <p v-else class="quiet-text">
-        Добавьте второго человека: введите его данные сами или отправьте ссылку — по ней партнёр укажет их без регистрации.
+        Добавьте второго человека: введите данные сами или отправьте ссылку — по ней партнёр укажет их без регистрации.
       </p>
 
       <div class="ways">
@@ -366,10 +366,10 @@ function status_of(item) {
 
 .loading { margin: 0; font-family: var(--serif); font-style: italic; font-size: 17px; color: rgba(242, 228, 200, 0.75); }
 .error { margin: 0; font-size: 14px; color: #f2a48c; }
-.quiet-text { margin: 0; font-size: 14px; line-height: 1.55; color: rgba(226, 220, 210, 0.66); }
+.quiet-text { margin: 0; font-size: 14.5px; line-height: 1.55; color: rgba(226, 220, 210, 0.66); }
 .hint { margin: 0; font-size: 12.5px; line-height: 1.5; color: rgba(233, 194, 124, 0.75); }
 .hint a { color: #f0cd8a; text-underline-offset: 3px; }
-.birth-line { margin: -8px 0 0; font-size: 13px; color: rgba(226, 220, 210, 0.6); }
+.birth-line { margin: -8px 0 0; text-align: center; font-family: var(--serif); font-style: italic; font-size: 16px; color: rgba(226, 220, 210, 0.6); }
 .retry { display: grid; gap: 6px; justify-items: start; }
 
 /* ---- The list ---- */
@@ -400,7 +400,7 @@ function status_of(item) {
 }
 .pair-row.is-waiting .pair-star { background: none; border: 1px dashed rgba(243, 220, 174, 0.7); box-shadow: none; }
 .pair-name { font-family: var(--serif); font-size: 19px; line-height: 1.15; }
-.pair-status { font-size: 12px; color: rgba(226, 220, 210, 0.55); }
+.pair-status { font-family: var(--serif); font-style: italic; font-size: 15px; color: rgba(226, 220, 210, 0.55); }
 
 .ways { display: flex; flex-wrap: wrap; gap: 10px; }
 .ways .gold-cta { flex: none; }
@@ -479,15 +479,6 @@ function status_of(item) {
 .link-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
 
 /* ---- One pair (the forecast's chips and unlock) ---- */
-.block { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid rgba(240, 210, 150, 0.12); }
-.block-title {
-  margin: 0;
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: rgba(233, 194, 124, 0.7);
-}
 .chips { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .chip {
   display: grid;
@@ -512,10 +503,10 @@ function status_of(item) {
 .glyph-theirs { color: #f6cbbd; }
 .chip-glyphs .tone-easy, .chip-glyphs .tone-joint { color: #f0cd8a; }
 .chip-glyphs .tone-tense { color: #d98b7a; }
-.chip-text { font-size: 13.5px; line-height: 1.35; }
+.chip-text { font-family: var(--book); font-size: 14px; line-height: 1.4; }
 
 .unlock { display: grid; gap: 12px; justify-items: start; }
-.unlock-note { margin: 0; font-size: 13px; line-height: 1.5; color: rgba(233, 194, 124, 0.8); }
+.unlock-note { margin: 0; font-size: 13.5px; line-height: 1.5; color: rgba(233, 194, 124, 0.8); }
 .unlock-cta {
   display: inline-flex;
   align-items: center;

@@ -1,60 +1,71 @@
 <script setup>
 /**
- * A reading as the server writes it: { essence, parts: [{ label, text }] }. The essence is the
- * heart of it, an italic serif line under a gold bar; the parts are short theses, each under a
- * small gold label. A part without a label (an old answer in the chat) is a plain paragraph.
+ * A reading as the server writes it: { essence, parts: [{ label, text }] }, set as a page of a
+ * folio. The essence is a centred italic line in guillemets; the parts are paragraphs,
+ * each opening with its label run in small caps, the first one with a gold drop cap. A part
+ * without a label (an old answer in the chat) is a plain paragraph.
  */
 defineProps({
   reading: { type: Object, required: true },
-  /** In the chat the answer sits among messages: a smaller essence, closer parts. */
+  /** In the chat the answer sits among messages: no drop cap, a smaller essence, closer lines. */
   compact: { type: Boolean, default: false },
 })
+
+/** «Тема» → «Тема.», and a label that already ends in a stop keeps it. */
+const runIn = (label) => (/[.!?…:]$/.test(label) ? label : `${label}.`)
 </script>
 
 <template>
   <div class="reading-text" :class="{ 'is-compact': compact }">
-    <p v-if="reading.essence" class="essence">{{ reading.essence }}</p>
-    <dl v-if="reading.parts.length" class="parts">
-      <div v-for="(part, index) in reading.parts" :key="index" class="part">
-        <dt v-if="part.label" class="label">{{ part.label }}</dt>
-        <dd class="body">{{ part.text }}</dd>
-      </div>
-    </dl>
+    <p v-if="reading.essence" class="essence">«{{ reading.essence.replace(/[.…]+$/, '') }}»</p>
+    <div v-if="reading.parts.length" class="parts">
+      <p v-for="(part, index) in reading.parts" :key="index" class="part">
+        <template v-if="part.label"><span class="label">{{ runIn(part.label) }}</span>{{ ' ' }}</template>{{ part.text }}
+      </p>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.reading-text { display: grid; gap: 18px; }
+.reading-text { display: grid; gap: 16px; }
 .essence {
   margin: 0;
-  padding: 2px 0 2px 16px;
-  border-left: 2px solid transparent;
-  border-image: linear-gradient(180deg, #f4dba6, rgba(220, 179, 108, 0.35)) 1;
   font-family: var(--serif);
   font-style: italic;
-  font-size: 20px;
+  font-size: 22px;
   line-height: 1.35;
+  text-align: center;
   color: #f6efe2;
 }
-.parts { display: grid; gap: 14px; margin: 0; }
-.part { display: grid; gap: 5px; }
-.label {
-  font-size: 10px;
-  letter-spacing: 0.2em;
-  line-height: 1.5;
-  text-transform: uppercase;
-  color: rgba(233, 194, 124, 0.85);
+.parts { display: grid; }
+.part {
+  margin: 0;
+  font-family: var(--book);
+  font-size: 15px;
+  line-height: 1.75;
+  hyphens: auto;
+  color: #efe7d8;
 }
-.body { margin: 0; font-size: 15px; line-height: 1.6; color: #efe7d8; }
+.part + .part { text-indent: 1.6em; }
+.parts > .part:first-child::first-letter {
+  float: left;
+  margin: 5px 8px 0 0;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-style: normal;
+  font-size: 56px;
+  line-height: 0.8;
+  color: #f0cd8a;
+}
+.label { font-family: var(--caps); font-weight: 600; font-size: 1.1em; letter-spacing: 0.06em; color: #f0cd8a; }
 
-.is-compact { gap: 12px; }
-.is-compact .essence { padding-left: 14px; font-size: 18px; }
-.is-compact .parts { gap: 10px; }
-.is-compact .part { gap: 3px; }
-.is-compact .body { font-size: 14.5px; line-height: 1.55; color: rgba(239, 231, 216, 0.92); }
+.is-compact { gap: 10px; }
+.is-compact .essence { font-size: 18px; }
+.is-compact .part { font-size: 14.5px; line-height: 1.6; color: rgba(239, 231, 216, 0.92); }
+.is-compact .parts > .part:first-child::first-letter { all: unset; }
 
 @media (max-width: 760px) {
-  .essence { font-size: 19px; }
+  .essence { font-size: 20px; }
   .is-compact .essence { font-size: 17px; }
 }
 </style>

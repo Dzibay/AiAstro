@@ -105,8 +105,8 @@ const unplaced = computed(() => Boolean(props.user.birth?.place && props.user.bi
 .overview { display: grid; gap: 16px; }
 
 .facts { display: grid; gap: 8px; margin: 0; padding: 14px 0; border-block: 1px solid rgba(240, 210, 150, 0.12); }
-.facts div { display: flex; justify-content: space-between; gap: 16px; font-size: 14px; }
-.facts dt { color: rgba(226, 220, 210, 0.55); }
+.facts div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; font-family: var(--book); font-size: 14.5px; }
+.facts dt { font-family: var(--caps); font-size: 15px; letter-spacing: 0.08em; color: rgba(226, 220, 210, 0.6); }
 .facts dd { margin: 0; text-align: right; color: #efe7d8; overflow-wrap: anywhere; }
 
 .fact-birth dd, .fact-sky dd { display: grid; justify-items: end; gap: 2px; }

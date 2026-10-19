@@ -165,7 +165,7 @@ function setHot(key) {
 
 .loading { margin: 0; font-family: var(--serif); font-style: italic; font-size: 17px; color: rgba(242, 228, 200, 0.75); }
 .error { margin: 0; font-size: 14px; color: #f2a48c; }
-.quiet-text { margin: 0; font-size: 14px; line-height: 1.5; color: rgba(226, 220, 210, 0.62); }
+.quiet-text { margin: 0; font-size: 14.5px; line-height: 1.5; color: rgba(226, 220, 210, 0.62); }
 
 /* The login's toggle: a gold thumb sliding under two words. */
 .mode-toggle {
@@ -214,7 +214,7 @@ function setHot(key) {
 }
 
 .unlock { display: grid; gap: 12px; justify-items: start; margin-top: -8px; }
-.unlock-note { margin: 0; font-size: 13px; line-height: 1.5; color: rgba(233, 194, 124, 0.8); }
+.unlock-note { margin: 0; font-size: 13.5px; line-height: 1.5; color: rgba(233, 194, 124, 0.8); }
 .unlock-cta {
   display: inline-flex;
   align-items: center;
@@ -233,24 +233,15 @@ function setHot(key) {
 .unlock-cta:hover { box-shadow: 0 10px 34px rgba(230, 170, 80, 0.38); transform: translateY(-1px); }
 .unlock-cta:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 3px; }
 
-.block { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid rgba(240, 210, 150, 0.12); }
-.block-title {
-  margin: 0;
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: rgba(233, 194, 124, 0.7);
-}
 
 .week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 0; padding: 0; list-style: none; }
 .week-day { display: grid; justify-items: center; gap: 3px; padding: 6px 0; }
-.week-name { font-size: 11px; color: rgba(226, 220, 210, 0.55); }
+.week-name { font-family: var(--caps); font-size: 14px; letter-spacing: 0.06em; color: rgba(226, 220, 210, 0.55); }
 .week-number { font-family: var(--serif); font-size: 18px; color: #f6efe2; }
 .week-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: rgba(226, 220, 210, 0.35); }
 .tone-easy .week-dot { background: #f0cd8a; box-shadow: 0 0 8px rgba(255, 205, 120, 0.7); }
 .tone-tense .week-dot { background: #d98b7a; box-shadow: 0 0 8px rgba(230, 130, 110, 0.6); }
-.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0; font-size: 12px; color: rgba(226, 220, 210, 0.55); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0; font-family: var(--serif); font-style: italic; font-size: 15px; color: rgba(226, 220, 210, 0.55); }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
 
 .chips { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
@@ -277,8 +268,8 @@ function setHot(key) {
 .glyph-natal { color: #f0cd8a; }
 .chip-glyphs .tone-easy, .chip-glyphs .tone-joint { color: #f0cd8a; }
 .chip-glyphs .tone-tense { color: #d98b7a; }
-.chip-text { font-size: 13.5px; }
-.chip-when { font-size: 12px; color: rgba(226, 220, 210, 0.55); }
+.chip-text { font-family: var(--book); font-size: 14px; }
+.chip-when { font-family: var(--serif); font-style: italic; font-size: 14.5px; color: rgba(226, 220, 210, 0.55); }
 
 .add-birth {
   justify-self: start;
