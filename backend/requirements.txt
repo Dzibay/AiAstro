@@ -3,3 +3,6 @@ uvicorn[standard]==0.34.0
 pydantic-settings==2.7.1
 psycopg[binary]==3.2.4
 psycopg-pool==3.2.4
+timezonefinder==9.0.0
+tzdata==2026.5
+skyfield==1.55

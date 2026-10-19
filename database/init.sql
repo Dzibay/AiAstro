@@ -16,15 +16,72 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
--- Данные рождения: дата и место, время может быть неизвестно. Город пока строкой,
--- координаты и часовой пояс понадобятся вместе с расчётом карты.
+-- Данные рождения: дата и место, время может быть неизвестно.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_time TIME;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_place TEXT NOT NULL DEFAULT '';
+-- Координаты города из подсказок (5 знаков — около метра) и его часовой пояс IANA.
+-- Если город введён вручную без подсказки, координат нет: карта попросит уточнить.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_lat NUMERIC(7, 5);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_lon NUMERIC(8, 5);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_tz TEXT NOT NULL DEFAULT '';
 -- Когда человек дал согласие на обработку персональных данных (галочка при регистрации).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_at TIMESTAMPTZ;
+-- Подписка «Небосвод» действует до этого момента; NULL — подписки нет. Пока её включает оператор в админке.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS sky_until TIMESTAMPTZ;
 
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_key ON users (email);
+
+-- Посчитанные натальные карты. Ключ — хеш данных рождения и версии расчёта: исправленные
+-- данные или новая версия просто не находят старую строку, её можно удалить в любой момент.
+CREATE TABLE IF NOT EXISTS charts (
+    key TEXT PRIMARY KEY,
+    data JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Готовые тексты толкований. Ключ — хеш входа (что толкуем и версия текстов), а не человек:
+-- одинаковые положения у разных людей читают одну строку, новая версия текстов пишет новые.
+CREATE TABLE IF NOT EXISTS readings (
+    kind TEXT NOT NULL,
+    key TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (kind, key)
+);
+
+-- Партнёры для совместимости. Данные вводит сам человек или партнёр по ссылке-приглашению:
+-- пока ссылка не заполнена, даты рождения нет. consent_at — согласие партнёра, давшего данные сам.
+CREATE TABLE IF NOT EXISTS partners (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    birth_date DATE,
+    birth_time TIME,
+    birth_place TEXT NOT NULL DEFAULT '',
+    birth_lat NUMERIC(7, 5),
+    birth_lon NUMERIC(8, 5),
+    birth_tz TEXT NOT NULL DEFAULT '',
+    invite_token TEXT,
+    consent_at TIMESTAMPTZ,
+    filled_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS partners_invite_key ON partners (invite_token);
+CREATE INDEX IF NOT EXISTS partners_user_idx ON partners (user_id, created_at);
+
+-- Разовые покупки. Пока оплаты нет, их отмечает оператор в админке. Сумм здесь нет.
+-- Удалённый партнёр не стирает покупку: ссылка на него просто становится пустой.
+CREATE TABLE IF NOT EXISTS purchases (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    product TEXT NOT NULL,
+    partner_id BIGINT REFERENCES partners (id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS purchases_partner_key ON purchases (user_id, product, partner_id) WHERE partner_id IS NOT NULL;
 
 INSERT INTO app_settings (key, value) VALUES
     ('site_name', 'Астра'),

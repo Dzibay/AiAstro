@@ -1,40 +1,94 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { RouterLink, RouterView, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import SiteHeader from '../components/SiteHeader.vue'
+import CabinetSky from '../components/cabinet/CabinetSky.vue'
+import NatalWheel from '../components/cabinet/NatalWheel.vue'
+import PairSky from '../components/cabinet/PairSky.vue'
+import { ROUTE_ORDER, SECTION_BY_ID } from '../components/cabinet/layout.js'
 import { webApi } from '../api/web.js'
 import { ApiError, errorText } from '../api/http.js'
 import { clearSession } from '../composables/useSession.js'
 import { useSky } from '../composables/useSky.js'
-import { SIGNS } from '../utils/skyToday.js'
-import { formatDate } from '../utils/format.js'
+import { useChart } from '../composables/useChart.js'
+import { useForecast } from '../composables/useForecast.js'
+import { usePartners } from '../composables/usePartners.js'
 import { useHead } from '../utils/useHead.js'
 
 /**
- * The cabinet on the sky: the camera has flown onto the person's star (NameMark in the
- * 'cabinet' pose), and the panel stands beside it where the login card stood.
+ * The cabinet's shell: the sky is the menu (CabinetSky, about the person's star) and one glass
+ * panel holds whatever is open. On a phone the panel is a sheet from the bottom that can be
+ * raised, lowered and swiped sideways to the next section.
  */
 
+const route = useRoute()
 const router = useRouter()
 const { mark, markUser, clearMark } = useSky()
+const { chart, load: loadChart, forget: forgetChart } = useChart()
+const { forecasts, forget: forgetForecast } = useForecast()
+const { partners, draft, hot, hotAspect, lit, syntheses, load: loadPartners, forgetSyntheses } = usePartners()
 const user = ref(null)
 const message = ref('')
 
 useHead({ title: 'Кабинет', noindex: true })
 
-const SIGN_BY_ID = Object.fromEntries(SIGNS.map((sign) => [sign.id, sign]))
+const section = computed(() => route.meta.section || '')
+const birthOpen = computed(() => route.name === 'cabinet-birth')
 
-const signLine = computed(() => {
-  const sun = SIGN_BY_ID[mark.sun]
-  if (!sun) return ''
-  const moon = SIGN_BY_ID[mark.moon]
-  return moon ? `Солнце ${sun.in}, Луна ${moon.in}` : `Солнце ${sun.in}`
+/** The wheel stands on the sky while the chart is open; its points choose the panel's reading. */
+const selected = computed(() => (typeof route.params.item === 'string' ? route.params.item : ''))
+watch(section, (id) => {
+  if (id === 'chart' || id === 'forecast') loadChart()
+}, { immediate: true })
+/** In the forecast the same wheel carries the sky of the day or the week around it. */
+const showWheel = computed(() => Boolean(user.value && chart.value && (section.value === 'chart' || section.value === 'forecast')))
+const transitSky = computed((previous) => {
+  if (section.value !== 'forecast') return null
+  // While the other period loads, the wheel keeps the sky it has instead of blinking bare.
+  return forecasts[route.query.period === 'week' ? 'week' : 'day'].data || previous || null
+})
+/** In «Пара» the partners' stars follow the panel: the one typed in, the open pair or all of them. */
+watch(section, (id) => {
+  if (id === 'pair') loadPartners()
+}, { immediate: true })
+const pairStars = computed(() => {
+  const query = route.query
+  if (query.add !== undefined || query.invite !== undefined) {
+    if (!draft.name) return []
+    return [{ id: 'draft', name: draft.name, date: draft.date, time: draft.time, lit: Boolean(draft.date) }]
+  }
+  const star = (item) => ({
+    id: item.id,
+    name: item.name,
+    date: item.birth?.date || '',
+    time: item.birth?.time || '',
+    lit: Boolean(item.birth),
+    hot: hot.value === item.id,
+    flash: lit.value.has(item.id),
+  })
+  if (query.partner) {
+    const item = partners.value.find((entry) => entry.id === Number(query.partner))
+    return item ? [star(item)] : []
+  }
+  return partners.value.map(star)
+})
+const pairTone = computed(() => syntheses[Number(route.query.partner)]?.data?.tone || '')
+function selectPoint(id) {
+  router.push({ name: 'cabinet-chart', params: id && id !== selected.value ? { item: id } : {} })
+}
+const kicker = computed(() => {
+  if (section.value) return SECTION_BY_ID[section.value].label
+  return birthOpen.value ? 'Данные рождения' : 'Кабинет'
 })
 
-const birthLine = computed(() => {
-  const birth = user.value?.birth
-  if (!birth) return ''
-  return [formatDate(birth.date), birth.time, birth.place].filter(Boolean).join(' · ')
+/** next / prev slide the panel along the order of the sections, swap just fades it. */
+const motion = ref('swap')
+onBeforeRouteUpdate((to, from) => {
+  const a = ROUTE_ORDER.indexOf(from.name)
+  const b = ROUTE_ORDER.indexOf(to.name)
+  motion.value = a < 0 || b < 0 ? 'swap' : b > a ? 'next' : 'prev'
+  // The form may have left a sign it was trying on: put the saved one back.
+  if (from.name === 'cabinet-birth' && user.value) markUser(user.value)
 })
 
 onMounted(async () => {
@@ -53,68 +107,185 @@ onMounted(async () => {
 
 onUnmounted(clearMark)
 
+/** Back from the birth form: the way it came if it came from the overview, else to it. */
+function leaveBirth() {
+  if (window.history.state?.back === '/cabinet') router.back()
+  else router.replace({ name: 'cabinet' })
+}
+
+function onSaved(next) {
+  user.value = next
+  forgetChart()
+  forgetForecast()
+  forgetSyntheses()
+  markUser(next)
+  mark.flash += 1
+  leaveBirth()
+}
+
 function logout() {
   clearSession('web')
   router.push('/')
 }
+
+/** After a change of panel the keyboard goes on from its title, not from the top of the page. */
+const panel = ref(null)
+function focusTitle() {
+  const active = document.activeElement
+  if (active && active !== document.body && !panel.value?.contains(active) && !active.closest?.('.cabinet-sky')) return
+  panel.value?.querySelector('.panel-title, h2')?.focus({ preventScroll: true })
+}
+
+/* ---- The phone sheet ---- */
+
+const raised = ref(false)
+const forcedUp = computed(() => Boolean(route.meta.full))
+const up = computed(() => raised.value || forcedUp.value)
+/** The height while a finger holds the handle, in px; null lets the CSS decide. */
+const dragHeight = ref(null)
+let drag = null
+
+function sheetBounds() {
+  const V = window.innerHeight
+  return { low: V * 0.58, high: V - 72 }
+}
+
+function onHandleDown(event) {
+  if (forcedUp.value) return
+  const { low, high } = sheetBounds()
+  drag = { y: event.clientY, from: up.value ? high : low, moved: false }
+  event.currentTarget.setPointerCapture(event.pointerId)
+}
+function onHandleMove(event) {
+  if (!drag) return
+  const dy = drag.y - event.clientY
+  if (Math.abs(dy) > 6) drag.moved = true
+  if (!drag.moved) return
+  const { low, high } = sheetBounds()
+  dragHeight.value = Math.min(high + 12, Math.max(low - 60, drag.from + dy))
+}
+function onHandleUp() {
+  if (!drag) return
+  if (!drag.moved) raised.value = !raised.value
+  else {
+    const { low, high } = sheetBounds()
+    raised.value = dragHeight.value > (low + high) / 2
+  }
+  drag = null
+  dragHeight.value = null
+}
+
+/** A sideways swipe on the sheet moves to the neighbouring section. */
+let touch = null
+function onTouchStart(event) {
+  const target = event.target
+  if (event.touches.length !== 1 || target.closest('input, textarea, select, [data-no-swipe]')) {
+    touch = null
+    return
+  }
+  touch = { x: event.touches[0].clientX, y: event.touches[0].clientY }
+}
+function onTouchEnd(event) {
+  if (!touch) return
+  const dx = event.changedTouches[0].clientX - touch.x
+  const dy = event.changedTouches[0].clientY - touch.y
+  touch = null
+  if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 2) return
+  const index = ROUTE_ORDER.indexOf(route.name)
+  if (index < 0) return
+  const next = ROUTE_ORDER[index + (dx < 0 ? 1 : -1)]
+  if (next) router.push({ name: next })
+}
+
+// A new section starts with the sheet where the person left it, scrolled to its top.
+watch(() => [route.name, route.params.item], () => {
+  nextTick(() => panel.value?.querySelector('.panel-scroll')?.scrollTo({ top: 0 }))
+})
+
+const sheetStyle = computed(() => (dragHeight.value == null ? null : { height: `${dragHeight.value}px`, transition: 'none' }))
 </script>
 
 <template>
   <div class="site">
     <SiteHeader />
+    <Transition name="wheel">
+      <PairSky v-if="user && section === 'pair'" :stars="pairStars" :tone="pairTone" :aspect="hotAspect" />
+    </Transition>
+    <Transition name="wheel">
+      <NatalWheel v-if="showWheel" :key="section" :chart="chart" :selected="selected" :forecast="transitSky" @select="selectPoint" />
+    </Transition>
+    <CabinetSky v-if="user" :section="section" :birth-open="birthOpen" />
+
     <main class="cabinet">
-      <section class="cabinet-card" aria-live="polite">
+      <section
+        ref="panel"
+        class="cabinet-panel"
+        :class="{ 'is-up': up }"
+        :style="sheetStyle"
+        aria-live="polite"
+        @touchstart.passive="onTouchStart"
+        @touchend="onTouchEnd"
+      >
         <span class="card-sheen" aria-hidden="true" />
-        <p class="kicker">Кабинет</p>
+        <button
+          v-if="!forcedUp"
+          type="button"
+          class="sheet-handle"
+          :aria-expanded="up ? 'true' : 'false'"
+          :aria-label="up ? 'Опустить панель' : 'Поднять панель'"
+          @pointerdown="onHandleDown"
+          @pointermove="onHandleMove"
+          @pointerup="onHandleUp"
+          @pointercancel="onHandleUp"
+          @keydown.enter.prevent="raised = !raised"
+          @keydown.space.prevent="raised = !raised"
+        />
 
-        <p v-if="message" class="error">{{ message }}</p>
+        <div class="panel-top">
+          <p class="kicker">{{ kicker }}</p>
+          <RouterLink v-if="route.name !== 'cabinet'" class="close" :to="{ name: 'cabinet' }" aria-label="Закрыть и вернуться к обзору">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3L13 13M13 3L3 13" /></svg>
+          </RouterLink>
+        </div>
 
-        <template v-else-if="user">
-          <header class="card-head">
-            <h1>Здравствуйте, <em>{{ user.name }}</em></h1>
-            <p v-if="signLine">{{ signLine }}</p>
-            <p v-else>Добавьте дату рождения — и небо нарисует ваш знак.</p>
-          </header>
-
-          <dl class="facts">
-            <div v-if="birthLine"><dt>Рождение</dt><dd>{{ birthLine }}</dd></div>
-            <div><dt>Почта</dt><dd>{{ user.email }}</dd></div>
-            <div><dt>С нами</dt><dd>с {{ formatDate(user.created_at) }}</dd></div>
-          </dl>
-
-          <div class="readings">
-            <h2>Разборы</h2>
-            <p>Готовых разборов пока нет. Натальная карта появится здесь, как только расчёт будет подключён.</p>
-          </div>
-
-          <button type="button" class="quiet" @click="logout">Выйти</button>
-        </template>
-
-        <p v-else class="loading">Открываем ваше небо…</p>
+        <div class="panel-scroll">
+          <p v-if="message" class="error">{{ message }}</p>
+          <RouterView v-else-if="user" v-slot="{ Component, route: current }">
+            <Transition :name="motion" mode="out-in" @after-enter="focusTitle">
+              <component :is="Component" :key="current.name" :user="user" @saved="onSaved" @done="leaveBirth" @logout="logout" />
+            </Transition>
+          </RouterView>
+          <p v-else class="loading">Открываем ваше небо…</p>
+        </div>
       </section>
     </main>
   </div>
 </template>
 
 <style scoped>
+.wheel-enter-active, .wheel-leave-active { transition: opacity 0.6s ease; }
+.wheel-enter-from, .wheel-leave-to { opacity: 0; }
+
 .cabinet {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   min-height: 100vh;
   min-height: 100svh;
-  padding: 110px clamp(20px, 8vw, 150px) 48px;
+  padding: 110px clamp(20px, 8vw, 150px) 40px;
   pointer-events: none;
 }
 
 /* The login card's glass, wider: it waits for the flight to land before it rises. */
-.cabinet-card {
+.cabinet-panel {
   position: relative;
   display: grid;
-  gap: 16px;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
   width: min(420px, 100%);
+  max-height: calc(100vh - 150px);
   overflow: hidden;
   padding: 24px 26px;
   border-radius: 22px;
@@ -129,7 +300,7 @@ function logout() {
   pointer-events: auto;
   animation: card-in 0.9s cubic-bezier(0.3, 0.7, 0.2, 1) 0.9s both;
 }
-.cabinet-card::before {
+.cabinet-panel::before {
   content: '';
   position: absolute;
   inset: 6px;
@@ -146,60 +317,105 @@ function logout() {
   animation: card-sheen 1.8s ease 1.5s forwards;
 }
 
+.panel-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; }
 .kicker { margin: 0; font-size: 10px; letter-spacing: 0.26em; text-transform: uppercase; color: rgba(233, 194, 124, 0.75); }
-
-.card-head { display: grid; gap: 8px; }
-.card-head h1 {
-  margin: 0;
-  font-family: var(--serif);
-  font-weight: 500;
-  font-size: 32px;
-  line-height: 1.08;
-  color: #f6efe2;
+.close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: -4px -8px -4px 0;
+  border-radius: 50%;
+  color: rgba(242, 228, 200, 0.7);
+  transition: color 0.25s ease, background 0.25s ease;
 }
-.card-head em { font-style: italic; color: #f0cd8a; }
-.card-head p { margin: 0; font-family: var(--serif); font-style: italic; font-size: 17px; color: rgba(242, 228, 200, 0.82); }
+.close svg { width: 12px; height: 12px; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; fill: none; }
+.close:hover { color: #f0cd8a; background: rgba(240, 205, 138, 0.08); }
+.close:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 1px; }
 
-.facts { display: grid; gap: 8px; margin: 0; padding: 14px 0; border-block: 1px solid rgba(240, 210, 150, 0.12); }
-.facts div { display: flex; justify-content: space-between; gap: 16px; font-size: 14px; }
-.facts dt { color: rgba(226, 220, 210, 0.55); }
-.facts dd { margin: 0; text-align: right; color: #efe7d8; overflow-wrap: anywhere; }
+.panel-scroll {
+  min-height: 0;
+  margin: 0 -10px;
+  padding: 0 10px 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(240, 205, 138, 0.25) transparent;
+}
 
-.readings { display: grid; gap: 6px; }
-.readings h2 { margin: 0; font-family: var(--serif); font-weight: 500; font-size: 20px; color: #f6efe2; }
-.readings p { margin: 0; font-size: 14px; line-height: 1.5; color: rgba(226, 220, 210, 0.7); }
+.sheet-handle { display: none; }
 
 .error { margin: 0; font-size: 14px; color: #f2a48c; }
 .loading { margin: 0; font-family: var(--serif); font-style: italic; font-size: 17px; color: rgba(242, 228, 200, 0.75); }
 
-.quiet {
-  justify-self: start;
-  padding: 6px 4px;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: 13.5px;
-  color: rgba(226, 220, 210, 0.72);
-  cursor: pointer;
-  transition: color 0.25s ease;
+/* Panels change: along the order of the sections, or in place. */
+.next-enter-active, .next-leave-active, .prev-enter-active, .prev-leave-active, .swap-enter-active, .swap-leave-active {
+  transition: opacity 0.28s ease, transform 0.28s cubic-bezier(0.3, 0.7, 0.2, 1);
 }
-.quiet:hover { color: #f0cd8a; }
-.quiet:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 2px; border-radius: 6px; }
+.next-enter-from, .prev-leave-to { opacity: 0; transform: translateX(18px); }
+.next-leave-to, .prev-enter-from { opacity: 0; transform: translateX(-18px); }
+.swap-enter-from { opacity: 0; transform: translateY(6px); }
+.swap-leave-to { opacity: 0; transform: translateY(-6px); }
 
 @keyframes card-in { from { opacity: 0; transform: translateY(16px); filter: blur(4px); } }
 @keyframes card-sheen { to { transform: translateX(100%); } }
 
 @media (max-width: 760px) {
-  /* A sheet under the star, which keeps the top of the screen. */
-  .cabinet { align-items: flex-end; justify-content: center; padding: 42vh 12px 16px; }
-  .cabinet-card { padding: 20px 18px; }
-  .card-head h1 { font-size: 28px; }
-  .quiet { min-height: 40px; }
+  /* A sheet from the bottom, under the strip of sky with the star and the four sections. */
+  .cabinet { display: block; min-height: 0; padding: 0; }
+  .cabinet-panel {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: 58vh;
+    height: 58svh;
+    max-height: none;
+    padding: 26px 18px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 22px 22px 0 0;
+    border-bottom: 0;
+    transition: height 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
+    animation-name: sheet-in;
+  }
+  .cabinet-panel.is-up { height: calc(100vh - 72px); height: calc(100svh - 72px); }
+  .cabinet-panel::before { inset: 6px 6px 0; border-bottom: 0; border-radius: 17px 17px 0 0; }
+  .sheet-handle {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 88px;
+    height: 24px;
+    margin-left: -44px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: grab;
+    touch-action: none;
+  }
+  .sheet-handle::after {
+    content: '';
+    position: absolute;
+    top: 10px;
+    left: 26px;
+    right: 26px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(240, 210, 150, 0.35);
+    transition: background 0.25s ease;
+  }
+  .sheet-handle:hover::after, .sheet-handle:focus-visible::after { background: rgba(240, 205, 138, 0.75); }
+  .sheet-handle:focus-visible { outline: none; }
+  .close { width: 44px; height: 44px; margin: -10px -12px -10px 0; }
 }
 
+@keyframes sheet-in { from { transform: translateY(40px); opacity: 0; } }
+
 @media (prefers-reduced-motion: reduce) {
-  .cabinet-card { animation: card-fade 0.4s ease both; }
+  .cabinet-panel { animation: card-fade 0.4s ease both; transition: none; }
   .card-sheen { animation: none; }
+  .next-enter-from, .next-leave-to, .prev-enter-from, .prev-leave-to, .swap-enter-from, .swap-leave-to { transform: none; }
 }
 @keyframes card-fade { from { opacity: 0; } }
 </style>

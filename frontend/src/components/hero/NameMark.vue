@@ -4,8 +4,8 @@ import { useSky } from '../../composables/useSky.js'
 import { SIGNS } from '../../utils/skyToday.js'
 import { PROJECTED, ZODIAC_BY_ID } from './zodiac.js'
 import { ZODIAC_ART } from './zodiacArt.js'
-import { clamp } from './sky.js'
 import { starRadius } from './journey.js'
+import { cabinetLayout, loginSpot, starScale } from '../cabinet/layout.js'
 
 /**
  * The person's own mark on the login sky (see useSky().mark): a star that lights up with their
@@ -16,20 +16,12 @@ const props = defineProps({
   geo: { type: Object, required: true },
   /** 'login' places the star by the name; 'cabinet' brings it close, left of the panel, and leaves the words to the panel. */
   pose: { type: String, default: 'login' },
+  /** In the cabinet: the open section, '' on the overview. The star steps back to the corner for a section. */
+  section: { type: String, default: '' },
 })
 const { mark } = useSky()
 
 const SIGN_BY_ID = Object.fromEntries(SIGNS.map((sign) => [sign.id, sign]))
-
-/** FNV-1a: the same name always finds the same point of the sky. */
-function hash(text) {
-  let h = 0x811c9dc5
-  for (const char of text) {
-    h ^= char.codePointAt(0)
-    h = Math.imul(h, 0x01000193)
-  }
-  return h >>> 0
-}
 
 const name = computed(() => mark.name.trim())
 const shown = computed(() => Boolean(name.value || mark.sun))
@@ -37,49 +29,12 @@ const shown = computed(() => Boolean(name.value || mark.sun))
 /**
  * Where the star stands and how large its sign is drawn. While the name is typed the star
  * keeps the place of the first letter; once the name is set (mark.place) it glides to its own.
- * In the cabinet the camera comes close: the same drawing, moved and scaled by `k`, so the
- * pose change reads as a flight onto the star.
+ * In the cabinet the camera comes close (cabinet/layout.js): the same drawing, moved and scaled
+ * by `k`, so the pose change reads as a flight onto the star. The star itself keeps a readable size.
  */
 const spot = computed(() => {
-  const { W, H, narrow } = props.geo
-  const key = (mark.place || name.value.slice(0, 1)).toLocaleLowerCase('ru')
-  const h = hash(key)
-  const a = (h & 0xffff) / 0xffff
-  const b = (h >>> 16) / 0xffff
-  let span
-  let x0
-  let x1
-  let y0
-  let y1
-  // On phones the sky is kept at least 780px tall for the home page; the sheet follows the window.
-  const V = narrow ? Math.min(H, window.innerHeight || H) : H
-  if (narrow) {
-    // Phones: the strip of sky above the sheet (LoginView: 34vh), with room for the caption.
-    span = clamp(V * 0.34 - 114, 90, Math.min(W * 0.44, 170))
-    x0 = W * 0.1 + span / 2
-    x1 = W * 0.72 - span / 2
-    y0 = 70 + span / 2
-    y1 = Math.max(y0, V * 0.34 - 40 - span / 2)
-  } else {
-    // Between the orbit's left half and the card, which hugs the right edge.
-    span = clamp(H * 0.4, 220, 330)
-    const cardLeft = W - clamp(W * 0.08, 20, 150) - 392
-    x0 = W * 0.3 + span / 2
-    x1 = Math.max(x0, cardLeft - 40 - span / 2)
-    y0 = 96 + span / 2
-    y1 = Math.max(y0, H * 0.62 - span / 2)
-  }
-  if (props.pose === 'cabinet') {
-    if (narrow) {
-      // As large as the sky above the sheet allows (CabinetView: the sheet starts at 42vh).
-      const k = clamp((V * 0.42 - 86) / span, 0.8, 1.3)
-      return { x: W * 0.5, y: 76 + (span * k) / 2, span, k }
-    }
-    const k = clamp((H * 0.52) / span, 1.15, 1.6)
-    const panelLeft = W - clamp(W * 0.08, 20, 150) - 420
-    return { x: clamp(W * 0.3, (span * k) / 2 + 24, panelLeft - (span * k) / 2 - 40), y: clamp(H * 0.4, 90 + (span * k) / 2, H), span, k }
-  }
-  return { x: x0 + (x1 - x0) * a, y: y0 + (y1 - y0) * b, span, k: 1 }
+  if (props.pose === 'cabinet') return cabinetLayout(props.geo, props.section).star
+  return loginSpot(props.geo, mark.place || name.value.slice(0, 1))
 })
 
 /** The star grows with every letter, up to a bright one. */
@@ -132,31 +87,33 @@ const caption = computed(() => {
       </filter>
     </defs>
 
-    <g class="mark" :style="{ transform: `translate(${spot.x.toFixed(1)}px, ${spot.y.toFixed(1)}px) scale(${spot.k.toFixed(3)})` }">
-      <Transition name="sign">
-        <g v-if="sign" :key="sign.id" class="sign">
-          <g class="sign-art" filter="url(#mark-glow)">
-            <path
-              v-for="stroke in sign.art"
-              :key="stroke.index"
-              :class="`art-${stroke.kind}`"
-              :d="stroke.d"
-              pathLength="1"
-              :style="{ '--i': stroke.index / Math.max(1, sign.art.length - 1) }"
-            />
+    <g class="mark" :style="{ transform: `translate(${spot.x.toFixed(1)}px, ${spot.y.toFixed(1)}px)` }">
+      <g class="mark-zoom" :style="{ transform: `scale(${spot.k.toFixed(3)})` }">
+        <Transition name="sign">
+          <g v-if="sign" :key="sign.id" class="sign">
+            <g class="sign-art" filter="url(#mark-glow)">
+              <path
+                v-for="stroke in sign.art"
+                :key="stroke.index"
+                :class="`art-${stroke.kind}`"
+                :d="stroke.d"
+                pathLength="1"
+                :style="{ '--i': stroke.index / Math.max(1, sign.art.length - 1) }"
+              />
+            </g>
+            <g class="sign-lines">
+              <line v-for="line in sign.lines" :key="line.key" :x1="line.a.x" :y1="line.a.y" :x2="line.b.x" :y2="line.b.y" />
+            </g>
+            <circle v-for="(star, index) in sign.stars" :key="index" class="sign-star" :cx="star.x" :cy="star.y" :r="star.r" />
+            <text v-if="pose !== 'cabinet'" class="sign-caption" x="0" :y="spot.span / 2 + 30" text-anchor="middle">
+              <tspan class="sign-glyph">{{ glyph }}</tspan>
+              <tspan dx="8">{{ caption }}</tspan>
+            </text>
           </g>
-          <g class="sign-lines">
-            <line v-for="line in sign.lines" :key="line.key" :x1="line.a.x" :y1="line.a.y" :x2="line.b.x" :y2="line.b.y" />
-          </g>
-          <circle v-for="(star, index) in sign.stars" :key="index" class="sign-star" :cx="star.x" :cy="star.y" :r="star.r" />
-          <text v-if="pose !== 'cabinet'" class="sign-caption" x="0" :y="spot.span / 2 + 30" text-anchor="middle">
-            <tspan class="sign-glyph">{{ glyph }}</tspan>
-            <tspan dx="8">{{ caption }}</tspan>
-          </text>
-        </g>
-      </Transition>
+        </Transition>
+      </g>
 
-      <g v-if="name" class="star">
+      <g v-if="name" class="star mark-zoom" :style="{ transform: `scale(${(pose === 'cabinet' ? starScale(spot.k) : spot.k).toFixed(3)})` }">
         <circle class="star-halo" :r="radius * 7" fill="url(#mark-halo)" />
         <path class="star-spike" :d="`M0 ${-radius * 6}Q${radius * 0.5} ${-radius * 0.5} ${radius * 6} 0Q${radius * 0.5} ${radius * 0.5} 0 ${radius * 6}Q${-radius * 0.5} ${radius * 0.5} ${-radius * 6} 0Q${-radius * 0.5} ${-radius * 0.5} 0 ${-radius * 6}Z`" />
         <circle class="star-core" :r="radius" />
@@ -179,9 +136,9 @@ const caption = computed(() => {
   animation: mark-in 1s ease 0.6s both;
 }
 
-.mark { transition: transform 1.1s cubic-bezier(0.3, 0.7, 0.2, 1); }
+.mark, .mark-zoom { transition: transform 1.1s cubic-bezier(0.3, 0.7, 0.2, 1); }
 /* The flight between poses: as long as the sky's own (SkyStage FLIGHT_MS) and on the same curve. */
-.name-mark.is-cabinet .mark { transition: transform 1.4s cubic-bezier(0.65, 0, 0.35, 1); }
+.name-mark.is-cabinet .mark, .name-mark.is-cabinet .mark-zoom { transition: transform 1.4s cubic-bezier(0.65, 0, 0.35, 1); }
 
 .star-halo { animation: star-breathe 4s ease-in-out infinite; transform-origin: 0 0; }
 .star-spike { fill: rgba(255, 236, 196, 0.55); animation: star-breathe 4s ease-in-out infinite; transform-origin: 0 0; }
@@ -251,6 +208,6 @@ const caption = computed(() => {
   .name-mark, .star-halo, .star-spike, .star-flash, .star-name, .sign-caption { animation: none; }
   .star-flash { display: none; }
   .sign-art path { animation: none; stroke-dashoffset: 0; }
-  .mark { transition: none; }
+  .mark, .mark-zoom { transition: none; }
 }
 </style>

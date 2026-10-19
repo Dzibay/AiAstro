@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import BrandMark from './BrandMark.vue'
 import { useSession } from '../composables/useSession.js'
@@ -8,6 +8,8 @@ import { fallbackConfig, useSiteConfig } from '../composables/useSiteConfig.js'
 const { webToken } = useSession()
 const { config, load } = useSiteConfig()
 const route = useRoute()
+/** In the cabinet, any of its sections, the way to the cabinet is not needed. */
+const inCabinet = computed(() => route.path.startsWith('/cabinet'))
 
 const links = [
   { id: 'how', label: 'О проекте', glyph: '☉' },
@@ -109,7 +111,7 @@ onUnmounted(() => {
 
       <div class="header-actions">
         <!-- In the cabinet the way to the cabinet is not needed. -->
-        <RouterLink v-if="route.name !== 'cabinet'" class="nav-login" :to="webToken ? '/cabinet' : '/login'">
+        <RouterLink v-if="!inCabinet" class="nav-login" :to="webToken ? '/cabinet' : '/login'">
           <span>{{ webToken ? 'Кабинет' : 'Войти' }}</span>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" /></svg>
         </RouterLink>
@@ -143,7 +145,7 @@ onUnmounted(() => {
             <span>{{ link.label }}</span>
           </RouterLink>
         </nav>
-        <RouterLink v-if="route.name !== 'cabinet'" class="menu-cta" :style="{ '--i': links.length }" :to="webToken ? '/cabinet' : '/login'" @click="menuOpen = false">
+        <RouterLink v-if="!inCabinet" class="menu-cta" :style="{ '--i': links.length }" :to="webToken ? '/cabinet' : '/login'" @click="menuOpen = false">
           {{ webToken ? 'Открыть кабинет' : 'Войти в кабинет' }}
         </RouterLink>
       </div>

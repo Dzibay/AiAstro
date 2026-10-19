@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SiteHeader from '../components/SiteHeader.vue'
+import PlaceInput from '../components/ui/PlaceInput.vue'
 import { webApi } from '../api/web.js'
 import { ApiError, errorText } from '../api/http.js'
 import { writeSession } from '../composables/useSession.js'
@@ -30,7 +31,8 @@ const step = ref(1)
 const email = ref('')
 const password = ref('')
 const name = ref('')
-const birth = reactive({ date: '', time: '', noTime: false, city: '' })
+/** `place` holds the coordinates once a city is picked from the suggestions. */
+const birth = reactive({ date: '', time: '', noTime: false, city: '', place: null })
 const consent = ref(false)
 const showPassword = ref(false)
 const message = ref('')
@@ -153,6 +155,7 @@ function finish(withBirth) {
   const body = { email: email.value.trim(), password: password.value, name: name.value.trim(), consent: true }
   if (withBirth) {
     body.birth = { date: birth.date, time: timeKnown.value ? birth.time : null, place: birth.city.trim() || null }
+    if (birth.place) Object.assign(body.birth, { lat: birth.place.lat, lon: birth.place.lon })
   }
   enter(() => webApi.register(body))
 }
@@ -283,10 +286,10 @@ onUnmounted(() => {
                   <input id="login-time" v-model="birth.time" type="time" :disabled="birth.noTime" />
                 </div>
               </div>
-              <label class="field">
-                <span class="field-label">Город рождения</span>
-                <input v-model="birth.city" type="text" placeholder="Например, Казань" autocomplete="off" />
-              </label>
+              <div class="field">
+                <label class="field-label" for="login-city">Город рождения</label>
+                <PlaceInput id="login-city" v-model="birth.city" v-model:place="birth.place" />
+              </div>
               <label class="check consent">
                 <input v-model="consent" type="checkbox" />
                 <span class="check-box" aria-hidden="true" />

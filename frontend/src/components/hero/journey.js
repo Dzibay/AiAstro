@@ -154,6 +154,13 @@ export const POSES = {
   // Cabinet: the orbit sinks to a low horizon, the Sun rests on it between the star and the panel,
   // and the sky above belongs to the person's star.
   cabinet: { theta: 0.1, pan: 0, frame: [0.5, 1.3, 0.92], narrow: [0.5, 0.98, 0.55] },
+  // The sections: the camera drifts a little across the band for each, and the light changes.
+  // The chart is read under a calm low Sun, the forecast under a high one, the pair by moonlight,
+  // the conversation at dusk. The planet sinks lower, so the middle of the sky is free.
+  'cabinet-chart': { theta: -0.35, pan: 0.08, frame: [0.56, 1.42, 0.92], narrow: [0.5, 1.02, 0.55] },
+  'cabinet-forecast': { theta: 0.42, pan: -0.08, frame: [0.48, 1.4, 0.92], narrow: [0.5, 1.02, 0.55] },
+  'cabinet-pair': { theta: -1.25, pan: 0.16, frame: [0.6, 1.44, 0.92], narrow: [0.5, 1.02, 0.55] },
+  'cabinet-chat': { theta: 0.68, pan: -0.16, frame: [0.44, 1.42, 0.92], narrow: [0.5, 1.02, 0.55] },
 }
 
 export function poseScene(geo, id, userTheta) {

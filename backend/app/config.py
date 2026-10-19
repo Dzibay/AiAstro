@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     admin_password: str = ""
     session_ttl_seconds: int = 1_209_600
 
+    # Подсказки городов: публичный Nominatim разрешает запрос в секунду и просит контакт.
+    geocoder_url: str = "https://nominatim.openstreetmap.org/search"
+    geocoder_contact: str = ""
+    geocoder_interval: float = 1.0
+
+    # Эфемериды JPL DE421 (1900–2050); пусто — backend/data, в образе /app/data.
+    ephemeris_dir: str = ""
+
     @property
     def dsn(self) -> str:
         # make_conninfo экранирует значения: пароль с @, /, : или пробелами не ломает строку.

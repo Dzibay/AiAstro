@@ -67,6 +67,8 @@ const route = useRoute()
 /** 'journey' follows the home page scroll; anything else is a still pose from POSES. */
 const pose = computed(() => route.meta.sky || 'journey')
 const onJourney = computed(() => pose.value === 'journey')
+/** Every cabinet pose shows the person's star; the sections only move it aside. */
+const markPose = computed(() => (pose.value.startsWith('cabinet') ? 'cabinet' : pose.value))
 const goalScene = computed(() => (onJourney.value
   ? sceneAt(geo.value, journey.value, theta.value)
   : poseScene(geo.value, pose.value, theta.value)))
@@ -438,7 +440,7 @@ onUnmounted(() => {
       @hover="hotId = $event"
       @toggle="toggleFigure"
     />
-    <NameMark v-if="pose === 'login' || pose === 'cabinet'" :geo="geo" :pose="pose" />
+    <NameMark v-if="markPose === 'login' || markPose === 'cabinet'" :geo="geo" :pose="markPose" :section="route.meta.section || ''" />
 
     <button
       type="button"

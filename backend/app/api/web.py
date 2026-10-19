@@ -1,11 +1,14 @@
 import datetime as dt
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
 from app.accounts import authenticate, get_user, register, set_birth
 from app.api.deps import as_http, require_web_user
+from app.charts import chart_item, chart_of, forecast_of
 from app.errors import DomainError
+from app.partners import create_partner, delete_partner, fill_invite, invite, list_partners, open_invite, synastry_of
+from app.places import search
 from app.security import make_web_session
 
 router = APIRouter(prefix="/web")
@@ -15,6 +18,8 @@ class BirthIn(BaseModel):
     date: dt.date
     time: dt.time | None = None
     place: str | None = Field(default=None, max_length=200)
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lon: float | None = Field(default=None, ge=-180, le=180)
 
 
 class RegisterIn(BaseModel):
@@ -23,6 +28,18 @@ class RegisterIn(BaseModel):
     name: str = Field(default="", max_length=80)
     consent: bool = False
     birth: BirthIn | None = None
+
+
+class PartnerIn(BaseModel):
+    name: str = Field(max_length=80)
+    # Without the birth data the partner waits for an invitation.
+    birth: BirthIn | None = None
+
+
+class InviteIn(BaseModel):
+    name: str = Field(default="", max_length=80)
+    consent: bool = False
+    birth: BirthIn
 
 
 class LoginIn(BaseModel):
@@ -42,6 +59,8 @@ def register_user(body: RegisterIn) -> dict:
             birth.date if birth else None,
             birth.time if birth else None,
             birth.place if birth else None,
+            birth.lat if birth else None,
+            birth.lon if birth else None,
         )
         token = make_web_session(user["id"])
     except DomainError as exc:
@@ -70,6 +89,115 @@ def me(user_id: int = Depends(require_web_user)) -> dict:
 @router.put("/me/birth")
 def update_birth(body: BirthIn, user_id: int = Depends(require_web_user)) -> dict:
     try:
-        return set_birth(user_id, body.date, body.time, body.place)
+        return set_birth(user_id, body.date, body.time, body.place, body.lat, body.lon)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/me/chart")
+def my_chart(user_id: int = Depends(require_web_user)) -> dict:
+    try:
+        return chart_of(user_id)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/me/chart/items/{item}")
+def my_chart_item(item: str, user_id: int = Depends(require_web_user)) -> dict:
+    """The reading of one planet or angle of the chart: «Венера в Скорпионе, в VIII доме» and its text."""
+    try:
+        return chart_item(user_id, item)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/me/forecast")
+def my_forecast(
+    period: str = Query(default="day", max_length=8),
+    tz: str = Query(default="", max_length=64),
+    user_id: int = Depends(require_web_user),
+) -> dict:
+    """Transits of the day or the week over the natal chart; the full text only with «Небосвод»."""
+    try:
+        return forecast_of(user_id, period, tz)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/me/partners")
+def my_partners(user_id: int = Depends(require_web_user)) -> dict:
+    try:
+        return {"items": list_partners(user_id)}
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.post("/me/partners")
+def add_partner(body: PartnerIn, user_id: int = Depends(require_web_user)) -> dict:
+    birth = body.birth
+    try:
+        return create_partner(
+            user_id,
+            body.name,
+            birth.date if birth else None,
+            birth.time if birth else None,
+            birth.place if birth else None,
+            birth.lat if birth else None,
+            birth.lon if birth else None,
+        )
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.delete("/me/partners/{partner_id}")
+def remove_partner(partner_id: int, user_id: int = Depends(require_web_user)) -> dict:
+    try:
+        delete_partner(user_id, partner_id)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    return {"ok": True}
+
+
+@router.post("/me/partners/{partner_id}/invite")
+def invite_partner(partner_id: int, user_id: int = Depends(require_web_user)) -> dict:
+    """The partner with its invitation token: the page turns it into a link /invite/<token>."""
+    try:
+        return invite(user_id, partner_id)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/me/partners/{partner_id}/synastry")
+def partner_synastry(partner_id: int, user_id: int = Depends(require_web_user)) -> dict:
+    """The tone of the pair and its key aspects; the full reading once the pair is bought."""
+    try:
+        return synastry_of(user_id, partner_id)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/invite/{token}")
+def invitation(token: str) -> dict:
+    """Open: the partner has no account. Only the first names are shown."""
+    try:
+        return open_invite(token)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.post("/invite/{token}")
+def answer_invitation(token: str, body: InviteIn) -> dict:
+    birth = body.birth
+    try:
+        return fill_invite(token, body.name, body.consent, birth.date, birth.time, birth.place, birth.lat, birth.lon)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/places")
+def places(request: Request, q: str = Query(default="", max_length=100)) -> list[dict]:
+    """City suggestions for the birth place: open, since registration asks for it before an account exists."""
+    try:
+        return search(q, request.client.host if request.client else "")
     except DomainError as exc:
         raise as_http(exc) from exc
