@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import { ZODIAC_ART } from './zodiacArt.js'
 
 const props = defineProps({
   figures: { type: Array, required: true },
@@ -38,10 +39,19 @@ const drawn = computed(() => props.figures.map((figure) => {
         y: cluster.reduce((sum, star) => sum + star.y, 0) / cluster.length,
       }
     : null
+  // Art is drawn in the figure's 0..1000 box; map it onto the placed constellation.
+  const map = ([x, y]) => `${(figure.cx + (x / 1000 - 0.5) * figure.span).toFixed(1)} ${(figure.cy + (y / 1000 - 0.5) * figure.span).toFixed(1)}`
+  const art = (ZODIAC_ART[figure.id] || []).map((stroke, index) => ({
+    index,
+    kind: stroke.kind,
+    d: `M${stroke.pts.map(map).join('L')}`,
+  }))
   const closeness = props.near[figure.id] || { sun: 0, moon: 0 }
   return {
     ...figure,
     lines,
+    art,
+    artCount: art.length,
     haze,
     style: {
       '--sun-near': closeness.sun.toFixed(3),
@@ -60,7 +70,7 @@ function onKey(event, id) {
 </script>
 
 <template>
-  <svg class="zodiac-layer" :viewBox="`0 0 ${geo.W} ${geo.H}`" :width="geo.W" :height="geo.H">
+  <svg class="zodiac-layer" :class="{ 'has-open': open }" :viewBox="`0 0 ${geo.W} ${geo.H}`" :width="geo.W" :height="geo.H">
     <defs>
       <radialGradient id="star-halo">
         <stop offset="0" stop-color="#fff4dc" stop-opacity="0.9" />
@@ -77,6 +87,11 @@ function onKey(event, id) {
         <stop offset="0" stop-color="#a9c2ff" stop-opacity="0.28" />
         <stop offset="1" stop-color="#a9c2ff" stop-opacity="0" />
       </radialGradient>
+      <filter id="art-glow" x="-10%" y="-10%" width="120%" height="120%">
+        <feGaussianBlur stdDeviation="2.2" result="b" />
+        <feColorMatrix in="b" type="matrix" values="1 0 0 0 0  0 0.8 0 0 0  0 0 0.45 0 0  0 0 0 0.9 0" result="g" />
+        <feMerge><feMergeNode in="g" /><feMergeNode in="SourceGraphic" /></feMerge>
+      </filter>
       <filter id="line-glow" x="-20%" y="-20%" width="140%" height="140%">
         <feGaussianBlur stdDeviation="1.6" result="b" />
         <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
@@ -103,6 +118,17 @@ function onKey(event, id) {
       <rect class="hit" :x="figure.box.x" :y="figure.box.y" :width="figure.box.w" :height="figure.box.h" :rx="16 * u" />
 
       <circle v-if="figure.haze" class="cluster-haze" :cx="figure.haze.x" :cy="figure.haze.y" :r="22 * u" fill="url(#cluster-haze)" />
+
+      <g class="art" filter="url(#art-glow)">
+        <path
+          v-for="stroke in figure.art"
+          :key="stroke.index"
+          :class="`art-${stroke.kind}`"
+          :d="stroke.d"
+          pathLength="1"
+          :style="{ '--i': stroke.index, '--n': figure.artCount }"
+        />
+      </g>
 
       <g class="lines">
         <line v-for="line in figure.lines" :key="line.index" :x1="line.x1" :y1="line.y1" :x2="line.x2" :y2="line.y2" />
@@ -143,6 +169,8 @@ function onKey(event, id) {
   --lift: max(var(--near), 0);
 }
 .hit { fill: transparent; }
+.figure { transition: opacity 0.5s ease; }
+.zodiac-layer.has-open .figure:not(.is-open) { opacity: 0.3; }
 
 .lines line {
   stroke: color-mix(in srgb, #e3cfa6 calc(100% - var(--moon-near) * 60%), #b8ccf2);
@@ -169,6 +197,30 @@ function onKey(event, id) {
 }
 .figure.is-hot .lines line,
 .figure.is-open .lines line { opacity: 0.15; }
+
+.art path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+  /* Leaving is quick and all at once; drawing in is staggered below. */
+  transition: stroke-dashoffset 0.35s ease, opacity 0.35s ease, fill 0.4s ease;
+}
+.art .art-outline { stroke: #f0cf8e; stroke-width: 1.15; }
+.art .art-detail { stroke: #e6c17e; stroke-width: 0.8; }
+.art .art-hatch { stroke: #d8b274; stroke-width: 0.6; }
+.figure.is-open .art path {
+  stroke-dashoffset: 0;
+  transition:
+    stroke-dashoffset 1.1s cubic-bezier(0.45, 0.1, 0.25, 1) calc(var(--i) / var(--n) * 900ms + 250ms),
+    opacity 0.3s ease calc(var(--i) / var(--n) * 900ms + 250ms),
+    fill 1.2s ease 1.6s;
+}
+.figure.is-open .art-outline { opacity: 0.92; fill: rgba(255, 214, 140, 0.035); }
+.figure.is-open .art-detail { opacity: 0.6; }
+.figure.is-open .art-hatch { opacity: 0.38; }
 
 .star-halo {
   opacity: calc(0.45 + var(--lift) * 0.5);
@@ -217,6 +269,6 @@ function onKey(event, id) {
 
 @media (prefers-reduced-motion: reduce) {
   .star-halo, .star-spike { animation: none; }
-  .lines-lit path { transition: opacity 0.2s ease; }
+  .lines-lit path, .art path, .figure.is-open .art path { transition: opacity 0.2s ease; }
 }
 </style>

@@ -34,6 +34,7 @@ const hoverTarget = { sun: 0, moon: 0 }
 const nearRing = ref(false)
 const hotId = ref('')
 const openId = ref('')
+const emblemHot = ref(false)
 const webgl = ref(true)
 const reduce = ref(false)
 const high = ref(true)
@@ -100,13 +101,15 @@ const openFigure = computed(() => figures.value.find((figure) => figure.id === o
 const cardStyle = computed(() => {
   const figure = openFigure.value
   if (!figure) return null
-  const width = Math.min(300, geo.value.W - 32)
+  const width = Math.min(344, geo.value.W - 32)
   const leftSide = figure.cx < geo.value.W / 2
-  let left = leftSide ? figure.box.x + figure.box.w + 12 : figure.box.x - width - 12
+  // The drawn animal reaches past its stars, so keep clear of ~0.62 of its box.
+  const reach = figure.span * 0.62 + 18
+  let left = leftSide ? figure.cx + reach : figure.cx - reach - width
   if (geo.value.narrow) left = (geo.value.W - width) / 2
   left = clamp(left, 16, geo.value.W - width - 16)
-  const top = clamp(figure.box.y, 84, geo.value.H - 300)
-  return { left: `${left}px`, top: `${top}px`, width: `${width}px` }
+  const top = geo.value.narrow ? 84 : clamp(figure.cy - 190, 84, geo.value.H - 440)
+  return { left: `${left}px`, top: `${top}px`, width: `${width}px`, '--from': leftSide ? '-14px' : '14px' }
 })
 
 const phaseLabel = computed(() => {
@@ -114,6 +117,20 @@ const phaseLabel = computed(() => {
   if (warm.value < 0.28) return 'Луна в силе: ночная атмосфера'
   return 'Равновесие Солнца и Луны'
 })
+
+const emblemStyle = computed(() => {
+  const { planet, u } = geo.value
+  const r = 26 * u
+  return { left: `${planet.cx - r}px`, top: `${planet.top + 124 * u - r}px`, width: `${2 * r}px`, height: `${2 * r}px` }
+})
+
+function scrollNext() {
+  const next = section.value?.nextElementSibling
+  if (!next) return
+  const header = document.querySelector('.header')?.offsetHeight || 0
+  const top = next.getBoundingClientRect().top + window.scrollY - header + 1
+  window.scrollTo({ top, behavior: reduce.value ? 'auto' : 'smooth' })
+}
 
 /** Read by the WebGL canvas once per frame. */
 function canvasState() {
@@ -328,7 +345,7 @@ onUnmounted(() => {
     <div ref="sky" class="cosmos-sky" @pointerdown="onSkyDown" @pointermove="onSkyMove">
       <CosmosCanvas v-if="webgl" :state="canvasState" @unsupported="webgl = false" />
 
-      <OrbitLayer :geo="geo" :sun="theta" :moon="theta + MOON_OFFSET" :active="dragging" />
+      <OrbitLayer :geo="geo" :sun="theta" :moon="theta + MOON_OFFSET" :active="dragging" :emblem-hot="emblemHot" />
       <ConstellationLayer
         :figures="figures"
         :geo="geo"
@@ -362,7 +379,7 @@ onUnmounted(() => {
         @keydown="onBodyKey"
       />
 
-      <div class="hero-copy">
+      <div class="hero-copy" :class="{ 'is-dimmed': openFigure }">
         <p class="kicker">Твоя личная карта</p>
         <div class="ornament" aria-hidden="true">
           <span class="ornament-line" />
@@ -411,22 +428,56 @@ onUnmounted(() => {
         </span>
       </aside>
 
+      <button
+        type="button"
+        class="emblem-btn"
+        :class="{ 'is-hot': emblemHot }"
+        :style="emblemStyle"
+        aria-label="Листайте к следующему разделу"
+        @pointerenter="emblemHot = true"
+        @pointerleave="emblemHot = false"
+        @focus="emblemHot = true"
+        @blur="emblemHot = false"
+        @click="scrollNext"
+      >
+        <span class="emblem-label" aria-hidden="true">
+          Листайте
+          <svg viewBox="0 0 12 16"><path d="M6 2v11M2 9l4 4 4-4" /></svg>
+        </span>
+      </button>
+
       <Transition name="card">
         <div v-if="openFigure && cardStyle" :key="openFigure.id" class="zodiac-card" :style="cardStyle" role="dialog" :aria-label="openFigure.name">
-          <button type="button" class="card-close" aria-label="Закрыть" @click="openId = ''">×</button>
+          <span class="card-sheen" aria-hidden="true" />
+          <button type="button" class="card-close" aria-label="Закрыть" @click="openId = ''">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+          </button>
           <div class="card-head">
-            <span class="card-glyph" aria-hidden="true">{{ openFigure.glyph }}</span>
+            <span class="card-glyph" aria-hidden="true">
+              <span class="card-glyph-orbit" />
+              {{ openFigure.glyph }}
+            </span>
             <div>
+              <p class="card-kicker">Знак зодиака · {{ openFigure.animal }}</p>
               <p class="card-name">{{ openFigure.name }}</p>
               <p class="card-dates">{{ openFigure.dates }}</p>
             </div>
           </div>
+          <ul class="card-traits">
+            <li v-for="trait in openFigure.traits" :key="trait">{{ trait }}</li>
+          </ul>
           <p class="card-text">{{ openFigure.text }}</p>
+          <p class="card-myth">{{ openFigure.myth }}</p>
           <dl class="card-facts">
             <div><dt>Стихия</dt><dd>{{ openFigure.element }}</dd></div>
+            <div><dt>Крест</dt><dd>{{ openFigure.modality }}</dd></div>
             <div><dt>Управитель</dt><dd>{{ openFigure.ruler }}</dd></div>
-            <div><dt>Ярчайшая</dt><dd>{{ openFigure.alpha }}</dd></div>
+            <div><dt>Ярчайшая звезда</dt><dd>{{ openFigure.alpha }}</dd></div>
           </dl>
+          <RouterLink class="card-cta" :to="chartTo">
+            <span>Узнать свою карту</span>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" /></svg>
+          </RouterLink>
         </div>
       </Transition>
     </div>
@@ -681,62 +732,218 @@ onUnmounted(() => {
   color: rgba(214, 208, 198, 0.6);
 }
 
-/* ---------- Zodiac card ---------- */
-.zodiac-card {
+/* ---------- Scroll emblem ---------- */
+.emblem-btn {
   position: absolute;
-  z-index: 6;
-  padding: 18px 20px 16px;
-  border-radius: 16px;
-  color: #efe7d8;
-  background: linear-gradient(160deg, rgba(36, 30, 24, 0.72), rgba(12, 14, 24, 0.78));
-  border: 1px solid rgba(240, 210, 150, 0.28);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 240, 210, 0.08), 0 0 40px rgba(255, 190, 110, 0.08);
-  backdrop-filter: blur(14px) saturate(1.2);
-}
-.card-close {
-  position: absolute;
-  top: 8px;
-  right: 10px;
-  width: 26px;
-  height: 26px;
+  z-index: 4;
+  padding: 0;
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: rgba(239, 231, 216, 0.6);
-  font-size: 20px;
-  line-height: 1;
   cursor: pointer;
+  outline: none;
 }
-.card-close:hover { color: #ffe2a8; background: rgba(255, 255, 255, 0.06); }
-.card-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
-.card-glyph {
+.emblem-btn:focus-visible { box-shadow: 0 0 0 1px rgba(255, 226, 168, 0.7), 0 0 18px rgba(255, 200, 110, 0.4); }
+.emblem-label {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #f1d9a8;
+  text-shadow: 0 0 10px rgba(255, 200, 110, 0.6);
+  opacity: 0;
+  transform: translate(-50%, -4px);
+  transition: opacity 0.35s ease, transform 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
+  pointer-events: none;
+}
+.emblem-label svg { width: 10px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.emblem-btn.is-hot .emblem-label { opacity: 1; transform: translate(-50%, 0); }
+.emblem-btn.is-hot .emblem-label svg { animation: emblem-arrow 1.4s ease-in-out infinite; }
+@keyframes emblem-arrow { 50% { transform: translateY(4px); } }
+
+/* ---------- Zodiac card ---------- */
+.hero-copy { transition: opacity 0.5s ease, filter 0.5s ease; }
+.hero-copy.is-dimmed { opacity: 0.28; filter: blur(1px); }
+
+.zodiac-card {
+  position: absolute;
+  z-index: 6;
+  overflow: hidden;
+  padding: 22px 22px 20px;
+  border-radius: 20px;
+  color: #efe7d8;
+  background:
+    radial-gradient(120% 70% at 0% 0%, rgba(255, 196, 120, 0.13), transparent 60%),
+    radial-gradient(90% 60% at 100% 100%, rgba(120, 150, 230, 0.1), transparent 60%),
+    linear-gradient(160deg, rgba(30, 26, 22, 0.8), rgba(10, 12, 22, 0.86));
+  border: 1px solid rgba(240, 210, 150, 0.26);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 240, 210, 0.1),
+    0 0 60px rgba(255, 190, 110, 0.08);
+  backdrop-filter: blur(16px) saturate(1.25);
+  -webkit-backdrop-filter: blur(16px) saturate(1.25);
+}
+/* A second hairline frame inset, like an engraved plate. */
+.zodiac-card::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 1px solid rgba(240, 210, 150, 0.1);
+  border-radius: 15px;
+  pointer-events: none;
+}
+.card-sheen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 236, 200, 0.1) 50%, transparent 65%);
+  transform: translateX(-100%);
+  animation: card-sheen 1.6s ease 0.35s forwards;
+}
+.card-close {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 12px;
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(240, 210, 150, 0.18);
   border-radius: 50%;
-  border: 1px solid rgba(240, 210, 150, 0.4);
-  font-size: 22px;
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(239, 231, 216, 0.65);
+  cursor: pointer;
+  transition: color 0.25s ease, border-color 0.25s ease, transform 0.35s ease;
+}
+.card-close svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.card-close:hover { color: #ffe2a8; border-color: rgba(255, 226, 168, 0.5); transform: rotate(90deg); }
+
+.card-head { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; padding-right: 28px; }
+.card-glyph {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 1px solid rgba(240, 210, 150, 0.45);
+  background: radial-gradient(circle, rgba(255, 200, 120, 0.18), rgba(255, 200, 120, 0) 70%);
+  box-shadow: 0 0 24px rgba(255, 190, 110, 0.18), inset 0 0 14px rgba(255, 200, 120, 0.12);
+  font-size: 28px;
   color: #ffd998;
-  text-shadow: 0 0 12px rgba(255, 200, 110, 0.8);
+  text-shadow: 0 0 14px rgba(255, 200, 110, 0.85);
   font-family: 'Segoe UI Symbol', 'Noto Sans Symbols', sans-serif;
 }
-.card-name { margin: 0; font-family: var(--serif); font-size: 24px; line-height: 1.1; }
-.card-dates { margin: 2px 0 0; font-size: 12px; letter-spacing: 0.06em; color: rgba(226, 214, 192, 0.65); }
-.card-text { margin: 0 0 14px; font-size: 14px; line-height: 1.5; color: rgba(239, 231, 216, 0.85); }
+.card-glyph-orbit {
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  border: 1px dashed rgba(240, 210, 150, 0.22);
+  animation: glyph-orbit 18s linear infinite;
+}
+.card-glyph-orbit::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: #ffe7b0;
+  box-shadow: 0 0 8px #ffcf7a;
+}
+.card-kicker {
+  margin: 0 0 3px;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(233, 194, 124, 0.75);
+}
+.card-name { margin: 0; font-family: var(--serif); font-size: 30px; line-height: 1; color: #fbf3e4; }
+.card-dates { margin: 5px 0 0; font-size: 12px; letter-spacing: 0.06em; color: rgba(226, 214, 192, 0.62); }
+
+.card-traits { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; padding: 0; list-style: none; }
+.card-traits li {
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(240, 210, 150, 0.24);
+  background: rgba(255, 214, 150, 0.06);
+  font-size: 12px;
+  color: #f1d9a8;
+}
+.card-text { margin: 0 0 12px; font-size: 14px; line-height: 1.55; color: rgba(239, 231, 216, 0.88); }
+.card-myth {
+  margin: 0 0 16px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(233, 194, 124, 0.5);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 15px;
+  line-height: 1.4;
+  color: rgba(234, 220, 196, 0.72);
+}
 .card-facts {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin: 0;
-  padding-top: 12px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px 12px;
+  margin: 0 0 16px;
+  padding-top: 14px;
   border-top: 1px solid rgba(240, 210, 150, 0.16);
 }
 .card-facts dt { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(226, 214, 192, 0.5); }
 .card-facts dd { margin: 2px 0 0; font-size: 13px; color: #f3dcae; }
+.card-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(240, 210, 150, 0.45);
+  background: linear-gradient(180deg, rgba(255, 214, 150, 0.14), rgba(255, 214, 150, 0.04));
+  color: #ffe6b8;
+  font-size: 14px;
+  text-decoration: none;
+  transition: box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+}
+.card-cta svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; transition: transform 0.3s ease; }
+.card-cta:hover {
+  border-color: rgba(255, 226, 168, 0.85);
+  box-shadow: 0 0 26px rgba(255, 196, 110, 0.25);
+  background: linear-gradient(180deg, rgba(255, 214, 150, 0.22), rgba(255, 214, 150, 0.08));
+}
+.card-cta:hover svg { transform: translateX(3px); }
 
-.card-enter-active, .card-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
-.card-enter-from, .card-leave-to { opacity: 0; transform: translateY(8px) scale(0.98); }
+/* Content follows the card in, one row at a time. */
+.zodiac-card > :not(.card-sheen):not(.card-close) { animation: card-row 0.5s cubic-bezier(0.3, 0.7, 0.2, 1) both; }
+.zodiac-card > .card-head { animation-delay: 0.08s; }
+.zodiac-card > .card-traits { animation-delay: 0.14s; }
+.zodiac-card > .card-text { animation-delay: 0.2s; }
+.zodiac-card > .card-myth { animation-delay: 0.26s; }
+.zodiac-card > .card-facts { animation-delay: 0.32s; }
+.zodiac-card > .card-cta { animation-delay: 0.38s; }
+
+.card-enter-active { transition: opacity 0.4s ease, transform 0.5s cubic-bezier(0.3, 0.7, 0.2, 1), filter 0.4s ease; }
+.card-leave-active { transition: opacity 0.25s ease, transform 0.25s ease; }
+.card-enter-from { opacity: 0; transform: translateX(var(--from)) scale(0.97); filter: blur(6px); }
+.card-leave-to { opacity: 0; transform: scale(0.98); }
+
+@keyframes card-row { from { opacity: 0; transform: translateY(6px); } }
+@keyframes card-sheen { to { transform: translateX(100%); } }
+@keyframes glyph-orbit { to { transform: rotate(360deg); } }
 
 .sr-only {
   position: absolute;
@@ -773,5 +980,6 @@ onUnmounted(() => {
 @media (prefers-reduced-motion: reduce) {
   .kicker, .ornament, .hero-copy h1, .sub, .cta, .hint, .note { animation: none; }
   .cta::after, .ornament-star { animation: none; }
+  .card-sheen, .card-glyph-orbit, .zodiac-card > *, .emblem-btn.is-hot .emblem-label svg { animation: none; }
 }
 </style>

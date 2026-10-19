@@ -7,6 +7,7 @@ const props = defineProps({
   sun: { type: Number, required: true },
   moon: { type: Number, required: true },
   active: { type: String, default: '' },
+  emblemHot: { type: Boolean, default: false },
 })
 
 const BEADS = [-1.02, 0, 1.01, 1.19]
@@ -57,6 +58,12 @@ function trail(body, spread) {
   return parts
 }
 
+// Discs match the shader radii (35/33 ref px) plus a hair so the ring tucks behind them.
+const bodies = computed(() => [
+  { key: 'sun', ...onOrbit(orbit.value, props.sun), r: 38 * u.value },
+  { key: 'moon', ...onOrbit(orbit.value, props.moon), r: 35.5 * u.value },
+])
+
 const sunTrail = computed(() => trail(props.sun, 0.42))
 const moonTrail = computed(() => trail(props.moon, 0.32))
 
@@ -83,12 +90,16 @@ function starPath(x, y, size) {
       <mask id="planet-cut" maskUnits="userSpaceOnUse" :x="0" :y="0" :width="geo.W" :height="geo.H">
         <rect :width="geo.W" :height="geo.H" fill="#fff" />
         <circle :cx="planet.cx" :cy="planet.cy" :r="planet.r + 2 * u" fill="#000" filter="url(#soft)" />
+        <circle v-for="body in bodies" :key="body.key" :cx="body.x" :cy="body.y" :r="body.r" fill="#000" filter="url(#soft-body)" />
       </mask>
       <clipPath id="planet-clip">
         <circle :cx="planet.cx" :cy="planet.cy" :r="planet.r" />
       </clipPath>
       <filter id="soft" x="-5%" y="-5%" width="110%" height="110%">
         <feGaussianBlur :stdDeviation="3 * u" />
+      </filter>
+      <filter id="soft-body" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur :stdDeviation="1.6 * u" />
       </filter>
       <filter id="bloom" x="-50%" y="-50%" width="200%" height="200%">
         <feGaussianBlur :stdDeviation="2.4 * u" result="b" />
@@ -147,9 +158,10 @@ function starPath(x, y, size) {
       />
     </g>
 
-    <g class="emblem" filter="url(#bloom)">
+    <g class="emblem" :class="{ 'is-hot': emblemHot }" filter="url(#bloom)">
       <circle class="emblem-pulse" :cx="grid.emblem.x" :cy="grid.emblem.y" :r="grid.emblem.r" />
       <circle class="emblem-ring" :cx="grid.emblem.x" :cy="grid.emblem.y" :r="grid.emblem.r" fill="url(#emblem-fill)" />
+      <circle class="emblem-pulse emblem-pulse-late" :cx="grid.emblem.x" :cy="grid.emblem.y" :r="grid.emblem.r" />
       <path class="emblem-star" :d="starPath(grid.emblem.x, grid.emblem.y, grid.emblem.r * 0.62)" />
       <circle class="emblem-dot" :cx="grid.emblem.x" :cy="grid.emblem.y" :r="1.4 * u" />
     </g>
@@ -194,7 +206,18 @@ function starPath(x, y, size) {
 .meridian-curve { opacity: 0.28; }
 
 .emblem-ring { stroke: #e9c27c; stroke-width: 1.1; }
-.emblem-star { fill: #ffe7b0; }
+.emblem-ring { transition: stroke-width 0.4s ease; }
+.emblem-star {
+  fill: #ffe7b0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.8s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+.emblem.is-hot .emblem-star { transform: rotate(135deg) scale(1.12); }
+.emblem.is-hot .emblem-ring { stroke-width: 1.6; }
+.emblem-pulse-late { opacity: 0; animation-delay: 1.8s; }
+.emblem.is-hot .emblem-pulse { animation-duration: 1.6s; stroke-width: 1.4; }
+.emblem.is-hot .emblem-pulse-late { animation-delay: 0.8s; }
 .emblem-dot { fill: #fff6dc; }
 .emblem-pulse {
   fill: none;
