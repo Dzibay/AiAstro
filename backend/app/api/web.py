@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from app.accounts import authenticate, get_user, register, set_birth
 from app.api.deps import as_http, require_web_user
 from app.charts import chart_item, chart_of, forecast_of
+from app.chat import LENGTH, ask, history
 from app.errors import DomainError
 from app.partners import create_partner, delete_partner, fill_invite, invite, list_partners, open_invite, synastry_of
 from app.places import search
@@ -40,6 +41,11 @@ class InviteIn(BaseModel):
     name: str = Field(default="", max_length=80)
     consent: bool = False
     birth: BirthIn
+
+
+class QuestionIn(BaseModel):
+    # The length is checked again after the spaces are folded: here only the crude bound.
+    text: str = Field(max_length=LENGTH * 2)
 
 
 class LoginIn(BaseModel):
@@ -172,6 +178,24 @@ def partner_synastry(partner_id: int, user_id: int = Depends(require_web_user)) 
     """The tone of the pair and its key aspects; the full reading once the pair is bought."""
     try:
         return synastry_of(user_id, partner_id)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/me/chat")
+def my_chat(user_id: int = Depends(require_web_user)) -> dict:
+    """The conversation with the astrologer, the questions to start with and the trial left."""
+    try:
+        return history(user_id)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.post("/me/chat")
+def ask_astrologer(body: QuestionIn, user_id: int = Depends(require_web_user)) -> dict:
+    """A question and its answer; without «Небосвод» only the trial ones (402 trial_over after them)."""
+    try:
+        return ask(user_id, body.text)
     except DomainError as exc:
         raise as_http(exc) from exc
 

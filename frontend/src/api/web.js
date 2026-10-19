@@ -16,6 +16,8 @@ export const webApi = {
   invitePartner: (id) =>
     request(`/api/web/me/partners/${encodeURIComponent(id)}/invite`, { method: 'POST', audience: 'web', auth: true }),
   synastry: (id) => request(`/api/web/me/partners/${encodeURIComponent(id)}/synastry`, { audience: 'web', auth: true }),
+  chat: () => request('/api/web/me/chat', { audience: 'web', auth: true }),
+  ask: (text) => request('/api/web/me/chat', { method: 'POST', body: { text }, audience: 'web', auth: true }),
   /** The partner's side of an invitation: open, no account. */
   invitation: (token) => request(`/api/web/invite/${encodeURIComponent(token)}`, { audience: 'web' }),
   answerInvitation: (token, body) =>

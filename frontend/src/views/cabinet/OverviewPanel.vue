@@ -185,6 +185,7 @@ const unplaced = computed(() => Boolean(props.user.birth?.place && props.user.bi
 
 @media (max-width: 760px) {
   .quiet, .add-birth { min-height: 44px; }
-  .edit { padding-block: 6px; }
+  /* A finger-sized target without making the rows taller. */
+  .edit { padding-block: 12px; margin-block: -6px; }
 }
 </style>

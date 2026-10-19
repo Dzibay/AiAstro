@@ -83,6 +83,18 @@ CREATE TABLE IF NOT EXISTS purchases (
 
 CREATE UNIQUE INDEX IF NOT EXISTS purchases_partner_key ON purchases (user_id, product, partner_id) WHERE partner_id IS NOT NULL;
 
+-- Разговор с астрологом: вопросы человека (role = 'user') и ответы (role = 'astrologer').
+-- Пробные вопросы без «Небосвода» считаются по этой же таблице.
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS chat_messages_user_idx ON chat_messages (user_id, id);
+
 INSERT INTO app_settings (key, value) VALUES
     ('site_name', 'Астра'),
     ('tagline', 'Натальная карта обычным языком'),

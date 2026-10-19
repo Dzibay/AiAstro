@@ -5,6 +5,7 @@ Every text the site shows about a chart comes through an `Interpreter`. For now 
 provider later replaces this one class; the API, the cache and the pages stay as they are.
 """
 
+import re
 from datetime import date
 
 # Roman numerals for the houses, as astrologers write them.
@@ -230,6 +231,125 @@ def _joined(words: list[str]) -> str:
     return words[0] if len(words) == 1 else f"{', '.join(words[:-1])} и {words[-1]}"
 
 
+# ---- Chat ----
+
+# What a question is about: the stems that give it away, the points of the chart that answer it,
+# and the advice the answer ends with. The first topic whose stem is found wins.
+_TOPICS = (
+    ("love", ("любов", "любим", "отношен", "партнёр", "партнер", "брак", "свидан", "влюб", "семейн"),
+     ("venus", "moon", "mars"),
+     "В любви ваша карта просит не угадывать, а говорить: то, что названо вслух, становится ближе."),
+    ("money", ("деньг", "денег", "доход", "финанс", "заработ", "зарплат", "покупк", "трат"),
+     ("venus", "jupiter", "saturn"),
+     "С деньгами вам помогает то же, что и во всём остальном: ясное «зачем» прежде, чем «сколько»."),
+    ("work", ("работ", "карьер", "призван", "професс", "начальн", "коллег", "бизнес", "должност", "дело", "дела "),
+     ("saturn", "mc", "sun"),
+     "В делах опирайтесь на то, что строится медленно: ваше небо вознаграждает терпение больше, чем рывок."),
+    ("feelings", ("чувств", "настроен", "эмоци", "тревог", "грус", "устал", "спокой", "дом", "семь", "мам"),
+     ("moon", "venus", "neptune"),
+     "Берегите то, что вас успокаивает: в этой карте силы возвращаются через тишину и привычный ритм."),
+    ("talk", ("разговор", "говор", "общен", "слов", "учёб", "учеб", "экзамен", "переговор", "письм"),
+     ("mercury", "moon", "venus"),
+     "Для важного разговора выбирайте час, когда вам самим спокойно: тогда слова находятся сами."),
+    ("energy", ("энерг", " сил", "спорт", "злост", "злюсь", "ссор", "конфликт", "решимост", "смелост"),
+     ("mars", "sun", "saturn"),
+     "Давайте энергии выход раньше, чем она найдёт его сама: движение, честное «нет», законченное дело."),
+    ("luck", ("удач", "везен", " рост", "путешеств", "переезд", "поездк", "мечт", "возможност"),
+     ("jupiter", "sun", "node"),
+     "Удача в вашей карте любит щедрость: делитесь тем, что умеете, и двери откроются сами."),
+    ("change", ("перемен", "свобод", "уйти", "уход", "решени", "выбор", "кризис"),
+     ("uranus", "pluto", "saturn"),
+     "Перемены легче, когда у них есть опора: решите, что остаётся неизменным, и меняйте остальное."),
+    ("path", ("смысл", "предназнач", "путь", "кто я", "судьб", "зачем", "цель", "цели"),
+     ("node", "sun", "mc"),
+     "Ваш путь виден не сразу, а по шагам: замечайте, где вам интересно, — там он и проходит."),
+)
+# A planet named in the question answers it whatever the topic; the node before the Moon,
+# since «лунный узел» holds both.
+_NAMED = (
+    ("node", ("узел", "узл")), ("sun", ("солнц",)), ("moon", ("лун",)), ("mercury", ("меркури",)),
+    ("venus", ("венер",)), ("mars", ("марс",)), ("jupiter", ("юпитер",)), ("saturn", ("сатурн",)),
+    ("uranus", ("уран ", "урана", "урану", "ураном", "уране")), ("neptune", ("нептун",)),
+    ("pluto", ("плутон",)), ("asc", ("асцендент", "восходящ")),
+)
+_WHEN = ("когда", "какой день", "в какой день", "день недели", "дни недели", "в какие дни")
+_GREETING = ("привет", "здравств", "добрый день", "добрый вечер", "доброе утро")
+# The planet that keeps each day of the week, Monday first: the Moon, Mars, Mercury, Jupiter, Venus, Saturn, the Sun.
+_DAY_OF = {"moon": 0, "mars": 1, "mercury": 2, "jupiter": 3, "venus": 4, "saturn": 5, "sun": 6}
+# «его хранит Марс» for a Tuesday, «её хранит Меркурий» for a Wednesday.
+_DAY_PRONOUN = ("его", "его", "её", "его", "её", "её", "его")
+_OPENINGS = (
+    "Посмотрим на ваше небо.",
+    "Карта на это отвечает.",
+    "Вернёмся к вашей карте.",
+)
+# «Его поддерживает трин с вашей Луной».
+_HIM = {"он": "Его", "она": "Её", "оно": "Его"}
+_ASPECT_NAMES = {"sextile": "секстиль", "square": "квадрат", "trine": "трин", "opposition": "оппозиция"}
+_MY = {"он": "мой", "она": "моя", "оно": "моё"}
+
+
+_PUNCTUATION = re.compile(r"[^\w\s]")
+
+
+def _words(text: str) -> str:
+    """The question in lower case, its punctuation turned to spaces: « сатурн о работе »."""
+    return " " + _PUNCTUATION.sub(" ", text.lower().replace("ё", "е")) + " "
+
+
+def _find(chart: dict, point: str) -> dict | None:
+    if point in ("asc", "mc"):
+        return {"id": point, **chart["angles"][point]} if chart.get("angles") else None
+    return next((item for item in chart["points"] if item["id"] == point), None)
+
+
+def _subject(question: str, chart: dict) -> tuple[str | None, list[str], bool]:
+    """The topic of a question, the points that answer it (the named planet first), and whether one was named."""
+    text = _words(question)
+    named = [point for point, stems in _NAMED if any(stem in text for stem in stems)]
+    topic = next((entry for entry in _TOPICS if any(stem in text for stem in entry[1])), None)
+    points = [*named, *(topic[2] if topic else ("sun", "moon", "asc"))]
+    seen = []
+    for point in points:
+        if point not in seen and _find(chart, point):
+            seen.append(point)
+    return (topic[0] if topic else None), seen, bool(named)
+
+
+def _aspect_line(chart: dict, point: str) -> str | None:
+    """The tightest aspect of the point inside the chart, in one sentence."""
+    _, pronoun, _ = POINTS[point]
+    aspect = next((item for item in chart.get("aspects", []) if point in (item["a"], item["b"])
+                   and "node" not in (item["a"], item["b"])), None)
+    if aspect is None:
+        return None
+    other = aspect["b"] if aspect["a"] == point else aspect["a"]
+    with_other = _INSTRUMENTAL[other]
+    if aspect["type"] == "conjunction":
+        return f"{pronoun.capitalize()} в соединении с {with_other}: эти две силы действуют в вас заодно."
+    name = _ASPECT_NAMES[aspect["type"]]
+    if aspect["type"] in ("trine", "sextile"):
+        return f"{_HIM[pronoun]} поддерживает {name} с {with_other}: здесь силы помогают друг другу."
+    return (f"{_HIM[pronoun]} испытывает {name} с {with_other}: отсюда внутреннее напряжение, "
+            "которое становится ростом, если его не прятать.")
+
+
+def chat_suggestions(chart: dict) -> list[str]:
+    """Three or four questions the person might ask first, in their own voice, about their own chart."""
+    suggestions = []
+    saturn = _find(chart, "saturn")
+    if saturn:
+        suggestions.append("Что говорит мой Сатурн о работе?")
+    venus = _find(chart, "venus")
+    if venus:
+        suggestions.append(f"Как моя Венера {SIGNS[venus['sign']][0]} влияет на любовь?")
+    moon = _find(chart, "moon")
+    if moon:
+        suggestions.append(f"Что моя Луна {SIGNS[moon['sign']][0]} говорит о чувствах?")
+    suggestions.append("Какой день недели лучше для важного разговора?")
+    return suggestions
+
+
 class Interpreter:
     """What the site asks of whoever writes the readings. Each method returns plain text."""
 
@@ -248,11 +368,12 @@ class Interpreter:
         raise NotImplementedError
 
     def chat(self, history: list[dict], chart: dict) -> str:
+        """The answer to the last message of `history` ({role: user | astrologer, text}, oldest first)."""
         raise NotImplementedError
 
 
 class StubInterpreter(Interpreter):
-    """Templates until the AI is connected. The chat comes with its section."""
+    """Templates until the AI is connected. The chat answers with facts of the chart, not with wit."""
 
     version = 1
 
@@ -327,6 +448,51 @@ class StubInterpreter(Interpreter):
                 _PAIR_ASPECT[aspect["type"]],
             ]))
         paragraphs.append(_PAIR_CLOSE[tone])
+        return "\n\n".join(paragraphs)
+
+    def chat(self, history: list[dict], chart: dict) -> str:
+        question = _words(history[-1]["text"])
+        topic, points, named = _subject(question, chart)
+        answered = sum(message["role"] == "astrologer" for message in history)
+
+        first = []
+        if any(word in question for word in _GREETING):
+            first.append("Здравствуйте.")
+        first.append(_OPENINGS[answered % len(_OPENINGS)])
+        point = points[0]
+        found = _find(chart, point)
+        name, pronoun, theme = POINTS[point]
+        where, manner = SIGNS[found["sign"]]
+        fact = f"{_OWN[pronoun]} {name} стоит {where}"
+        if found.get("house"):
+            fact += f", в {ROMAN[found['house'] - 1]} доме"
+        first += [f"{fact}.", f"{name} — {theme}; здесь {pronoun} звучит {manner}."]
+        if found.get("house"):
+            first.append(f"Этот дом — {HOUSES[found['house'] - 1]}: туда и направлена эта сила.")
+        paragraphs = [" ".join(first)]
+
+        second = []
+        aspect = _aspect_line(chart, point)
+        if aspect:
+            second.append(aspect)
+        # Without a topic the answer reads the chart's core: the second point adds a line of its own.
+        if topic is None and not named and len(points) > 1:
+            other = _find(chart, points[1])
+            other_name, other_pronoun, other_theme = POINTS[points[1]]
+            second.append(f"{_OWN[other_pronoun]} {other_name} {SIGNS[other['sign']][0]} — {other_theme}.")
+        if any(word in question for word in _WHEN):
+            ruler = next((item for item in points if item in _DAY_OF), "sun")
+            day = _DAY_OF[ruler]
+            second.append(f"Из дней недели вам ближе всего {WEEKDAYS[day]}: "
+                          f"{_DAY_PRONOUN[day]} хранит {POINTS[ruler][0]}, и {_ON_WEEKDAY[day]} эта сила звучит в вас громче.")
+        if topic:
+            second.append(next(entry[3] for entry in _TOPICS if entry[0] == topic))
+        if second:
+            paragraphs.append(" ".join(second))
+
+        if not chart.get("time_known"):
+            paragraphs.append("Время рождения не указано, поэтому домов в ответе нет: "
+                              "уточните его в данных рождения, и разговор станет точнее.")
         return "\n\n".join(paragraphs)
 
 

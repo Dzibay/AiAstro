@@ -12,10 +12,11 @@ import ForecastPanel from '../views/cabinet/ForecastPanel.vue'
 import CheckoutView from '../views/CheckoutView.vue'
 import InviteView from '../views/InviteView.vue'
 import PairPanel from '../views/cabinet/PairPanel.vue'
+import ChatPanel from '../views/cabinet/ChatPanel.vue'
 import { SECTIONS } from '../components/cabinet/layout.js'
 import { readSession } from '../composables/useSession.js'
 
-const PANELS = { chart: ChartPanel, forecast: ForecastPanel, pair: PairPanel }
+const PANELS = { chart: ChartPanel, forecast: ForecastPanel, pair: PairPanel, chat: ChatPanel }
 
 const router = createRouter({
   history: createWebHistory(),

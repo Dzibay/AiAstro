@@ -113,6 +113,9 @@ export function loginSpot(geo, key) {
   return { x: x0 + (x1 - x0) * a, y: y0 + (y1 - y0) * b, span, k: 1 }
 }
 
+/** How far the person's name reaches past the star on phones, where the wheel stands beside it. */
+const NAME_ROOM = 56
+
 const rad = (deg) => (deg * Math.PI) / 180
 
 /** The star ({ x, y, k, span }) and the section points ({ id, x, y, s }) for a section, '' for the overview. */
@@ -173,10 +176,11 @@ export function wheelSpot(geo) {
   const { star, points } = cabinetLayout(geo, 'chart')
   const starHalf = (star.span * star.k) / 2
   if (narrow) {
-    const top = 80
+    const top = 88
     const bottom = skyHeight(geo) * SHEET_TOP - 92
     const r = Math.max(60, Math.min((bottom - top) / 2, W * 0.42))
-    const x = clamp(Math.max(W / 2, star.x + starHalf + r + 6), r + 8, W - r - 8)
+    // Clear of the star and of its name, which is written to the right of it.
+    const x = clamp(Math.max(W / 2, star.x + starHalf + NAME_ROOM + r), r + 8, W - r - 8)
     return { x, y: (top + bottom) / 2, r }
   }
   const right = panelLeft(W) - 36

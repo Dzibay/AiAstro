@@ -13,6 +13,7 @@ import { useSky } from '../composables/useSky.js'
 import { useChart } from '../composables/useChart.js'
 import { useForecast } from '../composables/useForecast.js'
 import { usePartners } from '../composables/usePartners.js'
+import { useChat } from '../composables/useChat.js'
 import { useHead } from '../utils/useHead.js'
 
 /**
@@ -27,6 +28,7 @@ const { mark, markUser, clearMark } = useSky()
 const { chart, load: loadChart, forget: forgetChart } = useChart()
 const { forecasts, forget: forgetForecast } = useForecast()
 const { partners, draft, hot, hotAspect, lit, syntheses, load: loadPartners, forgetSyntheses } = usePartners()
+const { forget: forgetChat } = useChat()
 const user = ref(null)
 const message = ref('')
 
@@ -118,6 +120,7 @@ function onSaved(next) {
   forgetChart()
   forgetForecast()
   forgetSyntheses()
+  forgetChat()
   markUser(next)
   mark.flash += 1
   leaveBirth()
@@ -197,12 +200,45 @@ function onTouchEnd(event) {
   if (next) router.push({ name: next })
 }
 
+/** A field in the lowered sheet raises it: the keyboard would leave too little of it above. */
+const PHONE = '(max-width: 760px)'
+function onFocusIn(event) {
+  if (up.value || !window.matchMedia(PHONE).matches) return
+  if (event.target.matches('input:not([type=checkbox]):not([type=radio]), textarea, select')) raised.value = true
+}
+
+/**
+ * The raised sheet and the keyboard on iPhone: Safari does not shrink the page under the keyboard
+ * (Chrome does, see interactive-widget in index.html), so the sheet is fitted to what stays visible.
+ */
+const keyboard = ref(null)
+function fitKeyboard() {
+  const view = window.visualViewport
+  const hidden = view ? window.innerHeight - view.height : 0
+  keyboard.value = up.value && hidden > 120 && window.matchMedia(PHONE).matches
+    ? { bottom: window.innerHeight - view.offsetTop - view.height, height: view.height - 8 }
+    : null
+}
+watch(up, fitKeyboard)
+onMounted(() => {
+  window.visualViewport?.addEventListener('resize', fitKeyboard)
+  window.visualViewport?.addEventListener('scroll', fitKeyboard)
+})
+onUnmounted(() => {
+  window.visualViewport?.removeEventListener('resize', fitKeyboard)
+  window.visualViewport?.removeEventListener('scroll', fitKeyboard)
+})
+
 // A new section starts with the sheet where the person left it, scrolled to its top.
 watch(() => [route.name, route.params.item], () => {
   nextTick(() => panel.value?.querySelector('.panel-scroll')?.scrollTo({ top: 0 }))
 })
 
-const sheetStyle = computed(() => (dragHeight.value == null ? null : { height: `${dragHeight.value}px`, transition: 'none' }))
+const sheetStyle = computed(() => {
+  if (dragHeight.value != null) return { height: `${dragHeight.value}px`, transition: 'none' }
+  if (keyboard.value) return { bottom: `${keyboard.value.bottom}px`, height: `${keyboard.value.height}px`, transition: 'none' }
+  return null
+})
 </script>
 
 <template>
@@ -220,11 +256,12 @@ const sheetStyle = computed(() => (dragHeight.value == null ? null : { height: `
       <section
         ref="panel"
         class="cabinet-panel"
-        :class="{ 'is-up': up }"
+        :class="{ 'is-up': up, 'is-full': forcedUp }"
         :style="sheetStyle"
         aria-live="polite"
         @touchstart.passive="onTouchStart"
         @touchend="onTouchEnd"
+        @focusin="onFocusIn"
       >
         <span class="card-sheen" aria-hidden="true" />
         <button
@@ -300,6 +337,7 @@ const sheetStyle = computed(() => (dragHeight.value == null ? null : { height: `
   pointer-events: auto;
   animation: card-in 0.9s cubic-bezier(0.3, 0.7, 0.2, 1) 0.9s both;
 }
+.cabinet-panel.is-full { height: calc(100vh - 150px); }
 .cabinet-panel::before {
   content: '';
   position: absolute;
@@ -385,9 +423,9 @@ const sheetStyle = computed(() => (dragHeight.value == null ? null : { height: `
     position: absolute;
     top: 0;
     left: 50%;
-    width: 88px;
-    height: 24px;
-    margin-left: -44px;
+    width: 120px;
+    height: 36px;
+    margin-left: -60px;
     padding: 0;
     border: 0;
     background: none;
@@ -398,8 +436,8 @@ const sheetStyle = computed(() => (dragHeight.value == null ? null : { height: `
     content: '';
     position: absolute;
     top: 10px;
-    left: 26px;
-    right: 26px;
+    left: 42px;
+    right: 42px;
     height: 4px;
     border-radius: 2px;
     background: rgba(240, 210, 150, 0.35);
