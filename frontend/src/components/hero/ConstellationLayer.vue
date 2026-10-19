@@ -11,6 +11,12 @@ const props = defineProps({
   pan: { type: Number, default: 0 },
   hot: { type: String, default: '' },
   open: { type: String, default: '' },
+  /**
+   * What stands in front of the band, in screen px: { sun, moon: { x, y, r }, planet, orbit: { cx, cy, r } }.
+   * The Sun, the Moon and the planet are drawn on the canvas below this layer, so the figures
+   * are cut out where they pass behind them, and break where they cross the orbit.
+   */
+  cut: { type: Object, default: null },
 })
 const emit = defineEmits(['hover', 'toggle'])
 
@@ -61,6 +67,24 @@ function styleOf(key) {
   }
 }
 
+/** A disc of the mask: solid inside `r`, fading out over `feather` px. */
+function disc(x, y, r, feather) {
+  return { cx: x, cy: y, r: r + feather, edge: (r / (r + feather)).toFixed(3) }
+}
+const holes = computed(() => {
+  const cut = props.cut
+  if (!cut) return null
+  const k = props.geo.u
+  return {
+    discs: [
+      { key: 'planet', ...disc(cut.planet.cx, cut.planet.cy, cut.planet.r, 4 * k) },
+      { key: 'sun', ...disc(cut.sun.x, cut.sun.y, cut.sun.r, 12 * k) },
+      { key: 'moon', ...disc(cut.moon.x, cut.moon.y, cut.moon.r, 8 * k) },
+    ],
+    orbit: cut.orbit,
+  }
+})
+
 /** Only the figures on or near the screen are drawn. */
 const shown = computed(() => {
   const set = new Set()
@@ -106,8 +130,21 @@ function onKey(event, id) {
         <feGaussianBlur stdDeviation="1.6" result="b" />
         <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
       </filter>
+      <template v-if="holes">
+        <radialGradient v-for="hole in holes.discs" :id="`cut-${hole.key}`" :key="hole.key">
+          <stop :offset="hole.edge" stop-color="#000" stop-opacity="1" />
+          <stop offset="1" stop-color="#000" stop-opacity="0" />
+        </radialGradient>
+        <mask id="band-cut" maskUnits="userSpaceOnUse" x="0" y="0" :width="geo.W" :height="geo.H">
+          <rect :width="geo.W" :height="geo.H" fill="#fff" />
+          <circle class="cut-ring" :cx="holes.orbit.cx" :cy="holes.orbit.cy" :r="holes.orbit.r" stroke-width="9" stroke-opacity="0.5" />
+          <circle class="cut-ring" :cx="holes.orbit.cx" :cy="holes.orbit.cy" :r="holes.orbit.r" stroke-width="5" />
+          <circle v-for="hole in holes.discs" :key="hole.key" :cx="hole.cx" :cy="hole.cy" :r="hole.r" :fill="`url(#cut-${hole.key})`" />
+        </mask>
+      </template>
     </defs>
 
+    <g :mask="holes ? 'url(#band-cut)' : null">
     <g class="band" :style="{ transform: `translate(${pan.toFixed(1)}px, 0)` }">
     <g
       v-for="figure in drawn"
@@ -164,6 +201,7 @@ function onKey(event, id) {
       </text>
     </g>
     </g>
+    </g>
   </svg>
 </template>
 
@@ -175,6 +213,7 @@ function onKey(event, id) {
   pointer-events: none;
 }
 .band { will-change: transform; }
+.cut-ring { fill: none; stroke: #000; }
 
 .figure {
   pointer-events: auto;

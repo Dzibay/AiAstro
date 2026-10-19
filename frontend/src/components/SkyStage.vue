@@ -139,6 +139,19 @@ const near = computed(() => {
   }))
 })
 
+/** Where the figures pass behind the Sun, the Moon, the planet and the orbit (radii as the shader's). */
+const cut = computed(() => {
+  const k = geo.value.u * frame.value.s
+  const { orbit } = geo.value
+  const centre = framed(frame.value, { x: orbit.cx, y: orbit.cy })
+  return {
+    sun: { ...sun.value, r: 38 * k },
+    moon: { ...moon.value, r: 35.5 * k },
+    planet: planet.value,
+    orbit: { cx: centre.x, cy: centre.y, r: orbit.r * frame.value.s },
+  }
+})
+
 const orbitStyle = computed(() => {
   const { s, tx, ty } = frame.value
   return { transform: `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${s.toFixed(4)})` }
@@ -437,6 +450,7 @@ onUnmounted(() => {
       :pan="scene.pan"
       :hot="hotId"
       :open="openId"
+      :cut="cut"
       @hover="hotId = $event"
       @toggle="toggleFigure"
     />
