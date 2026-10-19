@@ -127,6 +127,74 @@ function hatchRow(from, step, vector, count) {
   return list
 }
 
+/** A closed ellipse, for heads, shells, pans and fish eyes. */
+function ring(cx, cy, rx, ry, degrees = 0, kind = 'outline') {
+  const a = (degrees * Math.PI) / 180
+  const pts = []
+  for (let i = 0; i <= 40; i += 1) {
+    const t = (i / 40) * Math.PI * 2
+    const x = Math.cos(t) * rx
+    const y = Math.sin(t) * ry
+    pts.push([cx + x * Math.cos(a) - y * Math.sin(a), cy + x * Math.sin(a) + y * Math.cos(a)])
+  }
+  return { pts, kind }
+}
+
+/** A head in profile for the human signs: the star sits on the face, the hair falls behind. */
+function head(x, y, r, facing = 1) {
+  const f = facing
+  return [
+    ring(x, y, r * 0.84, r),
+    curve([[x - f * r * 0.2, y - r * 0.98], [x - f * r * 0.9, y - r * 0.6], [x - f * r * 1.1, y + r * 0.1], [x - f * r * 0.9, y + r * 0.9]], 'detail'),
+    curl(x - f * r * 0.55, y - r * 0.35, r * 0.28, 1.2, 0.6),
+    curl(x - f * r * 0.62, y + r * 0.3, r * 0.26, 1.2, 2.4),
+    curve([[x + f * r * 0.3, y - r * 0.14], [x + f * r * 0.46, y - r * 0.2], [x + f * r * 0.56, y - r * 0.12]], 'detail'),
+  ]
+}
+
+/** A pincer: the arm, the fixed finger tapering to a point, and the movable finger beside it. */
+function claw(arm, hand, finger, armWidths = [40, 34, 30]) {
+  return [
+    ...ribbon(arm, armWidths, { open: true, joints: true }),
+    ...ribbon(hand, [armWidths[armWidths.length - 1], 70, 44, 0]),
+    curve(finger),
+  ]
+}
+
+/** A limb with hatched joints, growing out of the body. */
+function limb(points, widths) {
+  return ribbon(points, widths, { open: true, joints: true, jointKind: 'hatch' })
+}
+
+/**
+ * A fish designed facing +x around the origin, `len` long and `tall` high, with its tail at -x.
+ * Returns strokes and the point where the tail ends, for the cord.
+ */
+function fish(len, tall) {
+  const L = len
+  const H = tall
+  return [
+    curve([[-0.34 * L, 0], [-0.18 * L, -0.34 * H], [0.08 * L, -0.5 * H], [0.32 * L, -0.38 * H], [0.5 * L, -0.04 * H], [0.46 * L, 0.12 * H]]),
+    curve([[0.46 * L, 0.12 * H], [0.3 * L, 0.36 * H], [0.06 * L, 0.46 * H], [-0.18 * L, 0.32 * H], [-0.34 * L, 0]]),
+    // forked tail
+    curve([[-0.34 * L, 0], [-0.5 * L, -0.24 * H], [-0.64 * L, -0.46 * H], [-0.58 * L, -0.1 * H], [-0.54 * L, 0], [-0.58 * L, 0.1 * H], [-0.64 * L, 0.46 * H], [-0.5 * L, 0.24 * H], [-0.34 * L, 0]]),
+    curve([[-0.38 * L, -0.02 * H], [-0.58 * L, -0.34 * H]], 'hatch'),
+    curve([[-0.38 * L, 0.02 * H], [-0.58 * L, 0.34 * H]], 'hatch'),
+    // dorsal and belly fins
+    curve([[0.02 * L, -0.49 * H], [-0.08 * L, -0.74 * H], [-0.2 * L, -0.66 * H], [-0.2 * L, -0.33 * H]]),
+    curve([[-0.02 * L, 0.45 * H], [-0.12 * L, 0.62 * H], [-0.2 * L, 0.32 * H]]),
+    // gill, eye, mouth
+    curve([[0.26 * L, -0.38 * H], [0.2 * L, 0], [0.26 * L, 0.34 * H]], 'detail'),
+    ring(0.36 * L, -0.12 * H, 0.04 * L, 0.04 * L, 0, 'detail'),
+    curve([[0.5 * L, 0.02 * H], [0.42 * L, 0.06 * H]], 'detail'),
+    // scales
+    ...[-0.2, -0.06, 0.08].flatMap((sx) => [-0.22, 0, 0.22].map((sy) => curve(
+      [[(sx + 0.05) * L, (sy - 0.1) * H], [sx * L, sy * H], [(sx + 0.05) * L, (sy + 0.1) * H]],
+      'hatch',
+    ))),
+  ]
+}
+
 /** Rotate a whole figure designed in its own frame into the constellation box. */
 function place(strokes, [px, py], degrees) {
   const a = (degrees * Math.PI) / 180
@@ -270,12 +338,6 @@ function scorpio() {
     leg([[708, 356], [636, 418], [578, 426], [548, 418]]),
   ].flat()
 
-  const claw = (arm, hand, finger) => [
-    ...ribbon(arm, [40, 34, 30], { open: true, joints: true }),
-    ...ribbon(hand, [30, 70, 44, 0]),
-    curve(finger),
-  ]
-
   return [
     ...body,
     sting,
@@ -299,9 +361,252 @@ function scorpio() {
   ]
 }
 
+/* ---------- Gemini: the twins side by side, heads on Castor and Pollux, feet at Tejat and Alhena ---------- */
+function gemini() {
+  return [
+    // Castor, one arm raised to θ Gem, the other on his brother's shoulder through ι Gem
+    ...head(139, 91, 50, 1),
+    ...ribbon([[186, 142], [300, 196], [440, 276], [586, 380]], [54, 118, 122, 98]),
+    ...limb([[384, 196], [404, 112], [474, 44], [562, 2]], [40, 32, 26, 20]),
+    ...limb([[300, 230], [232, 292], [180, 346], [150, 360]], [36, 30, 26, 20]),
+    ...limb([[570, 362], [722, 452], [897, 528], [976, 526]], [72, 52, 34, 24]),
+    ...limb([[556, 392], [652, 520], [764, 622], [834, 640]], [66, 48, 32, 24]),
+    // Pollux, a hand hanging to κ Gem, legs through Mekbuda and λ Gem
+    ...head(16, 267, 48, 1),
+    ...ribbon([[50, 316], [120, 400], [200, 490], [268, 560]], [52, 110, 116, 96]),
+    ...limb([[40, 352], [18, 400], [12, 440], [22, 482]], [34, 28, 24, 20]),
+    ...limb([[256, 548], [447, 635], [600, 740], [748, 828], [806, 842]], [72, 54, 40, 30, 24]),
+    ...limb([[228, 580], [262, 700], [288, 825], [384, 900]], [66, 48, 34, 26]),
+    // tunic folds
+    ...hatchRow([300, 180], [44, 30], [-30, 50], 6),
+    ...hatchRow([90, 350], [34, 38], [-40, 34], 5),
+  ]
+}
+
+/* ---------- Cancer: the crab with Praesepe at the heart of its shell, legs to Acubens and Altarf ---------- */
+function cancer() {
+  const leg = (points) => limb(points, [34, 24, 16, 6])
+  return [
+    ring(450, 466, 186, 146),
+    curve([[300, 420], [380, 380], [450, 370], [520, 380], [600, 420]], 'detail'),
+    curve([[310, 540], [380, 570], [450, 578], [520, 570], [590, 540]], 'detail'),
+    curve([[450, 370], [440, 470], [450, 578]], 'hatch'),
+    ...hatchRow([330, 450], [26, 0], [8, 50], 10),
+    // eyes on stalks
+    ...ribbon([[420, 330], [410, 290], [404, 262]], [14, 10, 8], { open: true }),
+    ...ribbon([[480, 330], [490, 290], [496, 262]], [14, 10, 8], { open: true }),
+    curl(404, 256, 9, 1, 0),
+    curl(496, 256, 9, 1, 0),
+    // claws: the left one closes on ι Cnc
+    ...claw(
+      [[372, 340], [320, 250], [334, 168]],
+      [[334, 168], [360, 96], [388, 0]],
+      [[350, 128], [306, 78], [312, 16], [352, -10]],
+      [44, 36, 30],
+    ),
+    ...claw(
+      [[528, 340], [584, 250], [574, 168]],
+      [[574, 168], [556, 96], [530, 4]],
+      [[560, 128], [610, 80], [608, 20], [568, -8]],
+      [44, 36, 30],
+    ),
+    ...leg([[620, 420], [730, 382], [810, 442], [850, 524]]),
+    ...leg([[632, 480], [748, 482], [816, 562], [836, 652]]),
+    ...leg([[612, 540], [706, 594], [762, 702], [764, 802]]),
+    ...leg([[570, 590], [648, 704], [704, 852], [765, 1000]]),
+    ...leg([[280, 420], [170, 382], [90, 442], [50, 524]]),
+    ...leg([[268, 480], [152, 482], [84, 562], [64, 652]]),
+    ...leg([[288, 540], [194, 594], [148, 702], [146, 802]]),
+    ...leg([[330, 590], [278, 704], [244, 780], [235, 863]]),
+  ]
+}
+
+/* ---------- Leo: the lion walking west, the Sickle as its mane, Regulus at the heart, tail at Denebola ---------- */
+function leo() {
+  return [
+    // face to the west: Rasalas on the brow, ε Leo at the eye
+    curve([[930, 236], [976, 238], [1010, 268], [1036, 314], [1042, 352], [1022, 374], [1030, 398], [996, 418], [950, 420]]),
+    curl(992, 318, 12, 1.1, 0.4),
+    curve([[1036, 346], [1012, 352], [1000, 370]], 'detail'),
+    curve([[1022, 376], [990, 392], [962, 390]], 'detail'),
+    // mane through Adhafera, Algieba and η Leo
+    curve([[930, 236], [880, 196], [800, 204], [736, 260], [700, 340], [692, 430], [712, 520], [760, 590], [840, 624], [890, 600], [930, 540], [950, 420]]),
+    curve([[900, 250], [840, 250], [790, 300]], 'detail'),
+    curve([[910, 300], [830, 320], [770, 380]], 'detail'),
+    curve([[920, 360], [840, 400], [760, 460]], 'detail'),
+    curve([[930, 410], [860, 470], [800, 540]], 'detail'),
+    curl(760, 300, 22, 1.3, 0.5),
+    curl(740, 420, 24, 1.3, 2.0),
+    curl(780, 540, 22, 1.3, 1.2),
+    curl(860, 580, 20, 1.3, 2.8),
+    // back through Zosma, haunch, belly
+    curve([[740, 300], [620, 360], [480, 404], [360, 420], [262, 450], [212, 510], [204, 600], [232, 676]]),
+    curve([[800, 610], [740, 708], [640, 736], [500, 742], [390, 724]]),
+    curve([[300, 520], [290, 600], [330, 660]], 'detail'),
+    // legs: Regulus at the top of the near foreleg
+    ...limb([[838, 640], [846, 760], [836, 880], [868, 952]], [104, 66, 46, 40]),
+    ...limb([[770, 680], [746, 800], [722, 890], [744, 952]], [90, 58, 42, 38]),
+    ...limb([[310, 620], [348, 750], [306, 850], [318, 952]], [140, 76, 48, 40]),
+    ...limb([[236, 640], [232, 770], [200, 862], [222, 952]], [96, 60, 42, 38]),
+    // tail curling down to Denebola, ending in a tuft
+    ...ribbon([[214, 500], [140, 520], [80, 560], [30, 604]], [26, 18, 14, 10], { open: true }),
+    curve([[34, 600], [6, 590], [-24, 618], [-14, 650], [16, 650], [30, 628], [34, 600]]),
+    curve([[20, 610], [-4, 630]], 'hatch'),
+    ...hatchRow([440, 470], [50, 0], [-14, 60], 7),
+  ]
+}
+
+/* ---------- Virgo: the winged maiden lying along the ecliptic, wing tip at Vindemiatrix, Spica the wheat ear ---------- */
+function virgo() {
+  return [
+    // head on Zavijava, looking west
+    ...head(960, 462, 44, 1),
+    ...ribbon([[600, 566], [700, 540], [810, 512], [912, 494]], [112, 96, 110, 44], { open: true }),
+    // the gown down to the feet at Syrma and μ Vir, with its folds
+    ...ribbon([[620, 560], [470, 590], [310, 618], [150, 638], [24, 646]], [124, 168, 176, 150, 84], { open: true }),
+    curve([[610, 506], [622, 560], [610, 618]], 'detail'),
+    curve([[600, 570], [420, 604], [230, 634], [60, 650]], 'detail'),
+    curve([[590, 530], [440, 548], [260, 586], [110, 616]], 'hatch'),
+    curve([[590, 610], [430, 650], [250, 672], [110, 668]], 'hatch'),
+    // the arm with the ear of wheat
+    ...limb([[790, 530], [690, 640], [580, 704], [520, 722]], [44, 36, 30, 26]),
+    curve([[620, 688], [520, 724], [430, 764], [330, 800]], 'detail'),
+    ...[0, 1, 2, 3].flatMap((k) => {
+      const x = 470 - k * 34
+      const y = 744 + k * 14
+      return [
+        curve([[x, y], [x - 28, y - 30], [x - 52, y - 30]], 'hatch'),
+        curve([[x, y], [x - 20, y + 24], [x - 46, y + 30]], 'hatch'),
+      ]
+    }),
+    // the wing rising from the shoulders, feathered
+    curve([[780, 490], [716, 390], [640, 300], [560, 236], [450, 196], [380, 190]]),
+    curve([[380, 190], [410, 236], [404, 270], [446, 300], [450, 344], [500, 370], [512, 416], [566, 436], [592, 474], [660, 488]]),
+    curve([[720, 450], [650, 370], [580, 300], [490, 240]], 'detail'),
+    ...[[436, 250], [470, 300], [514, 352], [560, 404], [616, 452]].map(([x, y]) => curve([[x, y], [x + 40, y - 4], [x + 80, y - 20]], 'hatch')),
+  ]
+}
+
+/* ---------- Libra: the balance hanging from Zubeneschamali, beam to Zubenelgenubi, pans below ---------- */
+function libra() {
+  const pan = (hx, hy, cx, rim, w, depth) => [
+    curve([[cx - w, rim], [cx - w * 0.7, rim + depth * 0.7], [cx, rim + depth], [cx + w * 0.7, rim + depth * 0.7], [cx + w, rim]]),
+    ring(cx, rim, w, 18),
+    curve([[hx, hy], [cx - w + 8, rim]], 'detail'),
+    curve([[hx, hy], [cx, rim - 16]], 'detail'),
+    curve([[hx, hy], [cx + w - 8, rim]], 'detail'),
+    ...hatchRow([cx - w * 0.6, rim + 26], [w * 0.24, 0], [w * 0.06, depth * 0.5], 6),
+  ]
+  return [
+    // the hanger ring around Zubeneschamali and the shank
+    ring(565, 22, 30, 30),
+    ...ribbon([[568, 52], [590, 170], [606, 282]], [16, 20, 26]),
+    curve([[606, 280], [612, 236], [606, 200]], 'hatch'),
+    // the beam, tilted, with knobs at both ends
+    ...ribbon([[344, 268], [475, 285], [606, 302], [737, 319], [868, 336]], [14, 22, 36, 22, 14], { joints: true }),
+    ring(344, 268, 18, 18),
+    ring(868, 336, 18, 18),
+    ...pan(344, 286, 344, 880, 128, 108),
+    ...pan(868, 354, 868, 840, 128, 90),
+  ]
+}
+
+/* ---------- Sagittarius: the centaur archer, the Teapot's bow drawn, the arrow on Alnasl ---------- */
+function sagittarius() {
+  return [
+    // the man: head, torso rising from the horse, a cape flying back to Nunki and τ Sgr
+    ...head(436, 86, 50, 1),
+    ...ribbon([[474, 460], [446, 260], [434, 140]], [116, 128, 56], { open: true }),
+    curve([[400, 170], [300, 140], [190, 143], [90, 180], [0, 256]]),
+    curve([[0, 256], [100, 250], [200, 230], [300, 250], [392, 290]]),
+    curve([[380, 200], [260, 190], [130, 220]], 'hatch'),
+    curve([[380, 240], [260, 222], [150, 240]], 'hatch'),
+    // the arms: one holds the bow at Kaus Media, one draws the string
+    ...limb([[480, 194], [600, 280], [700, 350], [756, 400]], [42, 34, 28, 24]),
+    ...limb([[420, 210], [350, 280], [420, 326], [508, 334]], [40, 32, 28, 24]),
+    // the bow from Kaus Borealis to Kaus Australis and its string
+    ...ribbon([[649, 73], [736, 200], [770, 405], [742, 600], [695, 744]], [6, 18, 28, 18, 6], { joints: true }),
+    curve([[649, 73], [508, 334]], 'detail'),
+    curve([[508, 334], [695, 744]], 'detail'),
+    // the arrow, its head on Alnasl
+    curve([[490, 330], [1000, 462]]),
+    curve([[1000, 462], [956, 432], [962, 454], [952, 478], [1000, 462]]),
+    curve([[500, 332], [480, 306], [450, 304]], 'detail'),
+    curve([[500, 332], [474, 344], [446, 340]], 'detail'),
+    // the horse body: back to Ascella at the rump, belly, chest
+    curve([[414, 440], [330, 430], [260, 422], [150, 420], [86, 446], [56, 520], [86, 600], [150, 640]]),
+    curve([[200, 652], [320, 664], [460, 644], [544, 600], [560, 520], [520, 440]]),
+    ...hatchRow([180, 480], [44, 0], [-10, 60], 8),
+    // legs: a foreleg kicking up to η Sgr
+    ...limb([[520, 600], [636, 690], [712, 800], [789, 927]], [80, 52, 36, 28]),
+    ...limb([[460, 630], [480, 760], [440, 860], [430, 952]], [84, 54, 36, 28]),
+    ...limb([[150, 620], [130, 750], [170, 850], [150, 952]], [104, 58, 36, 28]),
+    ...limb([[220, 640], [240, 762], [206, 862], [214, 952]], [88, 54, 36, 28]),
+    // tail
+    ...ribbon([[80, 456], [30, 520], [12, 620], [36, 720]], [26, 40, 30, 4], { open: true }),
+    curve([[50, 500], [30, 600], [36, 690]], 'hatch'),
+  ]
+}
+
+/* ---------- Aquarius: the water bearer, the Water Jar in his hands, the stream down past Skat ---------- */
+function aquarius() {
+  // The stream: two banks and the ripples between them.
+  const stream = [[220, 282], [170, 360], [147, 432], [150, 520], [168, 592], [136, 653], [90, 730], [43, 806], [24, 900], [40, 990]]
+  const wave = (dx, kind) => curve(stream.map(([x, y], i) => [x + dx * (1 + i * 0.1) + (i % 2 ? 9 : -9), y]), kind)
+  return [
+    // the man: Sadalmelik at the near shoulder, Sadalsuud at the back
+    ...head(586, 168, 50, -1),
+    ...ribbon([[584, 226], [606, 330], [630, 450], [656, 620]], [70, 160, 136, 210]),
+    curve([[566, 450], [630, 462], [696, 446]], 'detail'),
+    ...hatchRow([590, 490], [26, 0], [14, 116], 5),
+    ...hatchRow([570, 300], [6, 30], [50, 0], 4),
+    // arms: both hands on the jar, one reaching back to Albali
+    ...limb([[540, 270], [455, 239], [380, 232], [350, 236]], [48, 40, 32, 28]),
+    ...limb([[560, 330], [470, 320], [390, 286]], [42, 34, 28]),
+    ...limb([[660, 300], [800, 400], [920, 480], [1000, 505]], [52, 40, 30, 24]),
+    // legs striding from under the tunic
+    ...limb([[616, 640], [606, 790], [596, 950], [556, 976]], [70, 52, 38, 26]),
+    ...limb([[694, 640], [748, 790], [796, 940], [842, 962]], [70, 52, 38, 26]),
+    // the Water Jar tipped forward, mouth down to the west
+    ring(300, 222, 76, 52, -28),
+    ...ribbon([[246, 254], [228, 268], [214, 284]], [40, 34, 46], { open: true }),
+    curve([[340, 180], [374, 160], [384, 196], [360, 214]], 'detail'),
+    curve([[262, 196], [300, 230], [346, 250]], 'hatch'),
+    // the stream
+    wave(-28, 'outline'),
+    wave(0, 'detail'),
+    wave(28, 'outline'),
+    ...stream.slice(1, -1).map(([x, y], i) => curve([[x - 16, y - 8], [x, y + 4], [x + 16, y - 8]], 'hatch')),
+    curl(0, 394, 14, 1.2, 0.4),
+  ]
+}
+
+/* ---------- Pisces: two fish tied by a cord knotted at Alrescha, the Circlet as the western fish ---------- */
+function pisces() {
+  return [
+    // the western fish around the Circlet, facing west
+    ...place(fish(270, 150), [906, 784], 0),
+    // the northern fish rising to τ Psc
+    ...place(fish(250, 112), [310, 222], -94),
+    // the cord: from one tail through δ and ε Psc to the knot, then up to the other tail
+    ...ribbon([[760, 784], [716, 730], [600, 704], [448, 699], [366, 691], [250, 712], [135, 743], [40, 790], [8, 806]], [10, 10, 10, 10, 10, 10, 10, 10, 10], { open: true }),
+    ...ribbon([[8, 806], [60, 720], [115, 654], [206, 511], [270, 420], [304, 346]], [10, 10, 10, 10, 10, 10], { open: true }),
+    curl(0, 807, 26, 1.6, 0),
+    curl(4, 806, 14, 1.4, 2),
+  ]
+}
+
 export const ZODIAC_ART = {
   aries: aries(),
   taurus: taurus(),
-  capricorn: capricorn(),
+  gemini: gemini(),
+  cancer: cancer(),
+  leo: leo(),
+  virgo: virgo(),
+  libra: libra(),
   scorpio: scorpio(),
+  sagittarius: sagittarius(),
+  capricorn: capricorn(),
+  aquarius: aquarius(),
+  pisces: pisces(),
 }
