@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
+import ReadingText from '../../components/cabinet/ReadingText.vue'
 import { useChat } from '../../composables/useChat.js'
 import { useSky } from '../../composables/useSky.js'
 
@@ -124,9 +125,10 @@ function fit() {
         </ul>
 
         <ol v-if="!empty" class="thread" role="log" aria-label="Разговор">
-          <li v-for="item in chat.items" :key="item.id" class="message" :class="item.role === 'user' ? 'from-you' : 'from-astrologer'">
+          <li v-for="item in chat.items" :key="item.id" class="message" :class="[item.role === 'user' ? 'from-you' : 'from-astrologer', { 'has-reading': item.reading }]">
             <span class="visually-hidden">{{ item.role === 'user' ? 'Вы:' : 'Астролог:' }}</span>
-            <p v-for="(paragraph, index) in paragraphs(item.text)" :key="index">{{ paragraph }}</p>
+            <ReadingText v-if="item.reading" :reading="item.reading" compact />
+            <p v-for="(paragraph, index) in paragraphs(item.text)" v-else :key="index">{{ paragraph }}</p>
           </li>
           <li v-if="chat.sending" class="message waiting" aria-live="polite">
             <svg class="waiting-star" viewBox="0 0 20 20" aria-hidden="true"><path :d="STAR" /></svg>
@@ -245,6 +247,9 @@ function fit() {
   line-height: 1.45;
   color: rgba(242, 232, 214, 0.92);
 }
+/* An answer in parts carries its own gold bar and labels, as the readings do. */
+.from-astrologer.has-reading { padding-left: 0; border-left: 0; font-family: inherit; font-style: normal; }
+.from-astrologer.has-reading + .from-you { margin-top: 10px; }
 .waiting {
   display: flex;
   align-items: center;

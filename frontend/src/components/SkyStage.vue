@@ -444,6 +444,7 @@ onUnmounted(() => {
       :style="orbitStyle"
     />
     <ConstellationLayer
+      :class="{ 'is-away': markPose === 'cabinet' }"
       :figures="figures"
       :geo="geo"
       :near="near"
@@ -538,6 +539,10 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* The zodiac band belongs to the home page: in the cabinet the sky is the person's own. */
+.zodiac-layer { transition: opacity 0.9s ease, visibility 0s; }
+.zodiac-layer.is-away { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.9s ease, visibility 0s 0.9s; }
+
 /* The sky stays put for the whole page; sections scroll over it. */
 .sky-stage {
   position: fixed;

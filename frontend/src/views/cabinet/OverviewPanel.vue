@@ -94,12 +94,10 @@ const unplaced = computed(() => Boolean(props.user.birth?.place && props.user.bi
       чтобы карта посчитала дома.
     </p>
 
-    <p class="guide">
-      Созвездия рядом с вашей звездой — разделы кабинета: карта, прогноз, пара и астролог.
-      Сама звезда открывает данные рождения.
-    </p>
-
-    <button type="button" class="quiet" @click="emit('logout')">Выйти</button>
+    <button type="button" class="logout" @click="emit('logout')">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2.5H3.5v11H6M10 4.5L13.5 8L10 11.5M13.5 8H6.5" /></svg>
+      Выйти
+    </button>
   </div>
 </template>
 
@@ -148,7 +146,6 @@ const unplaced = computed(() => Boolean(props.user.birth?.place && props.user.bi
 .edit:focus-visible, .inline:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 2px; border-radius: 4px; }
 .hint { margin: -6px 0 0; font-size: 12.5px; line-height: 1.5; color: rgba(233, 194, 124, 0.75); }
 
-.guide { margin: 0; font-size: 14px; line-height: 1.5; color: rgba(226, 220, 210, 0.7); }
 
 /* The one thing to do when the sky is still empty: an outlined gold pill, the main CTA is the form's. */
 .add-birth {
@@ -169,22 +166,29 @@ const unplaced = computed(() => Boolean(props.user.birth?.place && props.user.bi
 .add-birth:hover { background: rgba(240, 205, 138, 0.12); border-color: rgba(240, 205, 138, 0.8); box-shadow: 0 6px 26px rgba(230, 170, 80, 0.2); }
 .add-birth:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 3px; }
 
-.quiet {
+/* Leaving is rare but should be found at once: an outlined pill, quieter than the gold ones. */
+.logout {
   justify-self: start;
-  padding: 6px 4px;
-  border: 0;
-  background: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 8px 16px 8px 13px;
+  border: 1px solid rgba(240, 210, 150, 0.26);
+  border-radius: 999px;
+  background: rgba(255, 240, 210, 0.04);
   font: inherit;
   font-size: 13.5px;
-  color: rgba(226, 220, 210, 0.72);
+  color: #efe7d8;
   cursor: pointer;
-  transition: color 0.25s ease;
+  transition: border-color 0.25s ease, color 0.25s ease, background 0.25s ease;
 }
-.quiet:hover { color: #f0cd8a; }
-.quiet:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 2px; border-radius: 6px; }
+.logout svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.logout:hover { border-color: rgba(240, 205, 138, 0.6); background: rgba(255, 240, 210, 0.08); color: #f0cd8a; }
+.logout:focus-visible { outline: 2px solid #f0cd8a; outline-offset: 3px; }
 
 @media (max-width: 760px) {
-  .quiet, .add-birth { min-height: 44px; }
+  .logout, .add-birth { min-height: 44px; }
   /* A finger-sized target without making the rows taller. */
   .edit { padding-block: 12px; margin-block: -6px; }
 }

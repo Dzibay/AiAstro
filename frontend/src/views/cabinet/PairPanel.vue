@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
+import ReadingText from '../../components/cabinet/ReadingText.vue'
 import BirthForm from '../../components/cabinet/BirthForm.vue'
 import { ASPECTS, POINTS } from '../../components/cabinet/astro.js'
 import { errorText } from '../../api/http.js'
@@ -308,7 +309,7 @@ function status_of(item) {
           </div>
           <section v-else class="block" aria-labelledby="reading-title">
             <h3 id="reading-title" class="block-title">Разбор пары</h3>
-            <p v-for="(paragraph, index) in pair.data.paragraphs" :key="index" class="reading">{{ paragraph }}</p>
+            <ReadingText :reading="pair.data.reading" />
           </section>
         </template>
       </template>
@@ -369,7 +370,6 @@ function status_of(item) {
 .hint { margin: 0; font-size: 12.5px; line-height: 1.5; color: rgba(233, 194, 124, 0.75); }
 .hint a { color: #f0cd8a; text-underline-offset: 3px; }
 .birth-line { margin: -8px 0 0; font-size: 13px; color: rgba(226, 220, 210, 0.6); }
-.reading { margin: 0; font-size: 15px; line-height: 1.6; color: #efe7d8; }
 .retry { display: grid; gap: 6px; justify-items: start; }
 
 /* ---- The list ---- */

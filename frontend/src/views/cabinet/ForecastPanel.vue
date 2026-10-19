@@ -2,6 +2,7 @@
 import { computed, onUnmounted, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
+import ReadingText from '../../components/cabinet/ReadingText.vue'
 import { useChart } from '../../composables/useChart.js'
 import { useForecast } from '../../composables/useForecast.js'
 import { ASPECTS, POINTS } from '../../components/cabinet/astro.js'
@@ -103,7 +104,7 @@ function setHot(key) {
       <PanelHead :lead="dateLine">{{ data.title }}</PanelHead>
 
       <div class="text" :class="{ 'is-locked': data.locked }">
-        <p v-for="(paragraph, index) in data.paragraphs" :key="index" class="reading">{{ paragraph }}</p>
+        <ReadingText :reading="data.reading" />
       </div>
       <div v-if="data.locked" class="unlock">
         <p class="unlock-note">Транзиты открыты всем. Полный текст дня и недели — в «Небосводе».</p>
@@ -203,10 +204,9 @@ function setHot(key) {
 .mode-thumb.is-right { transform: translateX(100%); }
 
 .text { display: grid; gap: 12px; }
-.reading { margin: 0; font-size: 15px; line-height: 1.6; color: #efe7d8; }
 /* Without «Небосвод» the first lines dissolve into the haze. */
 .text.is-locked {
-  max-height: 7.2em;
+  max-height: 10.5em;
   overflow: hidden;
   -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent);
   mask-image: linear-gradient(180deg, #000 30%, transparent);

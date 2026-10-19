@@ -4,8 +4,10 @@ Without «Небосвод» a person has TRIAL questions. They are counted here
 a reload or a second tab gives no more; the lock on the person's row lets one question in at a time.
 """
 
+import json
+
 from app.accounts import get_user
-from app.astro.texts import chat_suggestions, interpreter
+from app.astro.texts import as_reading, chat_suggestions, interpreter, reading_text
 from app.charts import chart_of
 from app.db import pool
 from app.errors import DomainError
@@ -18,7 +20,18 @@ CONTEXT = 12
 
 
 def _public(row: dict) -> dict:
-    return {"id": row["id"], "role": row["role"], "text": row["text"], "created_at": row["created_at"].isoformat()}
+    """An answer is kept as a reading in JSON: the page gets it whole, and as plain text besides."""
+    public = {"id": row["id"], "role": row["role"], "text": row["text"], "created_at": row["created_at"].isoformat()}
+    if row["role"] == "astrologer":
+        public["reading"] = as_reading(row["text"])
+        public["text"] = reading_text(public["reading"])
+    return public
+
+
+def _plain(row: dict) -> dict:
+    """The history as the interpreter reads it: text, whoever wrote it."""
+    text = reading_text(as_reading(row["text"])) if row["role"] == "astrologer" else row["text"]
+    return {"role": row["role"], "text": text}
 
 
 def _asked(conn, user_id: int) -> int:
@@ -69,12 +82,12 @@ def ask(user_id: int, text: str) -> dict:
             "SELECT role, text FROM chat_messages WHERE user_id = %s ORDER BY id DESC LIMIT %s",
             (user_id, CONTEXT),
         ).fetchall()
-        answer = interpreter.chat([*reversed(recent), {"role": "user", "text": question}], chart)
+        answer = interpreter.chat([*map(_plain, reversed(recent)), {"role": "user", "text": question}], chart)
         rows = [
             conn.execute(
                 "INSERT INTO chat_messages (user_id, role, text) VALUES (%s, %s, %s) RETURNING id, role, text, created_at",
                 (user_id, role, body),
             ).fetchone()
-            for role, body in (("user", question), ("astrologer", answer))
+            for role, body in (("user", question), ("astrologer", json.dumps(answer, ensure_ascii=False)))
         ]
     return {"items": [_public(row) for row in rows], "left": _left(user["sky"], asked + 1)}

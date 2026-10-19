@@ -256,7 +256,7 @@ const sheetStyle = computed(() => {
       <section
         ref="panel"
         class="cabinet-panel"
-        :class="{ 'is-up': up, 'is-full': forcedUp }"
+        :class="{ 'is-up': up, 'is-full': forcedUp, 'is-wide': section }"
         :style="sheetStyle"
         aria-live="polite"
         @touchstart.passive="onTouchStart"
@@ -322,6 +322,7 @@ const sheetStyle = computed(() => {
   grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
   width: min(420px, 100%);
+  transition: width 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
   max-height: calc(100vh - 150px);
   overflow: hidden;
   padding: 24px 26px;
@@ -337,6 +338,8 @@ const sheetStyle = computed(() => {
   pointer-events: auto;
   animation: card-in 0.9s cubic-bezier(0.3, 0.7, 0.2, 1) 0.9s both;
 }
+/* The sections are read, not glanced at: a wider page (layout.js, panelWidth). */
+.cabinet-panel.is-wide { width: min(clamp(420px, 36vw, 500px), 100%); }
 .cabinet-panel.is-full { height: calc(100vh - 150px); }
 .cabinet-panel::before {
   content: '';
@@ -416,6 +419,7 @@ const sheetStyle = computed(() => {
     transition: height 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
     animation-name: sheet-in;
   }
+  .cabinet-panel.is-wide { width: auto; }
   .cabinet-panel.is-up { height: calc(100vh - 72px); height: calc(100svh - 72px); }
   .cabinet-panel::before { inset: 6px 6px 0; border-bottom: 0; border-radius: 17px 17px 0 0; }
   .sheet-handle {

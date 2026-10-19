@@ -5,6 +5,7 @@ Every text the site shows about a chart comes through an `Interpreter`. For now 
 provider later replaces this one class; the API, the cache and the pages stay as they are.
 """
 
+import json
 import re
 from datetime import date
 
@@ -42,6 +43,22 @@ SIGNS = {
     "capricorn": ("в Козероге", "сдержанно и надёжно, с расчётом на годы"),
     "aquarius": ("в Водолее", "свободно и по-своему, на шаг впереди"),
     "pisces": ("в Рыбах", "тонко, на грани сна и сочувствия"),
+}
+
+# What a sign is like, whatever stands in it: the «как звучит» of a reading.
+_SIGN_VOICE = {
+    "aries": "Овен — знак начала: сила здесь не ждёт разрешения, загорается от одной искры и любит первый шаг больше последнего.",
+    "taurus": "Телец — знак земли и тела: сила здесь копится медленно, держится долго и верит тому, что можно потрогать.",
+    "gemini": "Близнецы — знак воздуха и слова: сила здесь живёт в разговоре, вопросах и переменах, ей тесно в одном русле.",
+    "cancer": "Рак — знак воды и памяти: сила здесь бережёт своих, помнит пережитое и раскрывается там, где безопасно.",
+    "leo": "Лев — знак солнца и сцены: сила здесь хочет быть увиденной, греет щедро и ждёт ответного тепла.",
+    "virgo": "Дева — знак ремесла: сила здесь проявляется в точности, пользе и заботе о том, чего другие не замечают.",
+    "libra": "Весы — знак меры: сила здесь ищет согласия, красоты и честного равновесия между «я» и «мы».",
+    "scorpio": "Скорпион — знак глубины: сила здесь не терпит поверхностного, проходит через перемены и выходит обновлённой.",
+    "sagittarius": "Стрелец — знак дальней дороги: сила здесь ищет смысл, горизонт и веру, ради которой стоит идти.",
+    "capricorn": "Козерог — знак вершины: сила здесь строит медленно и надёжно, ей важны ответственность и плоды на годы.",
+    "aquarius": "Водолей — знак свободы: сила здесь идёт своим путём, дружит с идеями и не боится быть непохожей.",
+    "pisces": "Рыбы — знак океана: сила здесь тонко чувствует, сострадает и легко уходит в мечту и музыку.",
 }
 
 HOUSES = (
@@ -278,11 +295,6 @@ _GREETING = ("привет", "здравств", "добрый день", "до�
 _DAY_OF = {"moon": 0, "mars": 1, "mercury": 2, "jupiter": 3, "venus": 4, "saturn": 5, "sun": 6}
 # «его хранит Марс» for a Tuesday, «её хранит Меркурий» for a Wednesday.
 _DAY_PRONOUN = ("его", "его", "её", "его", "её", "её", "его")
-_OPENINGS = (
-    "Посмотрим на ваше небо.",
-    "Карта на это отвечает.",
-    "Вернёмся к вашей карте.",
-)
 # «Его поддерживает трин с вашей Луной».
 _HIM = {"он": "Его", "она": "Её", "оно": "Его"}
 _ASPECT_NAMES = {"sextile": "секстиль", "square": "квадрат", "trine": "трин", "opposition": "оппозиция"}
@@ -350,24 +362,56 @@ def chat_suggestions(chart: dict) -> list[str]:
     return suggestions
 
 
+# ---- Reading ----
+
+def _part(label: str, text: str) -> dict:
+    return {"label": label, "text": text}
+
+
+def _cap(text: str) -> str:
+    return text[0].upper() + text[1:]
+
+
+def reading_text(reading: dict) -> str:
+    """A reading as plain paragraphs: for whoever reads the conversation as text (an AI provider)."""
+    lines = [reading["essence"]] if reading["essence"] else []
+    lines += [f"{part['label']}. {part['text']}" if part["label"] else part["text"] for part in reading["parts"]]
+    return "\n\n".join(lines)
+
+
+def as_reading(text: str) -> dict:
+    """A stored reading back from its JSON; a plain text of before becomes paragraphs without labels."""
+    try:
+        reading = json.loads(text)
+    except ValueError:
+        reading = None
+    if isinstance(reading, dict) and "parts" in reading:
+        return reading
+    return {"essence": "", "parts": [_part("", paragraph) for paragraph in text.split("\n\n") if paragraph]}
+
+
 class Interpreter:
-    """What the site asks of whoever writes the readings. Each method returns plain text."""
+    """What the site asks of whoever writes the readings.
+
+    Each method returns a reading: {essence, parts: [{label, text}]}. The essence is one line, the
+    heart of it; the parts are short theses under small labels («Тема», «Как звучит», «Совет»).
+    """
 
     # Raised whenever the texts change, so the cached readings are written again.
     version = 0
 
-    def natal_item(self, point: str, sign: str, house: int | None, retro: bool = False) -> str:
+    def natal_item(self, point: str, sign: str, house: int | None, retro: bool = False) -> dict:
         raise NotImplementedError
 
-    def forecast(self, forecast: dict) -> str:
-        """The text of a day or a week (app.astro.forecast.build); paragraphs are split by blank lines."""
+    def forecast(self, forecast: dict) -> dict:
+        """The reading of a day or a week (app.astro.forecast.build); without «Небосвод» only its first part is shown."""
         raise NotImplementedError
 
-    def synastry(self, pair: dict) -> str:
-        """The full reading of a pair (app.astro.synastry.build); paragraphs are split by blank lines."""
+    def synastry(self, pair: dict) -> dict:
+        """The full reading of a pair (app.astro.synastry.build)."""
         raise NotImplementedError
 
-    def chat(self, history: list[dict], chart: dict) -> str:
+    def chat(self, history: list[dict], chart: dict) -> dict:
         """The answer to the last message of `history` ({role: user | astrologer, text}, oldest first)."""
         raise NotImplementedError
 
@@ -375,61 +419,67 @@ class Interpreter:
 class StubInterpreter(Interpreter):
     """Templates until the AI is connected. The chat answers with facts of the chart, not with wit."""
 
-    version = 1
+    version = 2
 
-    def natal_item(self, point: str, sign: str, house: int | None, retro: bool = False) -> str:
+    def natal_item(self, point: str, sign: str, house: int | None, retro: bool = False) -> dict:
         name, pronoun, theme = POINTS[point]
         where, manner = SIGNS[sign]
+        # «ваша любовь и вкус: что вы находите красивым…» gives «Ваша любовь и вкус — глубоко и сосредоточенно».
+        head = re.split(r"[:,]", theme, maxsplit=1)[0]
         parts = [
-            f"{name} — {theme}.",
-            f"{where[0].upper()}{where[1:]} {pronoun} звучит {manner}.",
+            _part("Тема", f"{name} — {theme}."),
+            _part("Как звучит", f"{_cap(where)} {pronoun} звучит {manner}. {_SIGN_VOICE[sign]}"),
         ]
         if house:
-            parts.append(f"{ROMAN[house - 1]} дом — {HOUSES[house - 1]}: здесь эта сила проявляется ярче всего.")
+            parts.append(_part(f"Где проявляется · {ROMAN[house - 1]} дом",
+                               f"{_cap(HOUSES[house - 1])}: здесь эта сила проявляется ярче всего."))
         # The mean node always moves backwards: for it this says nothing.
         if retro and point != "node":
-            parts.append(f"{_RETRO[pronoun]}: эта сила обращена внутрь и раскрывается не сразу, через пересмотр и возвращение.")
-        return " ".join(parts)
+            parts.append(_part("Попятность", f"{_RETRO[pronoun]}: эта сила обращена внутрь и раскрывается не сразу, "
+                                             "через пересмотр и возвращение."))
+        return {"essence": f"{_cap(head)} — {manner}.", "parts": parts}
 
-    def forecast(self, forecast: dict) -> str:
+    def forecast(self, forecast: dict) -> dict:
         period, tone = forecast["period"], forecast["tone"]
-        first = []
+        parts = []
         if period == "day":
             moon = forecast["moon"]
             line = f"Сегодня Луна {SIGNS[moon['sign']][0]}"
             if moon["house"]:
                 line += f" и проходит ваш {ROMAN[moon['house'] - 1]} дом: {HOUSES[moon['house'] - 1]}"
-            first += [f"{line}.", f"День звучит {SIGNS[moon['sign']][1]}.", _OPEN["day"][tone]]
+            parts.append(_part("Луна", f"{line}. День звучит {SIGNS[moon['sign']][1]}."))
         else:
-            first.append(_OPEN["week"][tone])
             names: dict[str, list[str]] = {}
             for day in forecast["days"]:
                 names.setdefault(day["tone"], []).append(WEEKDAYS[date.fromisoformat(day["date"]).weekday()])
+            days = []
             # A list of five days or more says nothing a tone of the week does not.
             if 0 < len(names.get("easy", [])) <= 4:
                 verb = "пройдёт" if len(names["easy"]) == 1 else "пройдут"
-                first.append(f"Легче всего {verb} {_joined(names['easy'])}.")
+                days.append(f"Легче всего {verb} {_joined(names['easy'])}.")
             if 0 < len(names.get("tense", [])) <= 4:
                 verb = "потребует" if len(names["tense"]) == 1 else "потребуют"
-                first.append(f"Больше бережности {verb} {_joined(names['tense'])}.")
-        paragraphs = [" ".join(first)]
+                days.append(f"Больше бережности {verb} {_joined(names['tense'])}.")
+            if days:
+                parts.append(_part("Дни недели", " ".join(days)))
 
         for index, transit in enumerate(forecast["transits"][:2]):
             when = ""
             if transit.get("date"):
                 when = f", точнее всего {_ON_WEEKDAY[date.fromisoformat(transit['date']).weekday()]}"
-            paragraphs.append(" ".join([
-                f"{'Главный транзит' if index == 0 else 'И ещё'}: {transit_phrase(transit)}{when}.",
+            parts.append(_part("Главный транзит" if index == 0 else "И ещё", " ".join([
+                f"{transit_phrase(transit)}{when}.",
                 f"Этот транзит трогает {_TOUCHES[transit['b']]}.",
                 _ADVICE[transit["a"]][0 if transit["lean"] > 0 else 1],
-            ]))
+            ])))
         if not forecast["transits"]:
-            paragraphs.append("Тесных транзитов к вашей карте нет: небо оставляет вам свободу, распорядитесь ею по-своему.")
+            parts.append(_part("Транзиты", "Тесных транзитов к вашей карте нет: небо оставляет вам свободу, "
+                                           "распорядитесь ею по-своему."))
 
-        paragraphs.append(_CLOSE[tone])
-        return "\n\n".join(paragraphs)
+        parts.append(_part("Совет", _CLOSE[tone]))
+        return {"essence": _OPEN[period][tone], "parts": parts}
 
-    def synastry(self, pair: dict) -> str:
+    def synastry(self, pair: dict) -> dict:
         tone = pair["tone"]
         mine, theirs = pair["elements"]["mine"], pair["elements"]["theirs"]
         if mine == theirs:
@@ -440,25 +490,19 @@ class StubInterpreter(Interpreter):
         else:
             elements = (f"У вас преобладает {_ELEMENT_NAMES[mine]}, у партнёра — {_ELEMENT_NAMES[theirs]}: "
                         "разный темп, и в этом ваша возможность научиться друг у друга.")
-        paragraphs = [f"{_PAIR_OPEN[tone]} {elements}"]
+        parts = [_part("Стихии", elements)]
         for aspect in pair["key"][:3]:
-            paragraphs.append(" ".join([
-                f"{pair_aspect_title(aspect)}.",
+            parts.append(_part(pair_aspect_title(aspect), " ".join([
                 f"С вашей стороны здесь {_PAIR_THEMES[aspect['a']]}, со стороны партнёра — {_PAIR_THEMES[aspect['b']]}.",
                 _PAIR_ASPECT[aspect["type"]],
-            ]))
-        paragraphs.append(_PAIR_CLOSE[tone])
-        return "\n\n".join(paragraphs)
+            ])))
+        parts.append(_part("Совет", _PAIR_CLOSE[tone]))
+        return {"essence": _PAIR_OPEN[tone], "parts": parts}
 
-    def chat(self, history: list[dict], chart: dict) -> str:
+    def chat(self, history: list[dict], chart: dict) -> dict:
         question = _words(history[-1]["text"])
         topic, points, named = _subject(question, chart)
-        answered = sum(message["role"] == "astrologer" for message in history)
 
-        first = []
-        if any(word in question for word in _GREETING):
-            first.append("Здравствуйте.")
-        first.append(_OPENINGS[answered % len(_OPENINGS)])
         point = points[0]
         found = _find(chart, point)
         name, pronoun, theme = POINTS[point]
@@ -466,34 +510,36 @@ class StubInterpreter(Interpreter):
         fact = f"{_OWN[pronoun]} {name} стоит {where}"
         if found.get("house"):
             fact += f", в {ROMAN[found['house'] - 1]} доме"
-        first += [f"{fact}.", f"{name} — {theme}; здесь {pronoun} звучит {manner}."]
-        if found.get("house"):
-            first.append(f"Этот дом — {HOUSES[found['house'] - 1]}: туда и направлена эта сила.")
-        paragraphs = [" ".join(first)]
+        essence = f"{fact}."
+        if any(word in question for word in _GREETING):
+            essence = f"Здравствуйте. {essence}"
 
-        second = []
+        meaning = [f"{name} — {theme}; здесь {pronoun} звучит {manner}."]
+        if found.get("house"):
+            meaning.append(f"Этот дом — {HOUSES[found['house'] - 1]}: туда и направлена эта сила.")
+        parts = [_part("Что это значит", " ".join(meaning))]
+
         aspect = _aspect_line(chart, point)
         if aspect:
-            second.append(aspect)
+            parts.append(_part("Аспект", aspect))
         # Without a topic the answer reads the chart's core: the second point adds a line of its own.
         if topic is None and not named and len(points) > 1:
             other = _find(chart, points[1])
             other_name, other_pronoun, other_theme = POINTS[points[1]]
-            second.append(f"{_OWN[other_pronoun]} {other_name} {SIGNS[other['sign']][0]} — {other_theme}.")
+            parts.append(_part("И ещё", f"{_OWN[other_pronoun]} {other_name} {SIGNS[other['sign']][0]} — {other_theme}."))
         if any(word in question for word in _WHEN):
             ruler = next((item for item in points if item in _DAY_OF), "sun")
             day = _DAY_OF[ruler]
-            second.append(f"Из дней недели вам ближе всего {WEEKDAYS[day]}: "
-                          f"{_DAY_PRONOUN[day]} хранит {POINTS[ruler][0]}, и {_ON_WEEKDAY[day]} эта сила звучит в вас громче.")
+            parts.append(_part("Когда", f"Из дней недели вам ближе всего {WEEKDAYS[day]}: "
+                                        f"{_DAY_PRONOUN[day]} хранит {POINTS[ruler][0]}, и {_ON_WEEKDAY[day]} "
+                                        "эта сила звучит в вас громче."))
         if topic:
-            second.append(next(entry[3] for entry in _TOPICS if entry[0] == topic))
-        if second:
-            paragraphs.append(" ".join(second))
+            parts.append(_part("Совет", next(entry[3] for entry in _TOPICS if entry[0] == topic)))
 
         if not chart.get("time_known"):
-            paragraphs.append("Время рождения не указано, поэтому домов в ответе нет: "
-                              "уточните его в данных рождения, и разговор станет точнее.")
-        return "\n\n".join(paragraphs)
+            parts.append(_part("Время рождения", "Оно не указано, поэтому домов в ответе нет: "
+                                                 "уточните его в данных рождения, и разговор станет точнее."))
+        return {"essence": essence, "parts": parts}
 
 
 interpreter: Interpreter = StubInterpreter()

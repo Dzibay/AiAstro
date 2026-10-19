@@ -64,12 +64,12 @@ def chart_item(user_id: int, item: str) -> dict:
         raise DomainError("missing", 404)
     house = found.get("house")
     retro = bool(found.get("retro"))
-    text = cached(
+    reading = cached(
         "natal_item",
         [item, found["sign"], house, retro],
         lambda: interpreter.natal_item(item, found["sign"], house, retro),
     )
-    return {"id": item, "title": item_title(item, found["sign"], house), "text": text}
+    return {"id": item, "title": item_title(item, found["sign"], house), "reading": reading}
 
 
 def _zone(name: str | None) -> str | None:
@@ -86,7 +86,7 @@ def forecast_of(user_id: int, period: str, tz: str | None = None) -> dict:
     """The day or the week from today, where the person is now (the browser's zone, else the birth one).
 
     The transits are free: they are a calculation. The text is «Небосвод»: without it only its
-    first paragraph leaves the server, and the page fades it out.
+    essence and first part leave the server, and the page fades them out.
     """
     if period not in forecast.PERIODS:
         raise DomainError("period", 422)
@@ -100,11 +100,10 @@ def forecast_of(user_id: int, period: str, tz: str | None = None) -> dict:
         [[t["a"], t["b"], t["type"], t["lean"] > 0, t.get("date")] for t in data["transits"][:2]],
         [day["tone"] for day in data["days"] or []],
     ]
-    text = cached("forecast", inputs, lambda: interpreter.forecast(data))
-    paragraphs = text.split("\n\n")
+    reading = cached("forecast", inputs, lambda: interpreter.forecast(data))
     return {
         **data,
         "title": forecast_title(data),
-        "paragraphs": paragraphs if user["sky"] else paragraphs[:1],
+        "reading": reading if user["sky"] else {**reading, "parts": reading["parts"][:1]},
         "locked": not user["sky"],
     }

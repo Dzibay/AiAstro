@@ -52,9 +52,12 @@ export const SECTION_BY_ID = Object.fromEntries(SECTIONS.map((section) => [secti
 export const ROUTE_ORDER = ['cabinet', ...SECTIONS.map((section) => section.route)]
 
 /** The panel hugs the right edge (CabinetView): its width and its gap to the edge. */
-const PANEL_WIDTH = 420
-export function panelLeft(W) {
-  return W - clamp(W * 0.08, 20, 150) - PANEL_WIDTH
+/** The panel's width (CabinetView): the overview is short, the sections are read, so they are wider. */
+export function panelWidth(W, section) {
+  return section ? clamp(W * 0.36, 420, 500) : 420
+}
+export function panelLeft(W, section = '') {
+  return W - clamp(W * 0.08, 20, 150) - panelWidth(W, section)
 }
 
 /** On phones the sky is kept at least 780px tall for the home page; the sheet follows the window. */
@@ -183,18 +186,23 @@ export function wheelSpot(geo) {
     const x = clamp(Math.max(W / 2, star.x + starHalf + NAME_ROOM + r), r + 8, W - r - 8)
     return { x, y: (top + bottom) / 2, r }
   }
-  const right = panelLeft(W) - 36
+  const right = panelLeft(W, 'chart') - 36
   const top = 100
   const bottom = H - 36
-  const place = (r) => ({ x: right - r, y: clamp(H * 0.54, top + r, bottom - r), r })
-  let r = Math.min((bottom - top) / 2, (right - star.x - 40) / 2)
-  for (; r > 120; r -= 4) {
-    const spot = place(r)
-    const clear = points.every((point) => Math.hypot(point.x - spot.x, point.y - spot.y) > r + 46)
-      && Math.hypot(star.x - spot.x, star.y - spot.y) > r + starHalf + 12
-    if (clear) return spot
+  // The largest wheel that keeps clear of the star and of the four sections with their captions:
+  // first as far right as it goes, then sliding left and down along the free sky.
+  const clear = (spot) => points.every((point) => Math.hypot(point.x - spot.x, point.y - spot.y) > spot.r + 66)
+    && Math.hypot(star.x - spot.x, star.y - spot.y) > spot.r + starHalf + 12
+  const first = Math.min((bottom - top) / 2, (right - star.x - 40) / 2)
+  for (let r = first; r >= 96; r -= 4) {
+    for (let y = clamp(H * 0.54, top + r, bottom - r); y <= bottom - r; y += 12) {
+      for (let x = right - r; x >= star.x + r; x -= 12) {
+        const spot = { x, y, r }
+        if (clear(spot)) return spot
+      }
+    }
   }
-  return place(r)
+  return { x: right - 96, y: bottom - 96, r: 96 }
 }
 
 const mix = (a, b, t) => a + (b - a) * t

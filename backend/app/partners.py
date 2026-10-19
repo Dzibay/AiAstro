@@ -226,10 +226,10 @@ def synastry_of(user_id: int, partner_id: int) -> dict:
     mine = chart_of(user_id)
     pair = synastry.build(mine, chart_for(birth))
     bought = partner_id in _bought(user_id)
-    paragraphs: list[str] = []
+    reading = None
     if bought:
         inputs = [pair["tone"], pair["elements"], [[a["a"], a["b"], a["type"]] for a in pair["key"][:3]]]
-        paragraphs = cached("synastry", inputs, lambda: interpreter.synastry(pair)).split("\n\n")
+        reading = cached("synastry", inputs, lambda: interpreter.synastry(pair))
     return {
         "partner": _public(row, {partner_id} if bought else set()),
         "tone": pair["tone"],
@@ -238,7 +238,7 @@ def synastry_of(user_id: int, partner_id: int) -> dict:
             {key: aspect[key] for key in ("a", "b", "type", "orb")} | {"title": pair_aspect_title(aspect)}
             for aspect in pair["key"]
         ],
-        "paragraphs": paragraphs,
+        "reading": reading,
         "locked": not bought,
     }
 

@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
+import ReadingText from '../../components/cabinet/ReadingText.vue'
 import { useChart } from '../../composables/useChart.js'
 import { errorText } from '../../api/http.js'
 import { formatDate } from '../../utils/format.js'
@@ -137,7 +138,7 @@ function setHot(id) {
         </PanelHead>
 
         <p v-if="textError" class="error">{{ textError }}</p>
-        <p v-else-if="text && text.id === item" class="reading">{{ text.text }}</p>
+        <ReadingText v-else-if="text && text.id === item" :reading="text.reading" />
         <p v-else class="loading">Читаем ваше небо…</p>
 
         <p v-if="current.approx" class="note">
@@ -282,7 +283,6 @@ function setHot(id) {
   font-size: 0.8em;
   color: #f0cd8a;
 }
-.reading { margin: 0; font-size: 15px; line-height: 1.6; color: #efe7d8; }
 
 .back {
   justify-self: start;
