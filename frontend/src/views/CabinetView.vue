@@ -194,6 +194,7 @@ function logout() {
   .cabinet { align-items: flex-end; justify-content: center; padding: 42vh 12px 16px; }
   .cabinet-card { padding: 20px 18px; }
   .card-head h1 { font-size: 28px; }
+  .quiet { min-height: 40px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

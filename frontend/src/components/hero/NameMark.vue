@@ -51,13 +51,15 @@ const spot = computed(() => {
   let x1
   let y0
   let y1
+  // On phones the sky is kept at least 780px tall for the home page; the sheet follows the window.
+  const V = narrow ? Math.min(H, window.innerHeight || H) : H
   if (narrow) {
-    // Phones: the strip of sky above the sheet.
-    span = Math.min(W * 0.44, 170)
+    // Phones: the strip of sky above the sheet (LoginView: 34vh), with room for the caption.
+    span = clamp(V * 0.34 - 114, 90, Math.min(W * 0.44, 170))
     x0 = W * 0.1 + span / 2
     x1 = W * 0.72 - span / 2
     y0 = 70 + span / 2
-    y1 = Math.max(y0, H * 0.34 - 40 - span / 2)
+    y1 = Math.max(y0, V * 0.34 - 40 - span / 2)
   } else {
     // Between the orbit's left half and the card, which hugs the right edge.
     span = clamp(H * 0.4, 220, 330)
@@ -69,7 +71,8 @@ const spot = computed(() => {
   }
   if (props.pose === 'cabinet') {
     if (narrow) {
-      const k = 1.3
+      // As large as the sky above the sheet allows (CabinetView: the sheet starts at 42vh).
+      const k = clamp((V * 0.42 - 86) / span, 0.8, 1.3)
       return { x: W * 0.5, y: 76 + (span * k) / 2, span, k }
     }
     const k = clamp((H * 0.52) / span, 1.15, 1.6)

@@ -149,7 +149,8 @@ export function framed(frame, point) {
  */
 export const POSES = {
   // Login: the planet rises from the lower left, the orbit crosses the middle, the right is open sky.
-  login: { theta: 0.12, pan: 0, frame: [0.3, 0.98, 0.8], narrow: [0.5, 0.36, 0.5] },
+  // On phones the Sun steps aside to the right, so the strip above the sheet stays for the name star.
+  login: { theta: 0.12, pan: 0, frame: [0.3, 0.98, 0.8], narrow: [0.5, 0.36, 0.5], narrowTheta: 1.0 },
   // Cabinet: the orbit sinks to a low horizon, the Sun rests on it between the star and the panel,
   // and the sky above belongs to the person's star.
   cabinet: { theta: 0.1, pan: 0, frame: [0.5, 1.3, 0.92], narrow: [0.5, 0.98, 0.55] },
@@ -162,7 +163,7 @@ export function poseScene(geo, id, userTheta) {
   return {
     pan: geo.W * pose.pan,
     frame: { s, tx: fx * geo.W - geo.orbit.cx * s, ty: fy * geo.H - geo.orbit.cy * s },
-    theta: pose.theta ?? userTheta,
+    theta: (geo.narrow && pose.narrowTheta != null ? pose.narrowTheta : pose.theta) ?? userTheta,
     hero: 0,
   }
 }

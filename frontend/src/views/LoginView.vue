@@ -441,7 +441,7 @@ onUnmounted(() => {
 .reveal > * { min-height: 0; overflow: hidden; }
 .reveal.is-open { grid-template-rows: 1fr; margin-bottom: 0; opacity: 1; }
 
-.form-row { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; }
+.form-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 12px; }
 .field { display: grid; gap: 7px; min-width: 0; }
 .field-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .field-label { line-height: 16px; font-size: 10.5px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(226, 214, 192, 0.66); }
@@ -621,6 +621,17 @@ onUnmounted(() => {
   .login-card { padding: 18px 18px 20px; }
   .card-head h1 { font-size: 28px; }
   .form-row { gap: 10px; }
+  /* 16px keeps iOS from zooming into a field on focus; the rest are thumb-sized targets. */
+  .field input { font-size: 16px; }
+  .mode-toggle button { min-height: 40px; }
+  .eye { width: 40px; height: 40px; right: 3px; }
+  .quiet { min-height: 40px; }
+  .check { padding-block: 8px; margin-block: -8px; }
+  .field-head .check { gap: 7px; white-space: nowrap; }
+  /* Native date fields are wide; on a 320px screen both halves get equal room. */
+  .form-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .field-head { gap: 6px; }
+  .field-head .field-label { letter-spacing: 0.18em; }
 }
 
 @media (prefers-reduced-motion: reduce) {
