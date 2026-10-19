@@ -1,533 +1,777 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onBeforeMount, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import CosmosCanvas from './hero/CosmosCanvas.vue'
+import OrbitLayer from './hero/OrbitLayer.vue'
+import ConstellationLayer from './hero/ConstellationLayer.vue'
+import { useSession } from '../composables/useSession.js'
+import {
+  MOON_OFFSET,
+  SUN_HOME,
+  SUN_MAX,
+  SUN_MIN,
+  angleAt,
+  clamp,
+  layout,
+  onOrbit,
+  placeZodiac,
+  signedAngle,
+  warmthOf,
+} from './hero/sky.js'
 
-defineProps({
-  name: { type: String, required: true },
-  tagline: { type: String, required: true },
-})
+const STORE_KEY = 'astra-sun'
 
-const DARK = {
-  sky: '#070707',
-  line: '#f4ecd9',
-  ink: '#f4ecd9',
-  muted: '#cfc3aa',
-  planet: '#101010',
-}
-const LIGHT = {
-  sky: '#f7f2e6',
-  line: '#8d6724',
-  ink: '#2a2316',
-  muted: '#6a5e49',
-  planet: '#e6d5b4',
-}
-
-const figures = [
-  {
-    stars: [[0.055, 0.2], [0.105, 0.17], [0.155, 0.205], [0.1, 0.245], [0.2, 0.175], [0.255, 0.145], [0.305, 0.11]],
-    edges: [[0, 1], [1, 2], [2, 3], [3, 0], [2, 4], [4, 5], [5, 6]],
-  },
-  {
-    stars: [[0.68, 0.09], [0.745, 0.15], [0.815, 0.095], [0.885, 0.155], [0.95, 0.1]],
-    edges: [[0, 1], [1, 2], [2, 3], [3, 4]],
-  },
-  {
-    stars: [[0.04, 0.4], [0.09, 0.45], [0.15, 0.42], [0.21, 0.47], [0.09, 0.36], [0.1, 0.52]],
-    edges: [[0, 1], [1, 2], [2, 3], [4, 1], [1, 5]],
-  },
-  {
-    stars: [[0.76, 0.32], [0.9, 0.3], [0.78, 0.38], [0.84, 0.375], [0.9, 0.37], [0.77, 0.46], [0.91, 0.45]],
-    edges: [[0, 2], [1, 4], [2, 3], [3, 4], [2, 5], [4, 6]],
-  },
-  {
-    stars: [[0.34, 0.08], [0.39, 0.12], [0.36, 0.16], [0.42, 0.055]],
-    edges: [[0, 1], [1, 2], [0, 2], [1, 3]],
-  },
-]
-
-const craters = [
-  { x: -0.22, y: -0.8, r: 0.028 },
-  { x: 0.2, y: -0.86, r: 0.02 },
-  { x: 0.04, y: -0.7, r: 0.036 },
-  { x: -0.42, y: -0.74, r: 0.016 },
-]
-
-const field = makeField()
-const stipple = makeStipple()
+const { webToken } = useSession()
+const chartTo = computed(() => (webToken.value ? '/cabinet' : '/login'))
 
 const section = ref(null)
 const sky = ref(null)
-const width = ref(0)
-const height = ref(0)
-const angle = ref(0)
-const sink = ref(0)
-const dragging = ref(false)
+const size = ref({ w: 1280, h: 720 })
+const theta = ref(SUN_HOME)
+const dragging = ref('')
+const hover = ref({ sun: 0, moon: 0 })
+const hoverTarget = { sun: 0, moon: 0 }
+const nearRing = ref(false)
+const hotId = ref('')
+const openId = ref('')
+const webgl = ref(true)
+const reduce = ref(false)
+const high = ref(true)
 
-let reduceMotion = false
-let resizeObserver
-let visibilityObserver
+let raf = 0
+let observer
+let target = SUN_HOME
+let velocity = 0
+let grabOffset = 0
+let lastPointer = { angle: 0, time: 0 }
+let intro = 0
+let introFrom = SUN_HOME
+let introStart = 0
+let releaseListeners = null
 
-const EVE = {
-  sky: '#2a231c',
-  line: '#e4d2ab',
-  ink: '#f3ead8',
-  muted: '#d9cbb3',
-  planet: '#3a3228',
+const geo = computed(() => layout(size.value.w, size.value.h))
+const sun = computed(() => onOrbit(geo.value.orbit, theta.value))
+const moon = computed(() => onOrbit(geo.value.orbit, theta.value + MOON_OFFSET))
+const warm = computed(() => warmthOf(theta.value))
+const figures = computed(() => placeZodiac(geo.value))
+
+function altitude(point) {
+  const { planet, u } = geo.value
+  return (Math.hypot(point.x - planet.cx, point.y - planet.cy) - planet.r) / u
 }
 
-const light = computed(() => (Math.cos(angle.value) + 1) / 2)
-const degrees = computed(() => {
-  const turn = angle.value < 0 ? angle.value + Math.PI * 2 : angle.value
-  return Math.round((turn * 180) / Math.PI) % 360
-})
+const sunUp = computed(() => altitude(sun.value) > -20)
+const moonUp = computed(() => altitude(moon.value) > -20)
 
-const theme = computed(() => ({
-  '--sky': across('sky'),
-  '--hero-line': across('line'),
-  '--hero-ink': across('ink'),
-  '--hero-muted': across('muted'),
-  '--planet': across('planet'),
-}))
-
-const metrics = computed(() => {
-  const w = width.value
-  const h = height.value
-  const top = Math.max(92, h * 0.11)
-  const orbitR = Math.max(240, h * 0.52)
-  const cy = top + orbitR + sink.value
-  const visible = Math.min(Math.max(h * 0.2, 120), 200)
-  const planetR = Math.max(orbitR * 0.92, w * 0.58)
-  return {
-    w,
-    h,
-    cx: w / 2,
-    cy,
-    orbitR,
-    planetR,
-    planetCy: h - visible + planetR + sink.value,
-    unit: Math.min(Math.max(h / 820, 0.82), 1.25),
-  }
-})
-
-const sun = computed(() => place(0))
-const moon = computed(() => place(Math.PI))
-const moonAngle = computed(() => {
-  const dx = sun.value.x - moon.value.x
-  const dy = sun.value.y - moon.value.y
-  return (Math.atan2(dy, dx) * 180) / Math.PI
-})
-
-const ticks = computed(() => {
-  const { cx, cy, orbitR } = metrics.value
-  const marks = []
-  for (let index = 0; index < 36; index += 1) {
-    const turn = (index / 36) * Math.PI * 2
-    const major = index % 3 === 0
-    const inner = orbitR + 2
-    const outer = orbitR + (major ? 11 : 6)
-    marks.push({
-      major,
-      x1: cx + Math.sin(turn) * inner,
-      y1: cy - Math.cos(turn) * inner,
-      x2: cx + Math.sin(turn) * outer,
-      y2: cy - Math.cos(turn) * outer,
-    })
-  }
-  return marks
-})
-
-const placedFigures = computed(() =>
-  figures.map((figure) => ({
-    stars: figure.stars.map(([x, y]) => [x * width.value, y * height.value]),
-    edges: figure.edges,
-  })),
-)
-
-const placedField = computed(() =>
-  field.map((star) => ({
-    ...star,
-    x: star.x * width.value,
-    y: star.y * height.value,
-  })),
-)
-
-const placedStipple = computed(() => {
-  const { cx, planetCy, planetR } = metrics.value
-  const sx = sun.value.x - cx
-  const sy = sun.value.y - planetCy
-  const length = Math.hypot(sx, sy) || 1
-  const ux = sx / length
-  const uy = sy / length
-  return stipple.map((dot) => {
-    const radial = Math.min(1, Math.hypot(dot.x, dot.y) / 0.95)
-    const away = Math.max(0, -(dot.x * ux + dot.y * uy))
-    return {
-      cx: cx + dot.x * planetR,
-      cy: planetCy + dot.y * planetR,
-      r: 0.7 + dot.s * 1.15,
-      opacity: 0.14 + radial * 0.42 + away * 0.4,
-    }
-  })
-})
-
-const placedCraters = computed(() => {
-  const { cx, planetCy, planetR } = metrics.value
-  return craters.map((crater) => ({
-    cx: cx + crater.x * planetR,
-    cy: planetCy + crater.y * planetR,
-    r: crater.r * planetR,
+const near = computed(() => {
+  const reach = 340 * geo.value.u
+  const sunVis = clamp((altitude(sun.value) + 70) / 100, 0, 1)
+  const moonVis = clamp((altitude(moon.value) + 70) / 100, 0, 1)
+  return Object.fromEntries(figures.value.map((figure) => {
+    const ds = Math.hypot(sun.value.x - figure.cx, sun.value.y - figure.cy)
+    const dm = Math.hypot(moon.value.x - figure.cx, moon.value.y - figure.cy)
+    return [figure.id, {
+      sun: Math.exp(-((ds / reach) ** 2)) * sunVis,
+      moon: Math.exp(-((dm / reach) ** 2)) * moonVis * 0.85,
+    }]
   }))
 })
 
-const sunRays = computed(() =>
-  Array.from({ length: 24 }, (_, index) => {
-    const turn = (index / 24) * Math.PI * 2
-    const long = index % 2 === 0
-    return {
-      x1: Math.cos(turn) * (long ? 15 : 16),
-      y1: Math.sin(turn) * (long ? 15 : 16),
-      x2: Math.cos(turn) * (long ? 34 : 23),
-      y2: Math.sin(turn) * (long ? 34 : 23),
-    }
-  }),
-)
-
-const corona = computed(() =>
-  Array.from({ length: 14 }, (_, index) => {
-    const turn = (index / 14) * Math.PI * 2
-    return { x: Math.cos(turn) * 40, y: Math.sin(turn) * 40 }
-  }),
-)
-
-const parallels = [0.58, 0.74, 0.88]
-
-function place(offset) {
-  const { cx, cy, orbitR } = metrics.value
-  const turn = angle.value + offset
+const sceneStyle = computed(() => {
+  const { u, orbit } = geo.value
+  const k = clamp(u, 0.78, 1.2)
   return {
-    x: cx + orbitR * Math.sin(turn),
-    y: cy - orbitR * Math.cos(turn),
+    '--u': u,
+    '--k': k,
+    '--copy-top': `${geo.value.narrow ? 96 : orbit.cy - orbit.r + 100 * u}px`,
+    '--warm': warm.value.toFixed(3),
   }
+})
+
+function bodyStyle(point, radius) {
+  const d = radius * 2 * geo.value.u + 24
+  return { left: `${point.x - d / 2}px`, top: `${point.y - d / 2}px`, width: `${d}px`, height: `${d}px` }
 }
 
-function figurePath(figure) {
-  return figure.edges
-    .map(([from, to]) => {
-      const start = figure.stars[from]
-      const end = figure.stars[to]
-      return `M ${start[0]} ${start[1]} L ${end[0]} ${end[1]}`
-    })
-    .join(' ')
-}
+const sunHit = computed(() => bodyStyle(sun.value, 35))
+const moonHit = computed(() => bodyStyle(moon.value, 33))
 
-function burstLines(origin, radius) {
-  return Array.from({ length: 8 }, (_, index) => {
-    const turn = (index / 8) * Math.PI * 2 + 0.2
-    const inner = index % 2 === 0 ? radius * 0.25 : radius * 0.45
-    const outer = index % 2 === 0 ? radius : radius * 0.62
-    return {
-      x1: origin.x + Math.cos(turn) * inner,
-      y1: origin.y + Math.sin(turn) * inner,
-      x2: origin.x + Math.cos(turn) * outer,
-      y2: origin.y + Math.sin(turn) * outer,
-    }
-  })
-}
+const openFigure = computed(() => figures.value.find((figure) => figure.id === openId.value) || null)
+const cardStyle = computed(() => {
+  const figure = openFigure.value
+  if (!figure) return null
+  const width = Math.min(300, geo.value.W - 32)
+  const leftSide = figure.cx < geo.value.W / 2
+  let left = leftSide ? figure.box.x + figure.box.w + 12 : figure.box.x - width - 12
+  if (geo.value.narrow) left = (geo.value.W - width) / 2
+  left = clamp(left, 16, geo.value.W - width - 16)
+  const top = clamp(figure.box.y, 84, geo.value.H - 300)
+  return { left: `${left}px`, top: `${top}px`, width: `${width}px` }
+})
 
-function mix(from, to, amount) {
-  const left = rgb(from)
-  const right = rgb(to)
-  const channels = left.map((channel, index) =>
-    Math.round(channel + (right[index] - channel) * amount),
-  )
-  return `rgb(${channels.join(' ')})`
-}
+const phaseLabel = computed(() => {
+  if (warm.value > 0.72) return 'Солнце в силе: тёплая атмосфера'
+  if (warm.value < 0.28) return 'Луна в силе: ночная атмосфера'
+  return 'Равновесие Солнца и Луны'
+})
 
-function across(key) {
-  const amount = light.value
-  if (amount >= 0.5) return mix(EVE[key], LIGHT[key], (amount - 0.5) * 2)
-  return mix(DARK[key], EVE[key], amount * 2)
-}
-
-function rgb(hex) {
-  const value = Number.parseInt(hex.slice(1), 16)
-  return [(value >> 16) & 255, (value >> 8) & 255, value & 255]
+/** Read by the WebGL canvas once per frame. */
+function canvasState() {
+  return {
+    width: geo.value.W,
+    height: geo.value.H,
+    u: geo.value.u,
+    sun: sun.value,
+    moon: moon.value,
+    planet: geo.value.planet,
+    warm: warm.value,
+    sunHover: hover.value.sun,
+    moonHover: hover.value.moon,
+    intro,
+    high: high.value,
+    busy: Boolean(dragging.value) || Math.abs(velocity) > 1e-5 || intro < 1,
+    still: reduce.value,
+  }
 }
 
 function measure() {
   if (!sky.value) return
-  width.value = sky.value.clientWidth
-  height.value = sky.value.clientHeight
+  size.value = { w: sky.value.clientWidth, h: sky.value.clientHeight }
 }
 
-function onScroll() {
-  if (!section.value || reduceMotion) return
-  const traveled = Math.min(Math.max(-section.value.getBoundingClientRect().top, 0), 140)
-  sink.value = traveled * 0.16
+function softClamp(value) {
+  if (value < SUN_MIN) return SUN_MIN - (1 - Math.exp(-(SUN_MIN - value) * 4)) * 0.06
+  if (value > SUN_MAX) return SUN_MAX + (1 - Math.exp(-(value - SUN_MAX) * 4)) * 0.06
+  return value
 }
 
-function updateFromPointer(event) {
+function tick(now) {
+  raf = requestAnimationFrame(tick)
+  if (intro < 1) {
+    intro = reduce.value ? 1 : clamp((now - introStart) / 2400, 0, 1)
+    if (!dragging.value) {
+      const e = 1 - (1 - intro) ** 3
+      theta.value = introFrom + (target - introFrom) * e
+    }
+  } else if (dragging.value) {
+    // Critically damped follow keeps the body heavy but responsive.
+    const next = theta.value + (target - theta.value) * 0.32
+    velocity = next - theta.value
+    theta.value = next
+  } else if (Math.abs(velocity) > 1e-5 || theta.value < SUN_MIN || theta.value > SUN_MAX) {
+    let next = theta.value + velocity
+    velocity *= 0.93
+    if (next < SUN_MIN) {
+      next += (SUN_MIN - next) * 0.2
+      velocity *= 0.6
+    } else if (next > SUN_MAX) {
+      next += (SUN_MAX - next) * 0.2
+      velocity *= 0.6
+    }
+    if (Math.abs(velocity) < 1e-5 && (next < SUN_MIN || next > SUN_MAX)) next = clamp(next, SUN_MIN, SUN_MAX)
+    theta.value = next
+  }
+  for (const key of ['sun', 'moon']) {
+    const current = hover.value[key]
+    const goal = dragging.value === key ? 1 : hoverTarget[key]
+    if (Math.abs(goal - current) > 0.002) hover.value = { ...hover.value, [key]: current + (goal - current) * 0.16 }
+  }
+}
+
+function pointerAngle(event) {
   const rect = sky.value.getBoundingClientRect()
-  const { cx, cy } = metrics.value
-  const x = event.clientX - rect.left - cx
-  const y = event.clientY - rect.top - cy
-  angle.value = Math.atan2(x, -y)
+  return angleAt(geo.value.orbit, event.clientX - rect.left, event.clientY - rect.top)
 }
 
-function startDrag(event) {
-  if (event.button !== undefined && event.button !== 0) return
-  dragging.value = true
+function startDrag(kind, event, jump = false) {
+  if (event.button != null && event.button !== 0) return
   event.preventDefault()
-  updateFromPointer(event)
-  window.addEventListener('pointermove', updateFromPointer)
+  intro = 1
+  const body = kind === 'sun' ? theta.value : theta.value + MOON_OFFSET
+  const angle = pointerAngle(event)
+  grabOffset = jump ? 0 : signedAngle(body - angle)
+  dragging.value = kind
+  target = theta.value
+  velocity = 0
+  lastPointer = { angle, time: performance.now() }
+  document.body.classList.add('is-dragging-sky')
+  onDragMove(event)
+  releaseListeners?.()
+  window.addEventListener('pointermove', onDragMove, { passive: false })
   window.addEventListener('pointerup', stopDrag)
+  window.addEventListener('pointercancel', stopDrag)
+  releaseListeners = () => {
+    window.removeEventListener('pointermove', onDragMove)
+    window.removeEventListener('pointerup', stopDrag)
+    window.removeEventListener('pointercancel', stopDrag)
+  }
+}
+
+function onDragMove(event) {
+  if (!dragging.value) return
+  if (event.cancelable) event.preventDefault()
+  const angle = pointerAngle(event)
+  let body = angle + grabOffset
+  if (dragging.value === 'moon') body -= MOON_OFFSET
+  // Unwrap so a drag across the bottom never flips the sun to the far end.
+  body = theta.value + signedAngle(body - theta.value)
+  target = softClamp(body)
+  lastPointer = { angle, time: performance.now() }
 }
 
 function stopDrag() {
-  dragging.value = false
-  window.removeEventListener('pointermove', updateFromPointer)
-  window.removeEventListener('pointerup', stopDrag)
-}
-
-function setFromSlider(event) {
-  angle.value = (Number(event.target.value) * Math.PI) / 180
-}
-
-function paintSite() {
-  const site = section.value?.closest('.site')
-  if (!site) return
-  for (const [key, value] of Object.entries(theme.value)) site.style.setProperty(key, value)
-}
-
-function clearSite() {
-  const site = section.value?.closest('.site')
-  if (!site) return
-  for (const key of Object.keys(theme.value)) site.style.removeProperty(key)
-}
-
-function mulberry32(seed) {
-  let state = seed
-  return () => {
-    state |= 0
-    state = (state + 0x6d2b79f5) | 0
-    let value = Math.imul(state ^ (state >>> 15), 1 | state)
-    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
+  if (!dragging.value) return
+  dragging.value = ''
+  document.body.classList.remove('is-dragging-sky')
+  releaseListeners?.()
+  releaseListeners = null
+  if (reduce.value) velocity = 0
+  else velocity = clamp(velocity, -0.03, 0.03)
+  try {
+    sessionStorage.setItem(STORE_KEY, String(clamp(theta.value + velocity * 12, SUN_MIN, SUN_MAX)))
+  } catch {
+    /* private mode */
   }
 }
 
-function makeField() {
-  const random = mulberry32(20261017)
-  const stars = []
-  for (let index = 0; index < 64; index += 1) {
-    const x = 0.03 + random() * 0.94
-    const y = 0.025 + random() * 0.46
-    const roll = random()
-    let kind = 'dot'
-    if (roll > 0.94) kind = 'burst'
-    else if (roll > 0.86) kind = 'ring'
-    const radius = kind === 'burst' ? 7 + random() * 6 : roll > 0.8 ? 1.5 : roll > 0.45 ? 1.05 : 0.65
-    stars.push({ x, y, r: radius, kind })
-  }
-  for (let index = 0; index < 28; index += 1) {
-    stars.push({
-      x: 0.3 + random() * 0.4,
-      y: 0.2 + random() * 0.28,
-      r: random() > 0.8 ? 1.15 : 0.7,
-      kind: 'dot',
-    })
-  }
-  return stars
+function onSkyDown(event) {
+  const node = event.target
+  if (!(node instanceof Element)) return
+  if (node.closest('a, button, input, .figure, .zodiac-card')) return
+  openId.value = ''
+  if (!nearOrbit(event)) return
+  const angle = pointerAngle(event)
+  const ds = Math.abs(signedAngle(angle - theta.value))
+  const dm = Math.abs(signedAngle(angle - theta.value - MOON_OFFSET))
+  startDrag(ds <= dm ? 'sun' : 'moon', event, true)
 }
 
-function makeStipple() {
-  const random = mulberry32(41)
-  const dots = []
-  let guard = 0
-  while (dots.length < 240 && guard < 4000) {
-    guard += 1
-    const x = random() * 2 - 1
-    const y = random() * 2 - 1
-    if (x * x + y * y > 0.9) continue
-    if (y > -0.15) continue
-    dots.push({ x, y, s: random() })
-  }
-  return dots
+function nearOrbit(event) {
+  const rect = sky.value.getBoundingClientRect()
+  const x = event.clientX - rect.left
+  const y = event.clientY - rect.top
+  const { orbit, planet } = geo.value
+  const ring = Math.abs(Math.hypot(x - orbit.cx, y - orbit.cy) - orbit.r)
+  const abovePlanet = Math.hypot(x - planet.cx, y - planet.cy) > planet.r
+  return ring < 22 && abovePlanet
 }
 
-watch(theme, () => paintSite())
+function onSkyMove(event) {
+  if (dragging.value || event.pointerType === 'touch') return
+  nearRing.value = nearOrbit(event)
+}
+
+function onBodyKey(event) {
+  const step = event.shiftKey ? 0.2 : 0.05
+  let delta = 0
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') delta = -step
+  if (event.key === 'ArrowRight' || event.key === 'ArrowUp') delta = step
+  if (event.key === 'Home') delta = SUN_MIN - theta.value
+  if (event.key === 'End') delta = SUN_MAX - theta.value
+  if (!delta) return
+  event.preventDefault()
+  intro = 1
+  velocity = 0
+  theta.value = clamp(theta.value + delta, SUN_MIN, SUN_MAX)
+  target = theta.value
+}
+
+function toggleFigure(id) {
+  openId.value = openId.value === id ? '' : id
+}
+
+function onKey(event) {
+  if (event.key === 'Escape') openId.value = ''
+}
+
+onBeforeMount(() => {
+  document.body.classList.add('home-sky')
+  try {
+    const saved = Number(sessionStorage.getItem(STORE_KEY))
+    if (sessionStorage.getItem(STORE_KEY) && Number.isFinite(saved)) target = clamp(saved, SUN_MIN, SUN_MAX)
+  } catch {
+    /* private mode */
+  }
+})
 
 onMounted(() => {
-  reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  document.body.classList.add('home-sky', 'sky-live')
+  reduce.value = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const cores = navigator.hardwareConcurrency || 8
+  const memory = navigator.deviceMemory || 8
+  high.value = !(cores <= 4 || memory <= 4 || navigator.connection?.saveData || window.innerWidth < 760)
   measure()
-  paintSite()
-  resizeObserver = new ResizeObserver(() => measure())
-  resizeObserver.observe(sky.value)
-  visibilityObserver = new IntersectionObserver(
-    ([entry]) => document.body.classList.toggle('sky-live', entry.isIntersecting),
-    { threshold: 0, rootMargin: '-72px 0px -35% 0px' },
-  )
-  visibilityObserver.observe(section.value)
-  window.addEventListener('scroll', onScroll, { passive: true })
+  introFrom = target - 0.55
+  theta.value = reduce.value ? target : introFrom
+  introStart = performance.now()
+  observer = new ResizeObserver(measure)
+  observer.observe(sky.value)
+  window.addEventListener('keydown', onKey)
+  raf = requestAnimationFrame(tick)
 })
 
 onUnmounted(() => {
   stopDrag()
-  resizeObserver?.disconnect()
-  visibilityObserver?.disconnect()
-  window.removeEventListener('scroll', onScroll)
-  clearSite()
-  document.body.classList.remove('home-sky', 'sky-live')
+  cancelAnimationFrame(raf)
+  observer?.disconnect()
+  window.removeEventListener('keydown', onKey)
+  document.body.classList.remove('home-sky', 'is-dragging-sky')
 })
 </script>
 
 <template>
-  <section ref="section" class="orbit-section" :class="{ dragging }" :style="theme">
-    <div ref="sky" class="orbit-sky">
-      <svg
-        v-if="width"
-        class="orbit-svg"
-        :viewBox="`0 0 ${width} ${height}`"
-        role="img"
-        aria-label="Солнце и луна на орбите вокруг планеты"
-      >
-        <g class="sky-ink" fill="none">
-          <g v-for="(figure, index) in placedFigures" :key="`figure-${index}`" class="figure">
-            <path :d="figurePath(figure)" />
-            <circle
-              v-for="(star, starIndex) in figure.stars"
-              :key="starIndex"
-              class="star"
-              :cx="star[0]"
-              :cy="star[1]"
-              r="1.7"
-            />
-          </g>
+  <section
+    ref="section"
+    class="cosmos"
+    :class="{ 'is-dragging': dragging, 'near-ring': nearRing, 'no-webgl': !webgl, 'motion-off': reduce }"
+    :style="sceneStyle"
+  >
+    <div ref="sky" class="cosmos-sky" @pointerdown="onSkyDown" @pointermove="onSkyMove">
+      <CosmosCanvas v-if="webgl" :state="canvasState" @unsupported="webgl = false" />
 
-          <template v-for="(star, index) in placedField" :key="`field-${index}`">
-            <circle v-if="star.kind === 'dot'" class="star" :cx="star.x" :cy="star.y" :r="star.r" />
-            <circle v-else-if="star.kind === 'ring'" class="ring" :cx="star.x" :cy="star.y" :r="star.r + 2.2" />
-            <g v-else class="burst">
-              <line
-                v-for="(ray, rayIndex) in burstLines(star, star.r)"
-                :key="rayIndex"
-                :x1="ray.x1"
-                :y1="ray.y1"
-                :x2="ray.x2"
-                :y2="ray.y2"
-              />
-            </g>
-          </template>
-
-          <circle class="orbit-ring" :cx="metrics.cx" :cy="metrics.cy" :r="metrics.orbitR" />
-          <line
-            v-for="(tick, index) in ticks"
-            :key="`tick-${index}`"
-            :class="tick.major ? 'tick-major' : 'tick'"
-            :x1="tick.x1"
-            :y1="tick.y1"
-            :x2="tick.x2"
-            :y2="tick.y2"
-          />
-          <circle
-            class="orbit-hit"
-            :cx="metrics.cx"
-            :cy="metrics.cy"
-            :r="metrics.orbitR"
-            @pointerdown="startDrag"
-          />
-
-          <g
-            class="moon"
-            :transform="`translate(${moon.x} ${moon.y}) rotate(${moonAngle}) scale(${metrics.unit * 1.35})`"
-          >
-            <circle class="moon-limb" r="20" />
-            <circle class="moon-bite" r="16" cx="-8" />
-            <circle class="stipple" cx="7" cy="-3" r="0.8" opacity="0.85" />
-            <circle class="stipple" cx="5" cy="4" r="0.5" opacity="0.7" />
-            <circle class="stipple" cx="9" cy="2.5" r="0.35" opacity="0.65" />
-          </g>
-
-          <g
-            class="sun-handle"
-            :transform="`translate(${sun.x} ${sun.y}) scale(${metrics.unit})`"
-            @pointerdown="startDrag"
-          >
-            <circle class="sun-dotted" r="19" />
-            <circle class="sun-core" r="12" />
-            <line
-              v-for="(ray, index) in sunRays"
-              :key="`ray-${index}`"
-              class="sun-ray"
-              :x1="ray.x1"
-              :y1="ray.y1"
-              :x2="ray.x2"
-              :y2="ray.y2"
-            />
-            <circle
-              v-for="(dot, index) in corona"
-              :key="`corona-${index}`"
-              class="dust"
-              :cx="dot.x"
-              :cy="dot.y"
-              r="0.7"
-            />
-            <circle class="sun-hit" r="52" />
-          </g>
-
-          <g class="planet-body">
-            <circle class="planet-fill" :cx="metrics.cx" :cy="metrics.planetCy" :r="metrics.planetR" />
-            <circle
-              v-for="parallel in parallels"
-              :key="parallel"
-              class="planet-parallel"
-              :cx="metrics.cx"
-              :cy="metrics.planetCy"
-              :r="metrics.planetR * parallel"
-            />
-            <circle
-              v-for="(dot, index) in placedStipple"
-              :key="`shade-${index}`"
-              class="stipple"
-              :cx="dot.cx"
-              :cy="dot.cy"
-              :r="dot.r"
-              :opacity="dot.opacity"
-            />
-            <circle
-              v-for="(crater, index) in placedCraters"
-              :key="`crater-${index}`"
-              class="crater"
-              :cx="crater.cx"
-              :cy="crater.cy"
-              :r="crater.r"
-            />
-            <circle class="planet-limb-inner" :cx="metrics.cx" :cy="metrics.planetCy" :r="metrics.planetR - 8" />
-            <circle class="planet-limb" :cx="metrics.cx" :cy="metrics.planetCy" :r="metrics.planetR" />
-          </g>
-        </g>
-      </svg>
-      <input
-        class="sun-slider"
-        type="range"
-        min="0"
-        max="359"
-        :value="degrees"
-        aria-label="Положение солнца. Вверху светло, внизу темно"
-        @input="setFromSlider"
+      <OrbitLayer :geo="geo" :sun="theta" :moon="theta + MOON_OFFSET" :active="dragging" />
+      <ConstellationLayer
+        :figures="figures"
+        :geo="geo"
+        :near="near"
+        :hot="hotId"
+        :open="openId"
+        @hover="hotId = $event"
+        @toggle="toggleFigure"
       />
-    </div>
-    <div class="orbit-copy">
-      <div class="wrap orbit-copy-inner">
-        <p class="orbit-hint">Потяните солнце: вверх день, вниз ночь</p>
-        <p class="eyebrow">AI-астролог</p>
-        <h1>{{ tagline }}</h1>
-        <p class="lede">
-          {{ name }} объясняет карту рождения обычным языком. Без гороскопа «для всех Овнов» на сегодня.
+
+      <button
+        type="button"
+        class="body-hit"
+        :class="{ 'is-set': !sunUp }"
+        :style="sunHit"
+        aria-label="Солнце. Стрелками или перетаскиванием двигайте по орбите"
+        @pointerdown="startDrag('sun', $event)"
+        @pointerenter="hoverTarget.sun = 1"
+        @pointerleave="hoverTarget.sun = 0"
+        @keydown="onBodyKey"
+      />
+      <button
+        type="button"
+        class="body-hit"
+        :class="{ 'is-set': !moonUp }"
+        :style="moonHit"
+        aria-label="Луна. Стрелками или перетаскиванием двигайте по орбите"
+        @pointerdown="startDrag('moon', $event)"
+        @pointerenter="hoverTarget.moon = 1"
+        @pointerleave="hoverTarget.moon = 0"
+        @keydown="onBodyKey"
+      />
+
+      <div class="hero-copy">
+        <p class="kicker">Твоя личная карта</p>
+        <div class="ornament" aria-hidden="true">
+          <span class="ornament-line" />
+          <span class="ornament-dot" />
+          <svg viewBox="0 0 20 20" class="ornament-star"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
+          <span class="ornament-dot" />
+          <span class="ornament-line" />
+        </div>
+        <h1>Астрология<br />нового поколения</h1>
+        <p class="sub">Глубокий анализ вашей натальной карты <br />и точные прогнозы на будущее с помощью ИИ</p>
+        <RouterLink class="cta" :to="chartTo">
+          <span>Узнать свою карту</span>
+          <svg class="cta-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4" /></svg>
+        </RouterLink>
+        <p class="hint">
+          <svg class="hint-icon" viewBox="0 0 28 30" aria-hidden="true">
+            <path d="M23 3C26 12 20 22 7 25" />
+            <path d="M11 20.5 6.5 25.2 12 28" />
+            <path d="M19.5 6.5 23 2.5 26.5 6.8" />
+          </svg>
+          <span>Перемещайте Солнце и Луну, <br />чтобы изменить тему</span>
         </p>
-        <RouterLink class="button" to="/login">Открыть кабинет</RouterLink>
+        <p class="sr-only" aria-live="polite">{{ phaseLabel }}</p>
       </div>
+
+      <aside class="note note-left">
+        <span class="note-icon" aria-hidden="true">
+          <svg viewBox="0 0 20 20"><path d="M10 1Q11 9 19 10Q11 11 10 19Q9 11 1 10Q9 9 10 1Z" /></svg>
+        </span>
+        <span class="note-text">
+          <strong>Натальная карта</strong>
+          <span>Ваш уникальный путь<br />и потенциал</span>
+        </span>
+      </aside>
+      <aside class="note note-right">
+        <span class="note-icon" aria-hidden="true">
+          <svg viewBox="0 0 20 20" class="compass">
+            <circle cx="10" cy="10" r="6.2" />
+            <path d="M10 2.5v15M2.5 10h15" />
+            <path class="fill" d="M10 5.5 11.2 10 10 14.5 8.8 10Z" />
+          </svg>
+        </span>
+        <span class="note-text">
+          <strong>Прогнозы</strong>
+          <span>Важные события<br />и возможности</span>
+        </span>
+      </aside>
+
+      <Transition name="card">
+        <div v-if="openFigure && cardStyle" :key="openFigure.id" class="zodiac-card" :style="cardStyle" role="dialog" :aria-label="openFigure.name">
+          <button type="button" class="card-close" aria-label="Закрыть" @click="openId = ''">×</button>
+          <div class="card-head">
+            <span class="card-glyph" aria-hidden="true">{{ openFigure.glyph }}</span>
+            <div>
+              <p class="card-name">{{ openFigure.name }}</p>
+              <p class="card-dates">{{ openFigure.dates }}</p>
+            </div>
+          </div>
+          <p class="card-text">{{ openFigure.text }}</p>
+          <dl class="card-facts">
+            <div><dt>Стихия</dt><dd>{{ openFigure.element }}</dd></div>
+            <div><dt>Управитель</dt><dd>{{ openFigure.ruler }}</dd></div>
+            <div><dt>Ярчайшая</dt><dd>{{ openFigure.alpha }}</dd></div>
+          </dl>
+        </div>
+      </Transition>
     </div>
   </section>
 </template>
+
+<style scoped>
+.cosmos {
+  position: relative;
+  height: 100vh;
+  height: 100svh;
+  min-height: 620px;
+  overflow: hidden;
+  background: #04060c;
+  color: #f3ece0;
+  isolation: isolate;
+}
+
+.cosmos.no-webgl {
+  background:
+    radial-gradient(60% 50% at 8% 70%, rgba(214, 120, 50, 0.45), transparent 70%),
+    radial-gradient(50% 50% at 95% 30%, rgba(60, 90, 170, 0.35), transparent 70%),
+    radial-gradient(120% 60% at 50% 120%, #1b1c24 50%, transparent 51%),
+    #05070d;
+}
+
+.cosmos-sky {
+  position: absolute;
+  inset: 0;
+  touch-action: pan-y;
+}
+.cosmos.near-ring .cosmos-sky { cursor: grab; }
+.cosmos.is-dragging .cosmos-sky { cursor: grabbing; }
+
+.cosmos-sky :deep(.cosmos-canvas) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.body-hit {
+  position: absolute;
+  z-index: 4;
+  border: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+.body-hit:focus-visible {
+  outline: 1px dashed rgba(255, 226, 168, 0.7);
+  outline-offset: 4px;
+}
+.body-hit.is-set { pointer-events: none; }
+.cosmos.is-dragging .body-hit { cursor: grabbing; }
+
+/* ---------- Copy ---------- */
+.hero-copy {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: var(--copy-top);
+  width: min(680px, calc(100% - 32px));
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+}
+.hero-copy > * { pointer-events: auto; }
+.hero-copy::before {
+  content: '';
+  position: absolute;
+  inset: -12% -10% -4%;
+  z-index: -1;
+  background: radial-gradient(closest-side, rgba(4, 6, 12, 0.55), transparent);
+  pointer-events: none;
+}
+
+.kicker {
+  margin: 0;
+  font-size: calc(11px * var(--k));
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: rgba(226, 214, 192, 0.72);
+  animation: rise 1s ease 0.3s both;
+}
+
+.ornament {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: calc(14px * var(--k)) auto calc(26px * var(--k));
+  color: #f0cd8a;
+  animation: rise 1s ease 0.4s both;
+}
+.ornament-line {
+  width: calc(100px * var(--k));
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(240, 205, 138, 0.75));
+}
+.ornament-line:last-child { transform: scaleX(-1); }
+.ornament-dot { width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: 0.8; }
+.ornament-star {
+  width: calc(14px * var(--k));
+  height: calc(14px * var(--k));
+  fill: #ffe4ad;
+  filter: drop-shadow(0 0 5px rgba(255, 200, 110, 0.9));
+  animation: star-breathe 4s ease-in-out infinite;
+}
+
+.hero-copy h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: calc(58px * var(--k));
+  line-height: 0.98;
+  letter-spacing: 0;
+  color: #f6efe2;
+  text-shadow: 0 0 28px rgba(255, 214, 150, 0.18), 0 2px 18px rgba(0, 0, 0, 0.6);
+  animation: rise 1.1s ease 0.5s both;
+}
+
+.sub {
+  margin: calc(26px * var(--k)) 0 0;
+  font-size: calc(15.5px * var(--k));
+  line-height: 1.55;
+  color: rgba(226, 220, 210, 0.78);
+  animation: rise 1.1s ease 0.65s both;
+}
+
+.cta {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: calc(30px * var(--k));
+  padding: calc(14px * var(--k)) calc(34px * var(--k)) calc(14px * var(--k)) calc(36px * var(--k));
+  border-radius: 999px;
+  overflow: hidden;
+  text-decoration: none;
+  font-size: calc(14.5px * var(--k));
+  font-weight: 600;
+  color: #2b1d0b;
+  background: linear-gradient(180deg, #f4dba6 0%, #e3bd78 55%, #cf9f55 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 228, 0.8),
+    inset 0 -1px 0 rgba(120, 80, 20, 0.35),
+    0 0 0 1px rgba(255, 220, 160, 0.35),
+    0 8px 30px rgba(230, 170, 80, 0.32),
+    0 0 60px rgba(255, 190, 100, 0.15);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  animation: rise 1.1s ease 0.8s both;
+}
+.cta::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  transform: skewX(-20deg);
+  animation: sheen 5.5s ease-in-out 2s infinite;
+}
+.cta:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 228, 0.9),
+    inset 0 -1px 0 rgba(120, 80, 20, 0.35),
+    0 0 0 1px rgba(255, 220, 160, 0.5),
+    0 12px 40px rgba(240, 180, 90, 0.45),
+    0 0 90px rgba(255, 190, 100, 0.25);
+}
+.cta:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 4px; }
+.cta-arrow {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.25s ease;
+}
+.cta:hover .cta-arrow { transform: translateX(4px); }
+
+.hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: calc(34px * var(--k)) 0 0;
+  font-size: calc(11.5px * var(--k));
+  line-height: 1.45;
+  text-align: left;
+  color: rgba(214, 208, 198, 0.62);
+  animation: rise 1.1s ease 1s both;
+}
+.hint-icon {
+  width: 24px;
+  height: 26px;
+  flex: none;
+  fill: none;
+  stroke: rgba(240, 214, 160, 0.75);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- Corner notes ---------- */
+.note {
+  position: absolute;
+  z-index: 3;
+  bottom: calc(118px * var(--k));
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  animation: rise 1.2s ease 1.1s both;
+}
+.note-left { left: clamp(20px, 2.7vw, 48px); }
+.note-right { right: clamp(20px, 2.7vw, 48px); }
+.note-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid rgba(232, 206, 158, 0.45);
+  background: rgba(10, 10, 16, 0.35);
+  box-shadow: 0 0 18px rgba(255, 200, 120, 0.12);
+}
+.note-icon svg {
+  width: 15px;
+  height: 15px;
+  fill: #f0d7a4;
+}
+.note-icon .compass { fill: none; stroke: #f0d7a4; stroke-width: 1; }
+.note-icon .compass .fill { fill: #f0d7a4; stroke: none; }
+.note-text { display: grid; gap: 4px; }
+.note-text strong {
+  font-weight: 400;
+  font-size: 14px;
+  color: #f2ebdf;
+}
+.note-text span {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: rgba(214, 208, 198, 0.6);
+}
+
+/* ---------- Zodiac card ---------- */
+.zodiac-card {
+  position: absolute;
+  z-index: 6;
+  padding: 18px 20px 16px;
+  border-radius: 16px;
+  color: #efe7d8;
+  background: linear-gradient(160deg, rgba(36, 30, 24, 0.72), rgba(12, 14, 24, 0.78));
+  border: 1px solid rgba(240, 210, 150, 0.28);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 240, 210, 0.08), 0 0 40px rgba(255, 190, 110, 0.08);
+  backdrop-filter: blur(14px) saturate(1.2);
+}
+.card-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(239, 231, 216, 0.6);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.card-close:hover { color: #ffe2a8; background: rgba(255, 255, 255, 0.06); }
+.card-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.card-glyph {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(240, 210, 150, 0.4);
+  font-size: 22px;
+  color: #ffd998;
+  text-shadow: 0 0 12px rgba(255, 200, 110, 0.8);
+  font-family: 'Segoe UI Symbol', 'Noto Sans Symbols', sans-serif;
+}
+.card-name { margin: 0; font-family: var(--serif); font-size: 24px; line-height: 1.1; }
+.card-dates { margin: 2px 0 0; font-size: 12px; letter-spacing: 0.06em; color: rgba(226, 214, 192, 0.65); }
+.card-text { margin: 0 0 14px; font-size: 14px; line-height: 1.5; color: rgba(239, 231, 216, 0.85); }
+.card-facts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid rgba(240, 210, 150, 0.16);
+}
+.card-facts dt { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(226, 214, 192, 0.5); }
+.card-facts dd { margin: 2px 0 0; font-size: 13px; color: #f3dcae; }
+
+.card-enter-active, .card-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
+.card-enter-from, .card-leave-to { opacity: 0; transform: translateY(8px) scale(0.98); }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes sheen {
+  0%, 70% { left: -60%; }
+  100% { left: 130%; }
+}
+@keyframes star-breathe {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(1.18) rotate(45deg); }
+}
+
+@media (max-width: 760px) {
+  .cosmos { min-height: 780px; }
+  .hero-copy h1 { font-size: 40px; }
+  .sub { font-size: 15px; }
+  .sub br { display: none; }
+  .note { bottom: 22px; gap: 10px; }
+  .note-icon { width: 28px; height: 28px; }
+  .note-text span { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kicker, .ornament, .hero-copy h1, .sub, .cta, .hint, .note { animation: none; }
+  .cta::after, .ornament-star { animation: none; }
+}
+</style>

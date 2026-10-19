@@ -1,0 +1,749 @@
+{
+  "frame": {
+    "width": 1280,
+    "height": 720
+  },
+  "note": "Нормализованные координаты 0..1 кадра 1280×720. Центр под заголовок и диск планеты оставлены свободными. Мерцание задаётся полем phase, не запечено в спрайт.",
+  "stars": [
+    {
+      "id": "far-0",
+      "group": "far",
+      "x": 0.8568,
+      "y": 0.1646,
+      "size": 0.78,
+      "brightness": 0.898,
+      "phase": 0.502,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-1",
+      "group": "far",
+      "x": 0.1156,
+      "y": 0.1779,
+      "size": 0.38,
+      "brightness": 0.454,
+      "phase": 0.576,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-2",
+      "group": "far",
+      "x": 0.1857,
+      "y": 0.3916,
+      "size": 0.86,
+      "brightness": 0.43,
+      "phase": 0.798,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-3",
+      "group": "far",
+      "x": 0.1109,
+      "y": 0.4244,
+      "size": 0.86,
+      "brightness": 0.705,
+      "phase": 0.819,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-4",
+      "group": "far",
+      "x": 0.5014,
+      "y": 0.6199,
+      "size": 0.4,
+      "brightness": 0.929,
+      "phase": 0.485,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-5",
+      "group": "far",
+      "x": 0.7856,
+      "y": 0.4491,
+      "size": 0.86,
+      "brightness": 0.676,
+      "phase": 0.032,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-6",
+      "group": "far",
+      "x": 0.0973,
+      "y": 0.0688,
+      "size": 0.74,
+      "brightness": 0.595,
+      "phase": 0.228,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-7",
+      "group": "far",
+      "x": 0.8687,
+      "y": 0.3185,
+      "size": 0.46,
+      "brightness": 0.812,
+      "phase": 0.947,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-8",
+      "group": "far",
+      "x": 0.826,
+      "y": 0.1623,
+      "size": 0.89,
+      "brightness": 0.35,
+      "phase": 0.118,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-9",
+      "group": "far",
+      "x": 0.204,
+      "y": 0.1076,
+      "size": 0.67,
+      "brightness": 0.716,
+      "phase": 0.232,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-10",
+      "group": "far",
+      "x": 0.506,
+      "y": 0.0835,
+      "size": 0.88,
+      "brightness": 0.519,
+      "phase": 0.687,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-11",
+      "group": "far",
+      "x": 0.8092,
+      "y": 0.202,
+      "size": 0.56,
+      "brightness": 0.879,
+      "phase": 0.32,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-12",
+      "group": "far",
+      "x": 0.9087,
+      "y": 0.0583,
+      "size": 0.85,
+      "brightness": 0.666,
+      "phase": 0.727,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-13",
+      "group": "far",
+      "x": 0.9941,
+      "y": 0.0602,
+      "size": 0.77,
+      "brightness": 0.547,
+      "phase": 0.751,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-14",
+      "group": "far",
+      "x": 0.818,
+      "y": 0.561,
+      "size": 0.41,
+      "brightness": 0.585,
+      "phase": 0.155,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-15",
+      "group": "far",
+      "x": 0.2026,
+      "y": 0.1424,
+      "size": 0.89,
+      "brightness": 0.913,
+      "phase": 0.818,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-16",
+      "group": "far",
+      "x": 0.0486,
+      "y": 0.51,
+      "size": 0.44,
+      "brightness": 0.712,
+      "phase": 0.61,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-17",
+      "group": "far",
+      "x": 0.2796,
+      "y": 0.2588,
+      "size": 0.66,
+      "brightness": 0.683,
+      "phase": 0.749,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-18",
+      "group": "far",
+      "x": 0.1762,
+      "y": 0.4873,
+      "size": 0.52,
+      "brightness": 0.835,
+      "phase": 0.039,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-19",
+      "group": "far",
+      "x": 0.3211,
+      "y": 0.5523,
+      "size": 0.89,
+      "brightness": 0.767,
+      "phase": 0.829,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-20",
+      "group": "far",
+      "x": 0.1261,
+      "y": 0.5094,
+      "size": 0.71,
+      "brightness": 0.691,
+      "phase": 0.357,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-21",
+      "group": "far",
+      "x": 0.1499,
+      "y": 0.2026,
+      "size": 0.52,
+      "brightness": 0.587,
+      "phase": 0.257,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-22",
+      "group": "far",
+      "x": 0.8142,
+      "y": 0.1791,
+      "size": 0.75,
+      "brightness": 0.635,
+      "phase": 0.622,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-23",
+      "group": "far",
+      "x": 0.0337,
+      "y": 0.4141,
+      "size": 0.4,
+      "brightness": 0.746,
+      "phase": 0.604,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-24",
+      "group": "far",
+      "x": 0.1312,
+      "y": 0.2844,
+      "size": 0.68,
+      "brightness": 0.55,
+      "phase": 0.172,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-25",
+      "group": "far",
+      "x": 0.39,
+      "y": 0.5967,
+      "size": 0.45,
+      "brightness": 0.664,
+      "phase": 0.626,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-26",
+      "group": "far",
+      "x": 0.9547,
+      "y": 0.1201,
+      "size": 0.67,
+      "brightness": 0.726,
+      "phase": 0.446,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-27",
+      "group": "far",
+      "x": 0.0407,
+      "y": 0.273,
+      "size": 0.85,
+      "brightness": 0.959,
+      "phase": 0.11,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-28",
+      "group": "far",
+      "x": 0.9476,
+      "y": 0.5304,
+      "size": 0.83,
+      "brightness": 0.631,
+      "phase": 0.959,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-29",
+      "group": "far",
+      "x": 0.432,
+      "y": 0.0407,
+      "size": 0.84,
+      "brightness": 0.79,
+      "phase": 0.662,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-30",
+      "group": "far",
+      "x": 0.0995,
+      "y": 0.1255,
+      "size": 0.53,
+      "brightness": 0.89,
+      "phase": 0.838,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-31",
+      "group": "far",
+      "x": 0.0058,
+      "y": 0.5537,
+      "size": 0.81,
+      "brightness": 0.712,
+      "phase": 0.703,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-32",
+      "group": "far",
+      "x": 0.1639,
+      "y": 0.132,
+      "size": 0.74,
+      "brightness": 0.905,
+      "phase": 0.094,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-33",
+      "group": "far",
+      "x": 0.2334,
+      "y": 0.2985,
+      "size": 0.36,
+      "brightness": 0.987,
+      "phase": 0.782,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-34",
+      "group": "far",
+      "x": 0.7437,
+      "y": 0.2295,
+      "size": 0.37,
+      "brightness": 0.685,
+      "phase": 0.441,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-35",
+      "group": "far",
+      "x": 0.1438,
+      "y": 0.3908,
+      "size": 0.54,
+      "brightness": 0.369,
+      "phase": 0.861,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-36",
+      "group": "far",
+      "x": 0.8147,
+      "y": 0.0562,
+      "size": 0.84,
+      "brightness": 0.538,
+      "phase": 0.974,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-37",
+      "group": "far",
+      "x": 0.3054,
+      "y": 0.0926,
+      "size": 0.88,
+      "brightness": 0.452,
+      "phase": 0.616,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-38",
+      "group": "far",
+      "x": 0.9659,
+      "y": 0.5604,
+      "size": 0.8,
+      "brightness": 0.975,
+      "phase": 0.144,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-39",
+      "group": "far",
+      "x": 0.7743,
+      "y": 0.3868,
+      "size": 0.47,
+      "brightness": 0.962,
+      "phase": 0.571,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-40",
+      "group": "far",
+      "x": 0.4378,
+      "y": 0.0778,
+      "size": 0.88,
+      "brightness": 0.816,
+      "phase": 0.561,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-41",
+      "group": "far",
+      "x": 0.4739,
+      "y": 0.2212,
+      "size": 0.59,
+      "brightness": 0.39,
+      "phase": 0.234,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-42",
+      "group": "far",
+      "x": 0.7987,
+      "y": 0.2292,
+      "size": 0.37,
+      "brightness": 0.56,
+      "phase": 0.886,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-43",
+      "group": "far",
+      "x": 0.2694,
+      "y": 0.3714,
+      "size": 0.64,
+      "brightness": 0.624,
+      "phase": 0.208,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-44",
+      "group": "far",
+      "x": 0.254,
+      "y": 0.5952,
+      "size": 0.7,
+      "brightness": 0.735,
+      "phase": 0.068,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "far-45",
+      "group": "far",
+      "x": 0.5068,
+      "y": 0.0468,
+      "size": 0.52,
+      "brightness": 0.498,
+      "phase": 0.322,
+      "sprite": "star-small.svg"
+    },
+    {
+      "id": "mid-0",
+      "group": "mid",
+      "x": 0.0105,
+      "y": 0.6084,
+      "size": 0.98,
+      "brightness": 0.265,
+      "phase": 0.134,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-1",
+      "group": "mid",
+      "x": 0.404,
+      "y": 0.5956,
+      "size": 1.13,
+      "brightness": 0.753,
+      "phase": 0.653,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-2",
+      "group": "mid",
+      "x": 0.1581,
+      "y": 0.3805,
+      "size": 0.91,
+      "brightness": 0.402,
+      "phase": 0.562,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-3",
+      "group": "mid",
+      "x": 0.4991,
+      "y": 0.2396,
+      "size": 1.12,
+      "brightness": 0.629,
+      "phase": 0.725,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-4",
+      "group": "mid",
+      "x": 0.8741,
+      "y": 0.4172,
+      "size": 1.24,
+      "brightness": 0.708,
+      "phase": 0.139,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-5",
+      "group": "mid",
+      "x": 0.0102,
+      "y": 0.1936,
+      "size": 0.96,
+      "brightness": 0.502,
+      "phase": 0.364,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-6",
+      "group": "mid",
+      "x": 0.0737,
+      "y": 0.4378,
+      "size": 1.01,
+      "brightness": 0.584,
+      "phase": 0.443,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-7",
+      "group": "mid",
+      "x": 0.0907,
+      "y": 0.0529,
+      "size": 1.44,
+      "brightness": 0.416,
+      "phase": 0.986,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-8",
+      "group": "mid",
+      "x": 0.8657,
+      "y": 0.3402,
+      "size": 1.22,
+      "brightness": 0.492,
+      "phase": 0.32,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-9",
+      "group": "mid",
+      "x": 0.756,
+      "y": 0.5767,
+      "size": 1.27,
+      "brightness": 0.732,
+      "phase": 0.456,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-10",
+      "group": "mid",
+      "x": 0.3741,
+      "y": 0.553,
+      "size": 1.32,
+      "brightness": 0.937,
+      "phase": 0.603,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-11",
+      "group": "mid",
+      "x": 0.8139,
+      "y": 0.0426,
+      "size": 1.06,
+      "brightness": 0.339,
+      "phase": 0.198,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-12",
+      "group": "mid",
+      "x": 0.2936,
+      "y": 0.1624,
+      "size": 1.24,
+      "brightness": 0.726,
+      "phase": 0.077,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-13",
+      "group": "mid",
+      "x": 0.7564,
+      "y": 0.56,
+      "size": 1.04,
+      "brightness": 0.773,
+      "phase": 0.121,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-14",
+      "group": "mid",
+      "x": 0.9728,
+      "y": 0.4685,
+      "size": 1.59,
+      "brightness": 0.293,
+      "phase": 0.959,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-15",
+      "group": "mid",
+      "x": 0.9439,
+      "y": 0.5644,
+      "size": 1.27,
+      "brightness": 0.407,
+      "phase": 0.058,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-16",
+      "group": "mid",
+      "x": 0.9329,
+      "y": 0.4957,
+      "size": 1.55,
+      "brightness": 0.537,
+      "phase": 0.399,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-17",
+      "group": "mid",
+      "x": 0.1636,
+      "y": 0.565,
+      "size": 1.03,
+      "brightness": 0.406,
+      "phase": 0.803,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-18",
+      "group": "mid",
+      "x": 0.8784,
+      "y": 0.1762,
+      "size": 0.94,
+      "brightness": 0.456,
+      "phase": 0.061,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "mid-19",
+      "group": "mid",
+      "x": 0.839,
+      "y": 0.0392,
+      "size": 1.31,
+      "brightness": 0.888,
+      "phase": 0.456,
+      "sprite": "star-medium.svg"
+    },
+    {
+      "id": "bright-0",
+      "group": "bright",
+      "x": 0.092,
+      "y": 0.4849,
+      "size": 2.21,
+      "brightness": 0.38,
+      "phase": 0.559,
+      "sprite": "star-bright.svg"
+    },
+    {
+      "id": "bright-1",
+      "group": "bright",
+      "x": 0.3101,
+      "y": 0.3475,
+      "size": 2.58,
+      "brightness": 0.704,
+      "phase": 0.441,
+      "sprite": "star-bright.svg"
+    },
+    {
+      "id": "bright-2",
+      "group": "bright",
+      "x": 0.3281,
+      "y": 0.5333,
+      "size": 2.35,
+      "brightness": 0.705,
+      "phase": 0.063,
+      "sprite": "star-bright.svg"
+    },
+    {
+      "id": "bright-3",
+      "group": "bright",
+      "x": 0.7181,
+      "y": 0.1066,
+      "size": 2.04,
+      "brightness": 0.406,
+      "phase": 0.553,
+      "sprite": "star-bright.svg"
+    },
+    {
+      "id": "bright-4",
+      "group": "bright",
+      "x": 0.6041,
+      "y": 0.5364,
+      "size": 2.13,
+      "brightness": 0.45,
+      "phase": 0.878,
+      "sprite": "star-bright.svg"
+    },
+    {
+      "id": "bright-5",
+      "group": "bright",
+      "x": 0.7018,
+      "y": 0.1333,
+      "size": 1.92,
+      "brightness": 0.981,
+      "phase": 0.409,
+      "sprite": "star-spark.svg"
+    },
+    {
+      "id": "bright-6",
+      "group": "bright",
+      "x": 0.3387,
+      "y": 0.2333,
+      "size": 2.41,
+      "brightness": 0.951,
+      "phase": 0.963,
+      "sprite": "star-spark.svg"
+    },
+    {
+      "id": "bright-7",
+      "group": "bright",
+      "x": 0.8063,
+      "y": 0.2259,
+      "size": 2.44,
+      "brightness": 0.663,
+      "phase": 0.002,
+      "sprite": "star-bright.svg"
+    }
+  ]
+}

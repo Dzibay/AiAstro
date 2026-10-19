@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round">
+  <path id="rays-long" d="M24 3v42M3 24h42" stroke-width="0.7"/>
+  <path id="rays-short" d="M8 8l32 32M40 8L8 40M24 10v4M24 34v4M10 24h4M34 24h4" stroke-width="0.55" opacity="0.75"/>
+  <circle id="glow" cx="24" cy="24" r="5" fill="currentColor" stroke="none" opacity="0.22"/>
+  <circle id="core" cx="24" cy="24" r="1.6" fill="currentColor" stroke="none"/>
+</svg>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" fill="none">
+<g id="lines" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" fill="none">
+<path id="line-0" d="M 18 62 L 72 90"/>
+<path id="line-1" d="M 30 50 L 72 90"/>
+<path id="line-2" d="M 40 68 L 72 90"/>
+<path id="line-3" d="M 72 90 L 112 124"/>
+<path id="line-4" d="M 112 124 L 150 92"/>
+<path id="line-5" d="M 150 92 L 204 46"/>
+<path id="line-6" d="M 112 124 L 164 148"/>
+<path id="line-7" d="M 164 148 L 214 136"/>
+</g>
+<g id="stars" fill="currentColor">
+<circle id="star-0" cx="18" cy="62" r="1.5"/>
+<circle id="star-1" cx="30" cy="50" r="1.4"/>
+<circle id="star-2" cx="40" cy="68" r="1.5"/>
+<circle id="star-3" cx="72" cy="90" r="2.1"/>
+<circle id="star-4" cx="112" cy="124" r="3.4"/>
+<circle id="star-5" cx="150" cy="92" r="2.1"/>
+<circle id="star-6" cx="164" cy="148" r="1.9"/>
+<circle id="star-7" cx="204" cy="46" r="2.7"/>
+<circle id="star-8" cx="214" cy="136" r="1.9"/>
+</g>
+<g id="points" fill="currentColor" opacity="0.55">
+<circle id="point-0" cx="22" cy="78" r="0.7"/>
+<circle id="point-1" cx="188" cy="70" r="0.8"/>
+</g>
+<g id="markers" stroke="currentColor" stroke-width="0.8" stroke-linecap="round">
+<path id="mark-4" d="M 106 124 H 118 M 112 118 V 130"/>
+</g>
+</svg>

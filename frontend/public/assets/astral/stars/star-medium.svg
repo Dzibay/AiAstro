@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <circle id="glow" cx="12" cy="12" r="6" fill="currentColor" opacity="0.28"/>
+  <circle id="core" cx="12" cy="12" r="1.7" fill="currentColor"/>
+</svg>

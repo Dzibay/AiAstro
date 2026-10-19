@@ -36,7 +36,7 @@ onMounted(async () => {
 <template>
   <SiteFrame>
     <HeroOrbit :name="name" :tagline="tagline" />
-    <section class="section">
+    <section id="services" class="section">
       <div class="wrap">
         <h2>Что будет в разборе</h2>
         <div class="cards">
@@ -47,7 +47,7 @@ onMounted(async () => {
         </div>
       </div>
     </section>
-    <section class="section section-quiet">
+    <section id="about" class="section section-quiet">
       <div class="wrap narrow-copy">
         <h2>Сейчас открыт кабинет</h2>
         <p>

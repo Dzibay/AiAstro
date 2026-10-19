@@ -66,7 +66,7 @@ main { flex: 1; }
 .header {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 8;
   backdrop-filter: blur(16px);
   background: rgba(16, 22, 20, 0.78);
   border-bottom: 1px solid var(--line);
@@ -90,112 +90,65 @@ main { flex: 1; }
 }
 
 .mark {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1.5px solid var(--gold);
-  box-shadow: inset 7px 0 0 var(--gold-deep);
+  width: 22px;
+  height: 22px;
+  flex: none;
+  fill: #e9c27c;
+  filter: drop-shadow(0 0 6px rgba(255, 200, 110, 0.45));
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  font-size: 16px;
 }
 
 .nav a, .footer-links a { text-decoration: none; }
 .nav a:hover, .footer-links a:hover, .text-button:hover { color: var(--gold); }
 
-body.home-sky.sky-live .header {
-  background: var(--sky);
-  color: var(--hero-ink);
-  border-bottom-color: color-mix(in srgb, var(--hero-line) 28%, transparent);
+body.home-sky {
+  background: #04060c;
+  overflow-x: clip;
 }
 
-.orbit-section {
-  background: var(--sky);
-  color: var(--hero-ink);
+body.home-sky .header {
+  position: fixed;
+  left: 0;
+  right: 0;
+  color: #f3ece0;
+  background: linear-gradient(180deg, rgba(4, 6, 12, 0.55), transparent);
+  border-bottom-color: transparent;
+  backdrop-filter: none;
 }
 
-.orbit-sky {
-  position: relative;
-  height: calc(100dvh - 72px);
-  overflow: hidden;
-  touch-action: pan-y;
+body.home-sky .header .wrap { width: min(1220px, calc(100% - 40px)); }
+body.home-sky .header-row { min-height: 76px; }
+body.home-sky .brand { font-size: 31px; gap: 12px; }
+body.home-sky .nav { gap: 34px; font-size: 14px; }
+
+body.home-sky .nav-login {
+  border: 1px solid rgba(232, 206, 158, 0.42);
+  border-radius: 999px;
+  padding: 7px 22px;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
-.orbit-svg {
-  display: block;
-  width: 100%;
-  height: 100%;
+body.home-sky .nav-login:hover {
+  border-color: rgba(255, 226, 168, 0.8);
+  box-shadow: 0 0 18px rgba(255, 200, 120, 0.18);
 }
 
-.sky-ink {
-  color: var(--hero-line);
-  stroke: currentColor;
-  stroke-width: 0.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  pointer-events: none;
-}
-
-.figure { stroke-width: 0.8; opacity: 0.9; }
-.star, .stipple { fill: currentColor; stroke: none; }
-.ring { fill: none; stroke-width: 0.7; }
-.burst { stroke-width: 0.7; }
-.dust { fill: currentColor; stroke: none; opacity: 0.55; }
-
-.orbit-ring { stroke-width: 0.85; opacity: 0.8; }
-.tick { stroke-width: 0.65; opacity: 0.75; }
-.tick-major { stroke-width: 1; opacity: 0.9; }
-
-.orbit-hit,
-.sun-handle { pointer-events: auto; }
-
-.orbit-hit {
-  fill: none;
-  stroke: transparent;
-  stroke-width: 34;
-  pointer-events: stroke;
-  touch-action: none;
-  cursor: grab;
-}
-
-.sun-handle { cursor: grab; touch-action: none; }
-.sun-core { stroke-width: 1.15; }
-.sun-dotted { stroke-width: 0.8; stroke-dasharray: 0.1 2.6; }
-.sun-ray { stroke-width: 0.9; }
-.sun-hit { fill: transparent; stroke: none; }
-
-.moon-limb { stroke-width: 1.1; }
-.moon-bite { fill: var(--sky); stroke: none; }
-
-.planet-fill { fill: var(--planet); stroke: none; }
-.planet-limb { stroke-width: 1.15; }
-.planet-limb-inner { stroke-width: 0.6; opacity: 0.4; }
-.planet-parallel { stroke-width: 0.55; opacity: 0.38; }
-.crater { fill: none; stroke-width: 0.7; opacity: 0.55; }
-
-.orbit-section.dragging, .orbit-section.dragging .sun-handle, .orbit-section.dragging .orbit-hit {
+body.is-dragging-sky {
+  user-select: none;
   cursor: grabbing;
 }
 
-.sun-slider {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  border: 0;
-}
+#services, #about { scroll-margin-top: 88px; }
 
-.orbit-copy { padding: 36px 0 88px; }
-.orbit-copy-inner { max-width: 720px; }
-.orbit-hint {
-  margin: 0 0 22px;
-  color: var(--hero-muted);
-  font-size: 13px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+@media (max-width: 800px) {
+  .nav-extra { display: none; }
 }
-.orbit-section .eyebrow { color: var(--hero-line); }
-.orbit-section .lede { color: var(--hero-muted); }
 
 .eyebrow {
   margin: 0 0 12px;
@@ -217,7 +170,7 @@ body.home-sky.sky-live .header {
 }
 
 .card {
-  background: rgba(26, 36, 32, 0.88);
+  background: color-mix(in srgb, var(--bg-raised) 92%, transparent);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 22px;

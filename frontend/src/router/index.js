@@ -8,7 +8,8 @@ import { readSession } from '../composables/useSession.js'
 
 const router = createRouter({
   history: createWebHistory(),
-  scrollBehavior() {
+  scrollBehavior(to) {
+    if (to.hash) return { el: to.hash, behavior: 'smooth' }
     return { top: 0 }
   },
   routes: [
