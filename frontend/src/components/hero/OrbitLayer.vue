@@ -75,7 +75,9 @@ const grid = computed(() => {
   const a = { x: cx - lat[0] * Math.sin(reach), y: cy - lat[0] * Math.cos(reach) }
   const b = { x: cx + lat[0] * Math.sin(reach), y: a.y }
   const runner = `M${a.x} ${a.y}A${lat[0]} ${lat[0]} 0 0 1 ${b.x} ${b.y}`
-  return { cx, cy, r, top, lat, emblem, runner }
+  // Scaled into a corner, more of the planet shows than at home.
+  const bottom = Math.min(cy + r, top + (props.geo.H - top) * 2.4)
+  return { cx, cy, r, top, lat, emblem, runner, bottom }
 })
 
 function starPath(x, y, size) {
@@ -87,8 +89,9 @@ function starPath(x, y, size) {
 <template>
   <svg class="orbit-layer" :viewBox="`0 0 ${geo.W} ${geo.H}`" :width="geo.W" :height="geo.H" aria-hidden="true">
     <defs>
-      <mask id="planet-cut" maskUnits="userSpaceOnUse" :x="0" :y="0" :width="geo.W" :height="geo.H">
-        <rect :width="geo.W" :height="geo.H" fill="#fff" />
+      <!-- Generous bounds: scaled down into a corner, the layer shows space beyond its own box. -->
+      <mask id="planet-cut" maskUnits="userSpaceOnUse" :x="-geo.W" :y="-geo.H" :width="geo.W * 3" :height="geo.H * 3">
+        <rect :x="-geo.W" :y="-geo.H" :width="geo.W * 3" :height="geo.H * 3" fill="#fff" />
         <circle :cx="planet.cx" :cy="planet.cy" :r="planet.r + 2 * u" fill="#000" filter="url(#soft)" />
         <circle v-for="body in bodies" :key="body.key" :cx="body.x" :cy="body.y" :r="body.r" fill="#000" filter="url(#soft-body)" />
       </mask>
@@ -112,7 +115,7 @@ function starPath(x, y, size) {
         <stop offset="0.7" stop-color="#e6b867" stop-opacity="0.55" />
         <stop offset="1" stop-color="#e6b867" stop-opacity="0" />
       </linearGradient>
-      <linearGradient id="meridian-fade" gradientUnits="userSpaceOnUse" x1="0" x2="0" :y1="grid.top" :y2="geo.H">
+      <linearGradient id="meridian-fade" gradientUnits="userSpaceOnUse" x1="0" x2="0" :y1="grid.top" :y2="grid.top + (geo.H - grid.top) * 1.6">
         <stop offset="0" stop-color="#f3d39a" stop-opacity="0.75" />
         <stop offset="1" stop-color="#e6b867" stop-opacity="0.15" />
       </linearGradient>
@@ -148,12 +151,12 @@ function starPath(x, y, size) {
     <g class="planet-grid" clip-path="url(#planet-clip)">
       <circle v-for="(r, index) in grid.lat" :key="r" class="lat" :class="`lat-${index}`" :cx="grid.cx" :cy="grid.cy" :r="r" stroke="url(#grid-fade)" />
       <path class="lat-runner" :d="grid.runner" pathLength="100" />
-      <line class="meridian" :x1="grid.cx" :y1="grid.top" :x2="grid.cx" :y2="geo.H" stroke="url(#meridian-fade)" />
+      <line class="meridian" :x1="grid.cx" :y1="grid.top" :x2="grid.cx" :y2="grid.bottom" stroke="url(#meridian-fade)" />
       <path
         v-for="side in [-1, 1]"
         :key="side"
         class="meridian meridian-curve"
-        :d="`M${grid.cx + side * 2} ${grid.top}Q${grid.cx + side * 150 * u} ${grid.top + 160 * u} ${grid.cx + side * 260 * u} ${geo.H + 40 * u}`"
+        :d="`M${grid.cx + side * 2} ${grid.top}Q${grid.cx + side * 150 * u} ${grid.top + 160 * u} ${grid.cx + side * 260 * u} ${geo.H + 40 * u}l${side * 220 * u} ${(geo.H + 40 * u - grid.top - 160 * u) * 2}`"
         stroke="url(#meridian-fade)"
       />
     </g>

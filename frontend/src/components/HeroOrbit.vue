@@ -14,17 +14,16 @@ import {
   clamp,
   layout,
   onOrbit,
-  placeZodiac,
   signedAngle,
   warmthOf,
 } from './hero/sky.js'
+import { LAST_STOP, framed, placeBand, sceneAt } from './hero/journey.js'
 
 const STORE_KEY = 'astra-sun'
 
 const { webToken } = useSession()
 const chartTo = computed(() => (webToken.value ? '/cabinet' : '/login'))
 
-const section = ref(null)
 const sky = ref(null)
 const size = ref({ w: 1280, h: 720 })
 const theta = ref(SUN_HOME)
@@ -38,6 +37,8 @@ const emblemHot = ref(false)
 const webgl = ref(true)
 const reduce = ref(false)
 const high = ref(true)
+/** Scroll position as a float stop index, see journey.js. */
+const journey = ref(0)
 
 let raf = 0
 let observer
@@ -49,16 +50,30 @@ let intro = 0
 let introFrom = SUN_HOME
 let introStart = 0
 let releaseListeners = null
+/** Per stop: the scroll range where the sky rests on it. */
+let rests = []
+let openedAt = 0
+let travelling = false
 
 const geo = computed(() => layout(size.value.w, size.value.h))
-const sun = computed(() => onOrbit(geo.value.orbit, theta.value))
-const moon = computed(() => onOrbit(geo.value.orbit, theta.value + MOON_OFFSET))
-const warm = computed(() => warmthOf(theta.value))
-const figures = computed(() => placeZodiac(geo.value))
+const scene = computed(() => sceneAt(geo.value, journey.value, theta.value))
+const frame = computed(() => scene.value.frame)
+const sun = computed(() => framed(frame.value, onOrbit(geo.value.orbit, scene.value.theta)))
+const moon = computed(() => framed(frame.value, onOrbit(geo.value.orbit, scene.value.theta + MOON_OFFSET)))
+const warm = computed(() => warmthOf(scene.value.theta))
+const figures = computed(() => placeBand(geo.value))
+const planet = computed(() => {
+  const { planet: p } = geo.value
+  const c = framed(frame.value, { x: p.cx, y: p.cy })
+  return { cx: c.x, cy: c.y, r: p.r * frame.value.s, top: c.y - p.r * frame.value.s }
+})
+/** The Sun and Moon can be dragged only where the planet sits at home: the hero and the finale. */
+const interactive = computed(() => journey.value < 0.12 || journey.value > LAST_STOP - 0.12)
+const atEnd = computed(() => journey.value > LAST_STOP - 0.5)
 
 function altitude(point) {
-  const { planet, u } = geo.value
-  return (Math.hypot(point.x - planet.cx, point.y - planet.cy) - planet.r) / u
+  const p = planet.value
+  return (Math.hypot(point.x - p.cx, point.y - p.cy) - p.r) / (geo.value.u * frame.value.s)
 }
 
 const sunUp = computed(() => altitude(sun.value) > -20)
@@ -68,10 +83,11 @@ const near = computed(() => {
   const reach = 340 * geo.value.u
   const sunVis = clamp((altitude(sun.value) + 70) / 100, 0, 1)
   const moonVis = clamp((altitude(moon.value) + 70) / 100, 0, 1)
+  const pan = scene.value.pan
   return Object.fromEntries(figures.value.map((figure) => {
-    const ds = Math.hypot(sun.value.x - figure.cx, sun.value.y - figure.cy)
-    const dm = Math.hypot(moon.value.x - figure.cx, moon.value.y - figure.cy)
-    return [figure.id, {
+    const ds = Math.hypot(sun.value.x - figure.cx - pan, sun.value.y - figure.cy)
+    const dm = Math.hypot(moon.value.x - figure.cx - pan, moon.value.y - figure.cy)
+    return [figure.key, {
       sun: Math.exp(-((ds / reach) ** 2)) * sunVis,
       moon: Math.exp(-((dm / reach) ** 2)) * moonVis * 0.85,
     }]
@@ -89,23 +105,29 @@ const sceneStyle = computed(() => {
   }
 })
 
+const orbitStyle = computed(() => {
+  const { s, tx, ty } = frame.value
+  return { transform: `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${s.toFixed(4)})` }
+})
+
 function bodyStyle(point, radius) {
-  const d = radius * 2 * geo.value.u + 24
+  const d = radius * 2 * geo.value.u * frame.value.s + 24
   return { left: `${point.x - d / 2}px`, top: `${point.y - d / 2}px`, width: `${d}px`, height: `${d}px` }
 }
 
 const sunHit = computed(() => bodyStyle(sun.value, 35))
 const moonHit = computed(() => bodyStyle(moon.value, 33))
 
-const openFigure = computed(() => figures.value.find((figure) => figure.id === openId.value) || null)
+const openFigure = computed(() => figures.value.find((figure) => figure.key === openId.value) || null)
 const cardStyle = computed(() => {
   const figure = openFigure.value
   if (!figure) return null
   const width = Math.min(344, geo.value.W - 32)
-  const leftSide = figure.cx < geo.value.W / 2
+  const cx = figure.cx + scene.value.pan
+  const leftSide = cx < geo.value.W / 2
   // The drawn animal reaches past its stars, so keep clear of ~0.62 of its box.
   const reach = figure.span * 0.62 + 18
-  let left = leftSide ? figure.cx + reach : figure.cx - reach - width
+  let left = leftSide ? cx + reach : cx - reach - width
   if (geo.value.narrow) left = (geo.value.W - width) / 2
   left = clamp(left, 16, geo.value.W - width - 16)
   const top = geo.value.narrow ? 84 : clamp(figure.cy - 190, 84, geo.value.H - 440)
@@ -119,34 +141,72 @@ const phaseLabel = computed(() => {
 })
 
 const emblemStyle = computed(() => {
-  const { planet, u } = geo.value
-  const r = 26 * u
-  return { left: `${planet.cx - r}px`, top: `${planet.top + 124 * u - r}px`, width: `${2 * r}px`, height: `${2 * r}px` }
+  const { planet: p, u } = geo.value
+  const c = framed(frame.value, { x: p.cx, y: p.top + 124 * u })
+  const r = Math.max(18, 26 * u * frame.value.s)
+  return { left: `${c.x - r}px`, top: `${c.y - r}px`, width: `${2 * r}px`, height: `${2 * r}px` }
 })
 
+/** The emblem on the planet always leads on: to the next stop, and from the finale back to the top. */
 function scrollNext() {
-  const next = section.value?.nextElementSibling
-  if (!next) return
-  const header = document.querySelector('.header')?.offsetHeight || 0
-  const top = next.getBoundingClientRect().top + window.scrollY - header + 1
+  const next = atEnd.value ? 0 : Math.min(Math.round(journey.value) + 1, LAST_STOP)
+  const top = next === 0 ? 0 : rests[next]?.[0]
+  if (top == null) return
   window.scrollTo({ top, behavior: reduce.value ? 'auto' : 'smooth' })
+}
+
+function measureStops() {
+  const vh = window.innerHeight
+  const max = document.documentElement.scrollHeight - vh
+  rests = [...document.querySelectorAll('[data-sky-stop]')].map((node) => {
+    const rect = node.getBoundingClientRect()
+    const top = Math.min(rect.top + window.scrollY, max)
+    return [top, Math.min(top + Math.max(0, rect.height - vh), max)]
+  })
+}
+
+/** Rests on a stop while its section fills the screen, and travels while two sections share it. */
+function journeyAt(y) {
+  for (let i = 0; i < rests.length; i += 1) {
+    const [a, b] = rests[i]
+    if (y > b) continue
+    if (y >= a || i === 0) return i
+    const from = rests[i - 1][1]
+    return i - 1 + clamp((y - from) / Math.max(1, a - from), 0, 1)
+  }
+  return Math.max(rests.length - 1, 0)
+}
+
+function follow() {
+  const exact = journeyAt(window.scrollY)
+  const goal = reduce.value ? Math.round(exact) : exact
+  const gap = goal - journey.value
+  travelling = Math.abs(gap) > 1e-4
+  // A light lag gives the sky some weight against the page.
+  if (gap) journey.value = travelling && !reduce.value ? journey.value + gap * 0.2 : goal
+  if (openId.value && Math.abs(journey.value - openedAt) > 0.2) openId.value = ''
 }
 
 /** Read by the WebGL canvas once per frame. */
 function canvasState() {
+  const { W, H, u } = geo.value
   return {
-    width: geo.value.W,
-    height: geo.value.H,
-    u: geo.value.u,
+    width: W,
+    height: H,
+    u,
+    bodyU: u * frame.value.s,
+    pan: scene.value.pan,
+    // The second Milky Way crossing, through Sagittarius at the forecasts stop.
+    band2: W * (0.5 - 3),
     sun: sun.value,
     moon: moon.value,
-    planet: geo.value.planet,
+    planet: planet.value,
     warm: warm.value,
     sunHover: hover.value.sun,
     moonHover: hover.value.moon,
     intro,
     high: high.value,
-    busy: Boolean(dragging.value) || Math.abs(velocity) > 1e-5 || intro < 1,
+    busy: Boolean(dragging.value) || Math.abs(velocity) > 1e-5 || intro < 1 || travelling,
     still: reduce.value,
   }
 }
@@ -154,6 +214,7 @@ function canvasState() {
 function measure() {
   if (!sky.value) return
   size.value = { w: sky.value.clientWidth, h: sky.value.clientHeight }
+  measureStops()
 }
 
 function softClamp(value) {
@@ -164,6 +225,7 @@ function softClamp(value) {
 
 function tick(now) {
   raf = requestAnimationFrame(tick)
+  follow()
   if (intro < 1) {
     intro = reduce.value ? 1 : clamp((now - introStart) / 2400, 0, 1)
     if (!dragging.value) {
@@ -256,7 +318,7 @@ function onSkyDown(event) {
   if (!(node instanceof Element)) return
   if (node.closest('a, button, input, .figure, .zodiac-card')) return
   openId.value = ''
-  if (!nearOrbit(event)) return
+  if (!interactive.value || !nearOrbit(event)) return
   const angle = pointerAngle(event)
   const ds = Math.abs(signedAngle(angle - theta.value))
   const dm = Math.abs(signedAngle(angle - theta.value - MOON_OFFSET))
@@ -275,7 +337,7 @@ function nearOrbit(event) {
 
 function onSkyMove(event) {
   if (dragging.value || event.pointerType === 'touch') return
-  nearRing.value = nearOrbit(event)
+  nearRing.value = interactive.value && nearOrbit(event)
 }
 
 function onBodyKey(event) {
@@ -293,8 +355,9 @@ function onBodyKey(event) {
   target = theta.value
 }
 
-function toggleFigure(id) {
-  openId.value = openId.value === id ? '' : id
+function toggleFigure(key) {
+  openId.value = openId.value === key ? '' : key
+  openedAt = journey.value
 }
 
 function onKey(event) {
@@ -322,7 +385,12 @@ onMounted(() => {
   introStart = performance.now()
   observer = new ResizeObserver(measure)
   observer.observe(sky.value)
+  // Sections change height as fonts and content load.
+  document.querySelectorAll('[data-sky-stop]').forEach((node) => observer.observe(node))
+  window.addEventListener('resize', measureStops, { passive: true })
   window.addEventListener('keydown', onKey)
+  measureStops()
+  journey.value = journeyAt(window.scrollY)
   raf = requestAnimationFrame(tick)
 })
 
@@ -330,173 +398,203 @@ onUnmounted(() => {
   stopDrag()
   cancelAnimationFrame(raf)
   observer?.disconnect()
+  window.removeEventListener('resize', measureStops)
   window.removeEventListener('keydown', onKey)
   document.body.classList.remove('home-sky', 'is-dragging-sky')
 })
 </script>
 
 <template>
-  <section
-    ref="section"
-    class="cosmos"
+  <div
+    ref="sky"
+    class="sky-stage"
     :class="{ 'is-dragging': dragging, 'near-ring': nearRing, 'no-webgl': !webgl, 'motion-off': reduce }"
     :style="sceneStyle"
+    @pointerdown="onSkyDown"
+    @pointermove="onSkyMove"
   >
-    <div ref="sky" class="cosmos-sky" @pointerdown="onSkyDown" @pointermove="onSkyMove">
-      <CosmosCanvas v-if="webgl" :state="canvasState" @unsupported="webgl = false" />
+    <CosmosCanvas v-if="webgl" :state="canvasState" @unsupported="webgl = false" />
 
-      <OrbitLayer :geo="geo" :sun="theta" :moon="theta + MOON_OFFSET" :active="dragging" :emblem-hot="emblemHot" />
-      <ConstellationLayer
-        :figures="figures"
-        :geo="geo"
-        :near="near"
-        :hot="hotId"
-        :open="openId"
-        @hover="hotId = $event"
-        @toggle="toggleFigure"
-      />
+    <OrbitLayer
+      :geo="geo"
+      :sun="scene.theta"
+      :moon="scene.theta + MOON_OFFSET"
+      :active="dragging"
+      :emblem-hot="emblemHot"
+      :style="orbitStyle"
+    />
+    <ConstellationLayer
+      :figures="figures"
+      :geo="geo"
+      :near="near"
+      :pan="scene.pan"
+      :hot="hotId"
+      :open="openId"
+      @hover="hotId = $event"
+      @toggle="toggleFigure"
+    />
 
-      <button
-        type="button"
-        class="body-hit"
-        :class="{ 'is-set': !sunUp }"
-        :style="sunHit"
-        aria-label="Солнце. Стрелками или перетаскиванием двигайте по орбите"
-        @pointerdown="startDrag('sun', $event)"
-        @pointerenter="hoverTarget.sun = 1"
-        @pointerleave="hoverTarget.sun = 0"
-        @keydown="onBodyKey"
-      />
-      <button
-        type="button"
-        class="body-hit"
-        :class="{ 'is-set': !moonUp }"
-        :style="moonHit"
-        aria-label="Луна. Стрелками или перетаскиванием двигайте по орбите"
-        @pointerdown="startDrag('moon', $event)"
-        @pointerenter="hoverTarget.moon = 1"
-        @pointerleave="hoverTarget.moon = 0"
-        @keydown="onBodyKey"
-      />
+    <button
+      type="button"
+      class="body-hit"
+      :class="{ 'is-set': !sunUp || !interactive }"
+      :style="sunHit"
+      aria-label="Солнце. Стрелками или перетаскиванием двигайте по орбите"
+      @pointerdown="startDrag('sun', $event)"
+      @pointerenter="hoverTarget.sun = 1"
+      @pointerleave="hoverTarget.sun = 0"
+      :tabindex="interactive ? 0 : -1"
+      @keydown="onBodyKey"
+    />
+    <button
+      type="button"
+      class="body-hit"
+      :class="{ 'is-set': !moonUp || !interactive }"
+      :style="moonHit"
+      aria-label="Луна. Стрелками или перетаскиванием двигайте по орбите"
+      @pointerdown="startDrag('moon', $event)"
+      @pointerenter="hoverTarget.moon = 1"
+      @pointerleave="hoverTarget.moon = 0"
+      :tabindex="interactive ? 0 : -1"
+      @keydown="onBodyKey"
+    />
 
-      <div class="hero-copy" :class="{ 'is-dimmed': openFigure }">
-        <p class="kicker">Твоя личная карта</p>
-        <div class="ornament" aria-hidden="true">
-          <span class="ornament-line" />
-          <span class="ornament-dot" />
-          <svg viewBox="0 0 20 20" class="ornament-star"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
-          <span class="ornament-dot" />
-          <span class="ornament-line" />
-        </div>
-        <h1>Астрология<br />нового поколения</h1>
-        <p class="sub">Глубокий анализ вашей натальной карты <br />и точные прогнозы на будущее с помощью ИИ</p>
-        <RouterLink class="cta" :to="chartTo">
-          <span>Узнать свою карту</span>
-          <svg class="cta-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4" /></svg>
-        </RouterLink>
-        <p class="hint">
-          <svg class="hint-icon" viewBox="0 0 28 30" aria-hidden="true">
-            <path d="M23 3C26 12 20 22 7 25" />
-            <path d="M11 20.5 6.5 25.2 12 28" />
-            <path d="M19.5 6.5 23 2.5 26.5 6.8" />
-          </svg>
-          <span>Перемещайте Солнце и Луну, <br />чтобы изменить тему</span>
-        </p>
-        <p class="sr-only" aria-live="polite">{{ phaseLabel }}</p>
+    <button
+      type="button"
+      class="emblem-btn"
+      :class="{ 'is-hot': emblemHot }"
+      :style="emblemStyle"
+      :aria-label="atEnd ? 'Наверх, к началу' : 'Листайте к следующему разделу'"
+      @pointerenter="emblemHot = true"
+      @pointerleave="emblemHot = false"
+      @focus="emblemHot = true"
+      @blur="emblemHot = false"
+      @click="scrollNext"
+    >
+      <span class="emblem-label" :class="{ 'is-up': atEnd }" aria-hidden="true">
+        {{ atEnd ? 'Наверх' : 'Листайте' }}
+        <svg viewBox="0 0 12 16"><path d="M6 2v11M2 9l4 4 4-4" /></svg>
+      </span>
+    </button>
+  </div>
+
+  <section class="hero" data-sky-stop="hero" :style="sceneStyle">
+    <div class="hero-copy" :class="{ 'is-dimmed': openFigure && openFigure.stop === 0 }">
+      <p class="kicker">Твоя личная карта</p>
+      <div class="ornament" aria-hidden="true">
+        <span class="ornament-line" />
+        <span class="ornament-dot" />
+        <svg viewBox="0 0 20 20" class="ornament-star"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
+        <span class="ornament-dot" />
+        <span class="ornament-line" />
       </div>
-
-      <aside class="note note-left">
-        <span class="note-icon" aria-hidden="true">
-          <svg viewBox="0 0 20 20"><path d="M10 1Q11 9 19 10Q11 11 10 19Q9 11 1 10Q9 9 10 1Z" /></svg>
-        </span>
-        <span class="note-text">
-          <strong>Натальная карта</strong>
-          <span>Ваш уникальный путь<br />и потенциал</span>
-        </span>
-      </aside>
-      <aside class="note note-right">
-        <span class="note-icon" aria-hidden="true">
-          <svg viewBox="0 0 20 20" class="compass">
-            <circle cx="10" cy="10" r="6.2" />
-            <path d="M10 2.5v15M2.5 10h15" />
-            <path class="fill" d="M10 5.5 11.2 10 10 14.5 8.8 10Z" />
-          </svg>
-        </span>
-        <span class="note-text">
-          <strong>Прогнозы</strong>
-          <span>Важные события<br />и возможности</span>
-        </span>
-      </aside>
-
-      <button
-        type="button"
-        class="emblem-btn"
-        :class="{ 'is-hot': emblemHot }"
-        :style="emblemStyle"
-        aria-label="Листайте к следующему разделу"
-        @pointerenter="emblemHot = true"
-        @pointerleave="emblemHot = false"
-        @focus="emblemHot = true"
-        @blur="emblemHot = false"
-        @click="scrollNext"
-      >
-        <span class="emblem-label" aria-hidden="true">
-          Листайте
-          <svg viewBox="0 0 12 16"><path d="M6 2v11M2 9l4 4 4-4" /></svg>
-        </span>
-      </button>
-
-      <Transition name="card">
-        <div v-if="openFigure && cardStyle" :key="openFigure.id" class="zodiac-card" :style="cardStyle" role="dialog" :aria-label="openFigure.name">
-          <span class="card-sheen" aria-hidden="true" />
-          <button type="button" class="card-close" aria-label="Закрыть" @click="openId = ''">
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
-          </button>
-          <div class="card-head">
-            <span class="card-glyph" aria-hidden="true">
-              <span class="card-glyph-orbit" />
-              {{ openFigure.glyph }}
-            </span>
-            <div>
-              <p class="card-kicker">Знак зодиака · {{ openFigure.animal }}</p>
-              <p class="card-name">{{ openFigure.name }}</p>
-              <p class="card-dates">{{ openFigure.dates }}</p>
-            </div>
-          </div>
-          <ul class="card-traits">
-            <li v-for="trait in openFigure.traits" :key="trait">{{ trait }}</li>
-          </ul>
-          <p class="card-text">{{ openFigure.text }}</p>
-          <p class="card-myth">{{ openFigure.myth }}</p>
-          <dl class="card-facts">
-            <div><dt>Стихия</dt><dd>{{ openFigure.element }}</dd></div>
-            <div><dt>Крест</dt><dd>{{ openFigure.modality }}</dd></div>
-            <div><dt>Управитель</dt><dd>{{ openFigure.ruler }}</dd></div>
-            <div><dt>Ярчайшая звезда</dt><dd>{{ openFigure.alpha }}</dd></div>
-          </dl>
-          <RouterLink class="card-cta" :to="chartTo">
-            <span>Узнать свою карту</span>
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" /></svg>
-          </RouterLink>
-        </div>
-      </Transition>
+      <h1>Астрология<br />нового поколения</h1>
+      <p class="sub">Глубокий анализ вашей натальной карты <br />и точные прогнозы на будущее с помощью ИИ</p>
+      <RouterLink class="cta" :to="chartTo">
+        <span>Узнать свою карту</span>
+        <svg class="cta-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4" /></svg>
+      </RouterLink>
+      <p class="hint">
+        <svg class="hint-icon" viewBox="0 0 28 30" aria-hidden="true">
+          <path d="M23 3C26 12 20 22 7 25" />
+          <path d="M11 20.5 6.5 25.2 12 28" />
+          <path d="M19.5 6.5 23 2.5 26.5 6.8" />
+        </svg>
+        <span>Перемещайте Солнце и Луну, <br />чтобы изменить тему</span>
+      </p>
+      <p class="sr-only" aria-live="polite">{{ phaseLabel }}</p>
     </div>
+
+    <aside class="note note-left">
+      <span class="note-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20"><path d="M10 1Q11 9 19 10Q11 11 10 19Q9 11 1 10Q9 9 10 1Z" /></svg>
+      </span>
+      <span class="note-text">
+        <strong>Натальная карта</strong>
+        <span>Ваш уникальный путь<br />и потенциал</span>
+      </span>
+    </aside>
+    <aside class="note note-right">
+      <span class="note-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" class="compass">
+          <circle cx="10" cy="10" r="6.2" />
+          <path d="M10 2.5v15M2.5 10h15" />
+          <path class="fill" d="M10 5.5 11.2 10 10 14.5 8.8 10Z" />
+        </svg>
+      </span>
+      <span class="note-text">
+        <strong>Прогнозы</strong>
+        <span>Важные события<br />и возможности</span>
+      </span>
+    </aside>
+
   </section>
+
+  <Transition name="card">
+    <div v-if="openFigure && cardStyle" :key="openFigure.key" class="zodiac-card" :style="cardStyle" role="dialog" :aria-label="openFigure.name">
+      <span class="card-sheen" aria-hidden="true" />
+      <button type="button" class="card-close" aria-label="Закрыть" @click="openId = ''">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+      </button>
+      <div class="card-head">
+        <span class="card-glyph" aria-hidden="true">
+          <span class="card-glyph-orbit" />
+          {{ openFigure.glyph }}
+        </span>
+        <div>
+          <p class="card-kicker">Знак зодиака · {{ openFigure.animal }}</p>
+          <p class="card-name">{{ openFigure.name }}</p>
+          <p class="card-dates">{{ openFigure.dates }}</p>
+        </div>
+      </div>
+      <ul class="card-traits">
+        <li v-for="trait in openFigure.traits" :key="trait">{{ trait }}</li>
+      </ul>
+      <p class="card-text">{{ openFigure.text }}</p>
+      <p class="card-myth">{{ openFigure.myth }}</p>
+      <dl class="card-facts">
+        <div><dt>Стихия</dt><dd>{{ openFigure.element }}</dd></div>
+        <div><dt>Крест</dt><dd>{{ openFigure.modality }}</dd></div>
+        <div><dt>Управитель</dt><dd>{{ openFigure.ruler }}</dd></div>
+        <div><dt>Ярчайшая звезда</dt><dd>{{ openFigure.alpha }}</dd></div>
+      </dl>
+      <RouterLink class="card-cta" :to="chartTo">
+        <span>Узнать свою карту</span>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" /></svg>
+      </RouterLink>
+    </div>
+  </Transition>
 </template>
 
 <style scoped>
-.cosmos {
-  position: relative;
+/* The sky stays put for the whole page; sections scroll over it. */
+.sky-stage {
+  position: fixed;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
   height: 100vh;
-  height: 100svh;
+  height: 100lvh;
   min-height: 620px;
   overflow: hidden;
   background: #04060c;
   color: #f3ece0;
-  isolation: isolate;
+  touch-action: pan-y;
 }
 
-.cosmos.no-webgl {
+.hero {
+  position: relative;
+  z-index: 1;
+  height: 100vh;
+  height: 100svh;
+  min-height: 620px;
+  overflow: hidden;
+  color: #f3ece0;
+  pointer-events: none;
+}
+
+.sky-stage.no-webgl {
   background:
     radial-gradient(60% 50% at 8% 70%, rgba(214, 120, 50, 0.45), transparent 70%),
     radial-gradient(50% 50% at 95% 30%, rgba(60, 90, 170, 0.35), transparent 70%),
@@ -504,15 +602,10 @@ onUnmounted(() => {
     #05070d;
 }
 
-.cosmos-sky {
-  position: absolute;
-  inset: 0;
-  touch-action: pan-y;
-}
-.cosmos.near-ring .cosmos-sky { cursor: grab; }
-.cosmos.is-dragging .cosmos-sky { cursor: grabbing; }
+.sky-stage.near-ring { cursor: grab; }
+.sky-stage.is-dragging { cursor: grabbing; }
 
-.cosmos-sky :deep(.cosmos-canvas) {
+.sky-stage :deep(.cosmos-canvas) {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -535,7 +628,12 @@ onUnmounted(() => {
   outline-offset: 4px;
 }
 .body-hit.is-set { pointer-events: none; }
-.cosmos.is-dragging .body-hit { cursor: grabbing; }
+.sky-stage.is-dragging .body-hit { cursor: grabbing; }
+
+.sky-stage :deep(.orbit-layer) {
+  transform-origin: 0 0;
+  will-change: transform;
+}
 
 /* ---------- Copy ---------- */
 .hero-copy {
@@ -767,6 +865,7 @@ onUnmounted(() => {
 .emblem-label svg { width: 10px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .emblem-btn.is-hot .emblem-label { opacity: 1; transform: translate(-50%, 0); }
 .emblem-btn.is-hot .emblem-label svg { animation: emblem-arrow 1.4s ease-in-out infinite; }
+.emblem-label.is-up svg { rotate: 180deg; }
 @keyframes emblem-arrow { 50% { transform: translateY(4px); } }
 
 /* ---------- Zodiac card ---------- */
@@ -774,8 +873,8 @@ onUnmounted(() => {
 .hero-copy.is-dimmed { opacity: 0.28; filter: blur(1px); }
 
 .zodiac-card {
-  position: absolute;
-  z-index: 6;
+  position: fixed;
+  z-index: 20;
   overflow: hidden;
   padding: 22px 22px 20px;
   border-radius: 20px;
@@ -968,7 +1067,7 @@ onUnmounted(() => {
 }
 
 @media (max-width: 760px) {
-  .cosmos { min-height: 780px; }
+  .sky-stage, .hero { min-height: 780px; }
   .hero-copy h1 { font-size: 40px; }
   .sub { font-size: 15px; }
   .sub br { display: none; }

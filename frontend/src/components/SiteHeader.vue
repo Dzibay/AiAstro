@@ -10,7 +10,7 @@ const { config, load } = useSiteConfig()
 const route = useRoute()
 
 const links = [
-  { id: 'about', label: 'О проекте', glyph: '☉' },
+  { id: 'how', label: 'О проекте', glyph: '☉' },
   { id: 'services', label: 'Услуги', glyph: '☽' },
   { id: 'forecasts', label: 'Прогнозы', glyph: '✦' },
 ]
@@ -19,23 +19,22 @@ const scrolled = ref(false)
 const active = ref('')
 const menuOpen = ref(false)
 
+/** Home sections in page order; only the ones with a link get highlighted. */
+const SECTIONS = ['how', 'services', 'forecasts', 'about', 'start']
+const linked = new Set(links.map((link) => link.id))
+
 // The section whose top has passed the middle of the screen is the one being read.
 function spy() {
   if (route.path !== '/') {
     active.value = ''
     return
   }
-  const doc = document.documentElement
-  if (window.scrollY + window.innerHeight >= doc.scrollHeight - 4 && window.scrollY > 40) {
-    active.value = 'about'
-    return
-  }
   let current = ''
-  for (const id of ['services', 'forecasts', 'about']) {
+  for (const id of SECTIONS) {
     const node = document.getElementById(id)
     if (node && node.getBoundingClientRect().top < window.innerHeight * 0.5) current = id
   }
-  active.value = current
+  active.value = linked.has(current) ? current : ''
 }
 
 function onScroll() {

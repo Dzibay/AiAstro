@@ -6,6 +6,7 @@ void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
 /*
  * One pass for the whole backdrop: sky, nebulae, stars, planet, Sun and Moon.
  * Coordinates are CSS pixels with y down, sizes are reference pixels times uU.
+ * The planet, Sun and Moon may be scaled down (uBodyU); the starry band pans by uPan.
  */
 export const FRAGMENT = `
 precision highp float;
@@ -14,6 +15,9 @@ uniform vec2 uRes;
 uniform float uDpr;
 uniform float uTime;
 uniform float uU;
+uniform float uBodyU;
+uniform float uPan;
+uniform float uBand2;
 uniform vec2 uSun;
 uniform vec2 uMoon;
 uniform vec3 uPlanet;
@@ -158,7 +162,9 @@ float brightStar(vec2 p, float cell, float density, float seed, out vec3 tint) {
 void main() {
   vec2 p = vec2(gl_FragCoord.x, uRes.y * uDpr - gl_FragCoord.y) / uDpr;
   vec2 uv = p / uRes;
-  vec2 s = p / uU;
+  // Band coordinates: the stars travel with the zodiac, nebulae a little slower.
+  vec2 sp = p - vec2(uPan, 0.0);
+  vec2 s = (p - vec2(uPan * 0.6, 0.0)) / uU;
   float t = uTime;
   float warm = uWarm;
 
@@ -169,8 +175,8 @@ void main() {
   float planetEdge = (rp - 1.0) * pr;
   float inPlanet = 1.0 - smoothstep(-0.8, 0.8, planetEdge);
 
-  float sunAlt = (length(uSun - pc) - pr) / uU;
-  float moonAlt = (length(uMoon - pc) - pr) / uU;
+  float sunAlt = (length(uSun - pc) - pr) / uBodyU;
+  float moonAlt = (length(uMoon - pc) - pr) / uBodyU;
   float sunVis = smoothstep(-70.0, 30.0, sunAlt);
   float moonVis = smoothstep(-70.0, 30.0, moonAlt);
 
@@ -183,12 +189,12 @@ void main() {
   vec2 w = s * 0.0042 + vec2(t * 0.0035, -t * 0.002);
   vec2 warp = vec2(fbm4(w * 1.4 + 7.3), fbm4(w * 1.4 + 2.1));
   float n = fbm(w + 1.6 * warp);
-  float horizonBank = exp(-max(planetEdge / uU - 40.0, 0.0) / 230.0) * (1.0 - inPlanet);
+  float horizonBank = exp(-max(planetEdge / uBodyU - 40.0, 0.0) / 230.0) * (1.0 - inPlanet);
   float warmMask = smoothstep(0.5, 0.0, uv.x) * smoothstep(0.12, 0.85, uv.y) * 0.85;
   warmMask += horizonBank * smoothstep(0.5, 0.12, uv.x) * 0.9;
   warmMask = clamp(warmMask, 0.0, 1.0);
   float cloud = smoothstep(0.4, 0.82, n) * warmMask;
-  float toSun = exp(-length(p - uSun) / (720.0 * uU));
+  float toSun = exp(-length(p - uSun) / (720.0 * uBodyU));
   float billow = smoothstep(0.45, 0.95, fbm4(w * 3.1 - warp * 1.2));
   vec3 cloudCol = mix(vec3(0.16, 0.06, 0.015), vec3(1.0, 0.56, 0.2), clamp(cloud * 1.25 + billow * 0.4, 0.0, 1.0));
   cloudCol = mix(cloudCol, vec3(1.0, 0.84, 0.58), billow * cloud * 0.7);
@@ -204,15 +210,18 @@ void main() {
   coolMask = clamp(coolMask, 0.0, 1.0);
   vec2 bandDir = normalize(vec2(-0.55, 1.0));
   vec2 bandOrigin = vec2(uRes.x * 1.02, -uRes.y * 0.05);
-  vec2 rel = p - bandOrigin;
-  float across = dot(rel, vec2(bandDir.y, -bandDir.x)) / uU;
-  float band = exp(-across * across / (2.0 * 170.0 * 170.0)) * smoothstep(1.1, 0.2, uv.y);
-  float lane = smoothstep(0.55, 0.75, fbm4(s * 0.012 + 5.0)) * band;
+  vec2 bandNormal = vec2(bandDir.y, -bandDir.x);
+  float across = dot(sp - bandOrigin, bandNormal) / uU;
+  // The Milky Way crosses the ecliptic twice: by Taurus and by Sagittarius.
+  float across2 = dot(sp - vec2(uBand2, -uRes.y * 0.05), bandNormal) / uU;
+  float band = max(exp(-across * across / (2.0 * 170.0 * 170.0)), exp(-across2 * across2 / (2.0 * 190.0 * 190.0)));
+  band *= smoothstep(1.1, 0.2, uv.y);
+  float lane = smoothstep(0.55, 0.75, fbm4(sp / uU * 0.012 + 5.0)) * band;
   float wisp = smoothstep(0.42, 0.9, nc);
   float coolGain = 0.45 + 0.85 * (1.0 - warm);
   vec3 coolCol = mix(vec3(0.03, 0.06, 0.16), vec3(0.4, 0.6, 1.0), wisp);
   col += coolCol * (wisp * coolMask * 0.9 + band * 0.28 * nc) * coolGain;
-  col += vec3(0.55, 0.62, 0.8) * band * fbm4(s * 0.03) * 0.09 * coolGain;
+  col += vec3(0.55, 0.62, 0.8) * band * fbm4(sp / uU * 0.03) * 0.09 * coolGain;
   col *= 1.0 - lane * 0.45;
 
   // --- Stars
@@ -220,19 +229,19 @@ void main() {
   vec3 tint;
   float bandBoost = 1.0 + band * 3.5;
   float starNight = 0.55 + 0.6 * (1.0 - warm);
-  float st = starLayer(p, 7.0, 0.05, 1.0, bandBoost, tint);
+  float st = starLayer(sp, 7.0, 0.05, 1.0, bandBoost, tint);
   col += tint * st * 0.55 * starNight * starKill;
-  st = starLayer(p, 17.0, 0.16, 11.0, 1.0 + band * 1.5, tint);
+  st = starLayer(sp, 17.0, 0.16, 11.0, 1.0 + band * 1.5, tint);
   col += tint * st * 0.9 * starNight * starKill;
-  st = starLayer(p, 37.0, 0.22, 29.0, 1.0, tint);
+  st = starLayer(sp, 37.0, 0.22, 29.0, 1.0, tint);
   col += tint * st * 1.15 * starNight * starKill;
   if (uHigh > 0.5) {
-    st = brightStar(p, 151.0, 0.32, 41.0, tint);
+    st = brightStar(sp, 151.0, 0.32, 41.0, tint);
     col += tint * st * starNight * starKill;
   }
 
   // --- Sun light across the sky
-  vec2 ds = (p - uSun) / uU;
+  vec2 ds = (p - uSun) / uBodyU;
   float rs = length(ds);
   float sunScale = 1.0 + uSunHover * 0.07;
   float R0 = 35.0 * sunScale;
@@ -241,7 +250,7 @@ void main() {
   col += sunLight * sunGlow * sunVis * (1.0 + uSunHover * 0.35) * (1.0 - inPlanet);
 
   // --- Moon light
-  vec2 dm = (p - uMoon) / uU;
+  vec2 dm = (p - uMoon) / uBodyU;
   float rm = length(dm);
   float moonScale = 1.0 + uMoonHover * 0.07;
   float M0 = 33.0 * moonScale;
@@ -254,7 +263,7 @@ void main() {
   vec2 moonDir = normalize(uMoon - pc);
   float sideSun = smoothstep(0.2, 1.0, dot(limbDir, sunDir));
   float sideMoon = smoothstep(0.2, 1.0, dot(limbDir, moonDir));
-  float above = max(planetEdge / uU, 0.0);
+  float above = max(planetEdge / uBodyU, 0.0);
   float haze = exp(-above / 6.0) * 0.9 + exp(-above / 30.0) * 0.3 + exp(-above / 110.0) * 0.08;
   vec3 airWarm = mix(vec3(1.0, 0.7, 0.4), vec3(1.0, 0.9, 0.75), exp(-above / 6.0));
   vec3 airCool = mix(vec3(0.35, 0.55, 1.0), vec3(0.75, 0.85, 1.0), exp(-above / 6.0));
@@ -316,7 +325,7 @@ void main() {
     float rayFall = smoothstep(R0 * 0.85, R0 * 1.02, rs) * exp(-(rs - R0) / (18.0 * sunScale));
     float corona = exp(-max(rs - R0, 0.0) / 9.0) * 0.8;
     vec3 sunAdd = vec3(1.0, 0.76, 0.42) * (rays * rayFall * 1.6 + corona);
-    float disc = 1.0 - smoothstep(R0 - 0.9 / uU, R0 + 0.9 / uU, rs);
+    float disc = 1.0 - smoothstep(R0 - 0.9 / uBodyU, R0 + 0.9 / uBodyU, rs);
     if (rs < R0 + 2.0) {
       vec2 sp = ds / R0;
       float mu = sqrt(max(1.0 - dot(sp, sp), 0.0));
@@ -349,7 +358,7 @@ void main() {
     vec3 earthshine = vec3(0.06, 0.08, 0.13) * albedo;
     vec3 moonCol = mix(earthshine, moonSurf * limb * (0.55 + 0.6 * max(diff, 0.0)), terminator);
     moonCol += vec3(0.6, 0.72, 1.0) * pow(1.0 - mn.z, 4.0) * 0.25 * terminator;
-    float mdisc = (1.0 - smoothstep(M0 - 0.9 / uU, M0 + 0.9 / uU, rm)) * (1.0 - inPlanet);
+    float mdisc = (1.0 - smoothstep(M0 - 0.9 / uBodyU, M0 + 0.9 / uBodyU, rm)) * (1.0 - inPlanet);
     col = mix(col, moonCol * (1.0 + uMoonHover * 0.15), mdisc * moonVis);
   }
 

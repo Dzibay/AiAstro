@@ -5,8 +5,10 @@ import { ZODIAC_ART } from './zodiacArt.js'
 const props = defineProps({
   figures: { type: Array, required: true },
   geo: { type: Object, required: true },
-  /** id → { sun, moon } closeness 0..1 */
+  /** key → { sun, moon } closeness 0..1 */
   near: { type: Object, required: true },
+  /** Horizontal shift of the whole band, px. */
+  pan: { type: Number, default: 0 },
   hot: { type: String, default: '' },
   open: { type: String, default: '' },
 })
@@ -46,20 +48,28 @@ const drawn = computed(() => props.figures.map((figure) => {
     kind: stroke.kind,
     d: `M${stroke.pts.map(map).join('L')}`,
   }))
-  const closeness = props.near[figure.id] || { sun: 0, moon: 0 }
-  return {
-    ...figure,
-    lines,
-    art,
-    artCount: art.length,
-    haze,
-    style: {
-      '--sun-near': closeness.sun.toFixed(3),
-      '--moon-near': closeness.moon.toFixed(3),
-      '--near': Math.max(closeness.sun, closeness.moon).toFixed(3),
-    },
-  }
+  return { ...figure, lines, art, artCount: art.length, haze }
 }))
+
+// Kept apart from the paths so that moving the Sun or the band does not rebuild every figure.
+function styleOf(key) {
+  const closeness = props.near[key] || { sun: 0, moon: 0 }
+  return {
+    '--sun-near': closeness.sun.toFixed(3),
+    '--moon-near': closeness.moon.toFixed(3),
+    '--near': Math.max(closeness.sun, closeness.moon).toFixed(3),
+  }
+}
+
+/** Only the figures on or near the screen are drawn. */
+const shown = computed(() => {
+  const set = new Set()
+  for (const figure of props.figures) {
+    const left = figure.box.x + props.pan
+    if (left + figure.box.w > -props.geo.W * 0.15 && left < props.geo.W * 1.15) set.add(figure.key)
+  }
+  return set
+})
 
 function onKey(event, id) {
   if (event.key === 'Enter' || event.key === ' ') {
@@ -98,22 +108,24 @@ function onKey(event, id) {
       </filter>
     </defs>
 
+    <g class="band" :style="{ transform: `translate(${pan.toFixed(1)}px, 0)` }">
     <g
       v-for="figure in drawn"
-      :key="figure.id"
+      v-show="shown.has(figure.key)"
+      :key="figure.key"
       class="figure"
-      :class="{ 'is-hot': hot === figure.id, 'is-open': open === figure.id }"
-      :style="figure.style"
+      :class="{ 'is-hot': hot === figure.key, 'is-open': open === figure.key }"
+      :style="styleOf(figure.key)"
       role="button"
-      tabindex="0"
+      :tabindex="shown.has(figure.key) ? 0 : -1"
       :aria-label="`${figure.name}: открыть описание`"
-      :aria-expanded="open === figure.id"
-      @pointerenter="emit('hover', figure.id)"
+      :aria-expanded="open === figure.key"
+      @pointerenter="emit('hover', figure.key)"
       @pointerleave="emit('hover', '')"
-      @focus="emit('hover', figure.id)"
+      @focus="emit('hover', figure.key)"
       @blur="emit('hover', '')"
-      @click="emit('toggle', figure.id)"
-      @keydown="onKey($event, figure.id)"
+      @click="emit('toggle', figure.key)"
+      @keydown="onKey($event, figure.key)"
     >
       <rect class="hit" :x="figure.box.x" :y="figure.box.y" :width="figure.box.w" :height="figure.box.h" :rx="16 * u" />
 
@@ -151,6 +163,7 @@ function onKey(event, id) {
         {{ figure.name }}
       </text>
     </g>
+    </g>
   </svg>
 </template>
 
@@ -161,6 +174,7 @@ function onKey(event, id) {
   overflow: visible;
   pointer-events: none;
 }
+.band { will-change: transform; }
 
 .figure {
   pointer-events: auto;

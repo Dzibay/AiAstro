@@ -47,7 +47,7 @@ function setup() {
   const pos = gl.getAttribLocation(program, 'aPos')
   gl.enableVertexAttribArray(pos)
   gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0)
-  for (const name of ['uRes', 'uDpr', 'uTime', 'uU', 'uSun', 'uMoon', 'uPlanet', 'uWarm', 'uSunHover', 'uMoonHover', 'uIntro', 'uHigh']) {
+  for (const name of ['uRes', 'uDpr', 'uTime', 'uU', 'uBodyU', 'uPan', 'uBand2', 'uSun', 'uMoon', 'uPlanet', 'uWarm', 'uSunHover', 'uMoonHover', 'uIntro', 'uHigh']) {
     uniforms[name] = gl.getUniformLocation(program, name)
   }
   return true
@@ -73,6 +73,9 @@ function draw(now) {
   gl.uniform1f(uniforms.uDpr, w / s.width)
   gl.uniform1f(uniforms.uTime, s.still ? 12 : (now - start) / 1000 + 12)
   gl.uniform1f(uniforms.uU, s.u)
+  gl.uniform1f(uniforms.uBodyU, s.bodyU)
+  gl.uniform1f(uniforms.uPan, s.pan)
+  gl.uniform1f(uniforms.uBand2, s.band2)
   gl.uniform2f(uniforms.uSun, s.sun.x, s.sun.y)
   gl.uniform2f(uniforms.uMoon, s.moon.x, s.moon.y)
   gl.uniform3f(uniforms.uPlanet, s.planet.cx, s.planet.cy, s.planet.r)
