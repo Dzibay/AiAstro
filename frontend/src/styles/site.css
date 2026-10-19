@@ -63,14 +63,6 @@ main { flex: 1; }
 .narrow { width: min(460px, 100%); }
 .narrow-copy { width: min(720px, 100%); }
 
-.footer-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: center;
-  min-height: 72px;
-}
-
 body.home-sky {
   background: #04060c;
   overflow-x: clip;
@@ -86,8 +78,6 @@ body.home-sky {
   transition: padding 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
 }
 body.home-sky .header { position: fixed; left: 0; right: 0; }
-/* The sky stage is fixed behind the page; the footer scrolls over it. */
-body.home-sky .footer { position: relative; z-index: 1; background: rgba(4, 6, 12, 0.82); }
 .header.is-scrolled { padding-top: 8px; }
 
 .capsule {
@@ -207,8 +197,8 @@ body.home-sky .footer { position: relative; z-index: 1; background: rgba(4, 6, 1
   font-size: 14px;
   letter-spacing: 0.04em;
 }
-.nav a, .footer-links a { text-decoration: none; }
-.nav a:hover, .footer-links a:hover, .text-button:hover { color: var(--gold); }
+.nav a { text-decoration: none; }
+.nav a:hover, .text-button:hover { color: var(--gold); }
 .nav-sep {
   width: 5px;
   height: 5px;
@@ -512,14 +502,6 @@ input:focus {
 
 .error { color: var(--danger); }
 
-.footer {
-  border-top: 1px solid var(--line);
-  color: var(--muted);
-}
-
-.footer-links { display: flex; flex-wrap: wrap; gap: 14px; }
-.footer p { margin: 0; }
-
 .banner {
   position: fixed;
   z-index: 3;
@@ -560,5 +542,4 @@ input:focus {
 @media (max-width: 800px) {
   .cards { grid-template-columns: 1fr; }
   .banner { flex-direction: column; align-items: stretch; }
-  .footer-row { align-items: flex-start; padding: 14px 0; }
 }
