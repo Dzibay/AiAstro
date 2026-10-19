@@ -50,8 +50,11 @@ def allow(address: str) -> None:
 
 
 def _user_agent() -> str:
+    """HTTP headers are Latin-1: a Cyrillic site name («Астра») would fail the request before it is sent."""
+    name = settings.site_name if settings.site_name.isascii() else "Astra"
     contact = f"; {settings.geocoder_contact}" if settings.geocoder_contact else ""
-    return f"{settings.site_name}/1.0 (+{settings.public_base_url}{contact})"
+    agent = f"{name}/1.0 (+{settings.public_base_url}{contact})"
+    return agent if agent.isascii() else f"{name}/1.0"
 
 
 def _fetch(query: str) -> list:
@@ -94,12 +97,12 @@ def _place(item: dict) -> dict | None:
     if not name:
         return None
     # «Татарстан, Россия»: enough to tell the two Kirovs apart, short enough for one line.
+    # The state first: Russia's «region» is the federal district, too wide to tell the towns apart.
     detail = []
-    for key in ("state", "region", "country"):
-        value = address.get(key)
+    for value in (address.get("state") or address.get("region"), address.get("country")):
         if value and value != name and value not in detail:
             detail.append(value)
-    region = ", ".join(detail[-2:])
+    region = ", ".join(detail)
     return {
         "name": name,
         "region": region,
