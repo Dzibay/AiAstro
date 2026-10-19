@@ -4,23 +4,26 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
 import ReadingText from '../../components/cabinet/ReadingText.vue'
 import BirthForm from '../../components/cabinet/BirthForm.vue'
+import PairSpheres from '../../components/sky/PairSpheres.vue'
 import { ASPECTS, POINTS } from '../../components/cabinet/astro.js'
 import { errorText } from '../../api/http.js'
 import { inviteLink, usePartners } from '../../composables/usePartners.js'
 import { useToast } from '../../composables/useToast.js'
 import { formatDate } from '../../utils/format.js'
+import { usePrices } from '../../utils/prices.js'
 
 /**
  * «Пара»: the list of pairs, the two ways to a partner and the pair itself.
  *
  * ?add — the partner's data typed in by hand, ?invite — a link for the partner to fill in,
- * ?partner=<id> — one pair: the stars, the tone in a phrase and the key aspects for free,
- * the full reading once it is bought. The sky (CabinetView → PairSky) follows the same query.
+ * ?partner=<id> — one pair: the stars, the tone in a phrase, the five spheres, the key aspects
+ * and the opening of the reading for free, the full reading once it is bought. The sky (CabinetView → PairSky) follows the same query.
  */
 
 const props = defineProps({
   user: { type: Object, required: true },
 })
+const { synastry: pairPrice, synastrySky: pairSkyPrice } = usePrices()
 
 const route = useRoute()
 const router = useRouter()
@@ -274,6 +277,11 @@ function status_of(item) {
         <p v-else-if="!pair?.data" class="loading">Складываем две карты…</p>
 
         <template v-else>
+          <section v-if="pair.data.spheres?.length" class="block" aria-labelledby="spheres-title">
+            <h3 id="spheres-title" class="block-title">Пять сфер</h3>
+            <PairSpheres :spheres="pair.data.spheres" />
+          </section>
+
           <section class="block" aria-labelledby="aspects-title">
             <h3 id="aspects-title" class="block-title">Ключевые аспекты</h3>
             <ul v-if="aspects.length" class="chips">
@@ -300,13 +308,31 @@ function status_of(item) {
             <p v-else class="quiet-text">Тесных аспектов между картами нет: связь складывается из времени и выбора.</p>
           </section>
 
-          <div v-if="pair.data.locked" class="unlock">
-            <p class="unlock-note">Звёзды, тон и аспекты открыты всем. Полный разбор — как вы любите, спорите и растёте рядом — отдельно для этой пары.</p>
-            <RouterLink class="unlock-cta" :to="{ name: 'checkout', params: { product: 'synastry' }, query: { partner: partner.id } }">
-              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
-              Оформить разбор — от … ₽
-            </RouterLink>
-          </div>
+          <template v-if="pair.data.locked">
+            <section class="block" aria-labelledby="reading-title">
+              <h3 id="reading-title" class="block-title">Разбор пары</h3>
+              <div class="text is-locked">
+                <ReadingText :reading="pair.data.reading" />
+              </div>
+            </section>
+            <div class="unlock">
+              <p class="unlock-note">
+                Дальше — что стоит за каждой сферой: как вы любите, спорите и растёте рядом.
+                Разбор открывается один раз и остаётся с этой парой навсегда.
+              </p>
+              <dl class="pair-prices">
+                <div :class="{ 'is-mine': !user.sky }"><dt>Отдельно</dt><dd>{{ pairPrice }}</dd></div>
+                <div class="with-sky" :class="{ 'is-mine': user.sky }"><dt>С Небосводом</dt><dd>{{ pairSkyPrice }}</dd></div>
+              </dl>
+              <RouterLink class="unlock-cta" :to="{ name: 'checkout', params: { product: 'synastry' }, query: { partner: partner.id } }">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
+                Открыть разбор — {{ user.sky ? pairSkyPrice : pairPrice }}
+              </RouterLink>
+              <RouterLink v-if="!user.sky" class="sky-link" :to="{ name: 'checkout', params: { product: 'sky' } }">
+                С «Небосводом» каждый разбор пары дешевле →
+              </RouterLink>
+            </div>
+          </template>
           <section v-else class="block" aria-labelledby="reading-title">
             <h3 id="reading-title" class="block-title">Разбор пары</h3>
             <ReadingText :reading="pair.data.reading" />
@@ -505,7 +531,25 @@ function status_of(item) {
 .chip-glyphs .tone-tense { color: #d98b7a; }
 .chip-text { font-family: var(--book); font-size: 14px; line-height: 1.4; }
 
-.unlock { display: grid; gap: 12px; justify-items: start; }
+.unlock { display: grid; gap: 12px; justify-items: start; margin-top: -8px; }
+/* The reading's opening dissolves into the haze: the rest is the bought part. */
+.text.is-locked {
+  max-height: 12em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, #000 35%, transparent);
+  mask-image: linear-gradient(180deg, #000 35%, transparent);
+  user-select: none;
+}
+.pair-prices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; margin: 0; }
+.pair-prices div { display: grid; gap: 2px; justify-items: center; padding: 10px 8px; border-radius: 14px; border: 1px solid rgba(240, 210, 150, 0.14); }
+.pair-prices .with-sky { border-color: rgba(240, 205, 138, 0.4); background: linear-gradient(180deg, rgba(240, 205, 138, 0.07), transparent); }
+.pair-prices .is-mine { box-shadow: 0 0 0 3px rgba(240, 205, 138, 0.1); }
+.pair-prices dt { font-family: var(--caps); font-weight: 600; font-size: 14px; letter-spacing: 0.08em; color: rgba(226, 220, 210, 0.62); }
+.pair-prices .with-sky dt { color: #f0cd8a; }
+.pair-prices dd { margin: 0; font-family: var(--serif); font-size: 21px; color: #f6efe2; }
+.sky-link { font-size: 13px; color: #f0cd8a; text-decoration: underline; text-decoration-color: rgba(240, 205, 138, 0.35); text-underline-offset: 3px; }
+.sky-link:hover { text-decoration-color: currentColor; }
+.sky-link:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 2px; border-radius: 4px; }
 .unlock-note { margin: 0; font-size: 13.5px; line-height: 1.5; color: rgba(233, 194, 124, 0.8); }
 .unlock-cta {
   display: inline-flex;

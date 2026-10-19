@@ -17,6 +17,7 @@ from app.astro.ephemeris import PLANETS, sky_at, wrap
 PERIODS = ("day", "week")
 ORB_SCALE = 0.35
 WEEK_DAYS = 7
+MONTH_DAYS = 30
 # The key transits shown as chips under the text.
 KEY_TRANSITS = 4
 
@@ -149,3 +150,30 @@ def build(chart: dict, start: date, period: str, tz: str) -> dict:
         "transits": _strongest(list(closest.values())),
         "days": [{"date": day["date"].isoformat(), "tone": _tone(day["score"]), "score": round(day["score"], 2)} for day in days],
     }
+
+
+def month(chart: dict, start: date, tz: str) -> list[dict]:
+    """Thirty days from `start`: each day's tone and its strongest transit, for the star calendar.
+
+    Slow planets hold the same aspects for months and would colour every day alike, so a day's
+    tone is read against the month's median and its main transit is one the month does not hold
+    throughout, when there is such."""
+    targets = _targets(chart)
+    raw = [_day(chart, targets, start + timedelta(days=offset), tz) for offset in range(MONTH_DAYS)]
+    scores = sorted(day["score"] for day in raw)
+    middle = len(scores) // 2
+    median = scores[middle] if len(scores) % 2 else (scores[middle - 1] + scores[middle]) / 2
+    keys = [{(t["a"], t["b"], t["type"]) for t in day["transits"]} for day in raw]
+    constant = set.intersection(*keys) if keys else set()
+    days = []
+    for day in raw:
+        ranked = sorted(day["transits"], key=lambda t: t["strength"], reverse=True)
+        passing = [t for t in ranked if (t["a"], t["b"], t["type"]) not in constant]
+        top = (passing or ranked)[:1]
+        days.append({
+            "date": day["date"].isoformat(),
+            "tone": _tone(day["score"] - median),
+            "score": round(day["score"] - median, 2),
+            "top": {key: top[0][key] for key in ("a", "b", "type", "lean")} if top else None,
+        })
+    return days

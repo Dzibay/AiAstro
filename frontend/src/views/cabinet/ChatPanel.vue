@@ -5,6 +5,8 @@ import PanelHead from '../../components/cabinet/PanelHead.vue'
 import ReadingText from '../../components/cabinet/ReadingText.vue'
 import { useChat } from '../../composables/useChat.js'
 import { useSky } from '../../composables/useSky.js'
+import { usePrices } from '../../utils/prices.js'
+import { markStep } from '../../utils/newcomer.js'
 
 /**
  * The conversation with the astrologer. The astrologer speaks in italic serif, the person in the
@@ -18,6 +20,7 @@ const props = defineProps({
 
 const { chat, load, ask } = useChat()
 const { mark } = useSky()
+const { sky: skyPrice } = usePrices()
 
 const LENGTH = 600
 const STAR = 'M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z'
@@ -37,8 +40,8 @@ const suggestions = computed(() => {
 const trialNote = computed(() => {
   if (chat.left == null || chat.left === 0) return ''
   return chat.left === chat.trial
-    ? `Без «Небосвода» — ${chat.trial} пробных вопроса.`
-    : 'Остался один пробный вопрос.'
+    ? `${chat.trial} вопроса в подарок — спросите о самом важном.`
+    : 'Остался один вопрос в подарок.'
 })
 
 onMounted(() => {
@@ -72,6 +75,7 @@ async function send(text = draft.value) {
   if (ok) {
     // The person's star answers on the sky as the reply arrives.
     mark.flash += 1
+    markStep(props.user.id, 'chat')
   } else if (typed && !draft.value) {
     draft.value = question
   }
@@ -139,10 +143,10 @@ function fit() {
 
       <div class="composer-wrap">
         <div v-if="locked" class="unlock">
-          <p class="unlock-note">Пробные вопросы позади. Разговор без счёта вопросов — в «Небосводе».</p>
+          <p class="unlock-note">Вопросы в подарок позади — надеемся, астролог был вам полезен. В «Небосводе» разговор идёт без счёта вопросов, а вместе с ним загораются полные прогнозы и звёздный календарь.</p>
           <RouterLink class="unlock-cta" :to="{ name: 'checkout', params: { product: 'sky' } }">
             <svg viewBox="0 0 20 20" aria-hidden="true"><path :d="STAR" /></svg>
-            Открыть Небосвод — от … ₽
+            Зажечь Небосвод — {{ skyPrice }}
           </RouterLink>
         </div>
 
@@ -170,7 +174,10 @@ function fit() {
           </form>
           <p v-if="chat.error" class="error" role="alert">{{ chat.error }}</p>
           <p v-else-if="draft.length > LENGTH - 100" class="hint" :class="{ 'is-over': draft.length > LENGTH }">{{ draft.length }} / {{ LENGTH }}</p>
-          <p v-else-if="trialNote" class="hint">{{ trialNote }}</p>
+          <p v-else-if="trialNote" class="hint">
+            {{ trialNote }}
+            <RouterLink class="hint-link" :to="{ name: 'checkout', params: { product: 'sky' } }">Без счёта — в «Небосводе»</RouterLink>
+          </p>
         </template>
       </div>
     </template>
@@ -333,6 +340,8 @@ function fit() {
 .loading { margin: 0; font-family: var(--serif); font-style: italic; font-size: 17px; color: rgba(242, 228, 200, 0.75); }
 
 .unlock { display: grid; gap: 12px; justify-items: start; }
+.hint-link { margin-left: 4px; color: #f0cd8a; text-decoration: underline; text-decoration-color: rgba(240, 205, 138, 0.35); text-underline-offset: 3px; }
+.hint-link:hover { text-decoration-color: currentColor; }
 .unlock-note { margin: 0; font-size: 13.5px; line-height: 1.5; color: rgba(233, 194, 124, 0.8); }
 .unlock-cta, .add-birth {
   display: inline-flex;

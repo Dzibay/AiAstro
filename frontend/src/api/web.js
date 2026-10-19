@@ -9,6 +9,12 @@ export const webApi = {
   chartItem: (id) => request(`/api/web/me/chart/items/${encodeURIComponent(id)}`, { audience: 'web', auth: true }),
   forecast: (period, tz) =>
     request(`/api/web/me/forecast?${new URLSearchParams({ period, tz })}`, { audience: 'web', auth: true }),
+  month: (tz) => request(`/api/web/me/forecast/month?${new URLSearchParams({ tz })}`, { audience: 'web', auth: true }),
+  setName: (name) => request('/api/web/me/name', { method: 'PUT', body: { name }, audience: 'web', auth: true }),
+  setEmail: (body) => request('/api/web/me/email', { method: 'PUT', body, audience: 'web', auth: true }),
+  setPassword: (body) => request('/api/web/me/password', { method: 'PUT', body, audience: 'web', auth: true }),
+  deleteAccount: (password) =>
+    request('/api/web/me/delete', { method: 'POST', body: { password }, audience: 'web', auth: true }),
   partners: () => request('/api/web/me/partners', { audience: 'web', auth: true }),
   addPartner: (body) => request('/api/web/me/partners', { method: 'POST', body, audience: 'web', auth: true }),
   removePartner: (id) =>

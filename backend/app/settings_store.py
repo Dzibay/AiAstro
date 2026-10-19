@@ -9,7 +9,12 @@ FIELDS = {
     "site_name": ("Название", "Астра"),
     "tagline": ("Подзаголовок", "Натальная карта обычным языком"),
     "support_email": ("Почта поддержки", ""),
+    # Prices are shown, not charged: whole roubles as text, empty keeps «от … ₽» on the site.
+    "price_sky": ("Цена «Небосвода», ₽ в месяц", ""),
+    "price_synastry": ("Цена разбора пары, ₽", ""),
+    "price_synastry_sky": ("Цена разбора пары с «Небосводом», ₽", ""),
 }
+PRICES = ("price_sky", "price_synastry", "price_synastry_sky")
 
 _cache: dict[str, str] = {}
 _loaded = False
@@ -31,12 +36,13 @@ def get_settings() -> dict[str, str]:
     return dict(_cache)
 
 
-def public_config(fallback_name: str) -> dict[str, str]:
+def public_config(fallback_name: str) -> dict:
     data = get_settings()
     return {
         "site_name": data.get("site_name") or fallback_name or FIELDS["site_name"][1],
         "tagline": data.get("tagline") or FIELDS["tagline"][1],
         "support_email": data.get("support_email") or "",
+        "prices": {key.removeprefix("price_"): data.get(key) or "" for key in PRICES},
     }
 
 
@@ -55,6 +61,8 @@ def set_setting(key: str, value: str) -> dict[str, str]:
     cleaned = " ".join(value.split())
     if key == "support_email":
         cleaned = cleaned.lower()
+    if key in PRICES and cleaned and not (cleaned.isascii() and cleaned.isdigit() and len(cleaned) <= 7):
+        raise DomainError("setting")
     if len(cleaned) > 300:
         raise DomainError("setting")
     with pool.connection() as conn:

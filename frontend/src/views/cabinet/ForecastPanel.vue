@@ -3,13 +3,17 @@ import { computed, onUnmounted, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
 import ReadingText from '../../components/cabinet/ReadingText.vue'
+import StarCalendar from '../../components/sky/StarCalendar.vue'
+import SkyNudge from '../../components/sky/SkyNudge.vue'
 import { useChart } from '../../composables/useChart.js'
 import { useForecast } from '../../composables/useForecast.js'
 import { ASPECTS, POINTS } from '../../components/cabinet/astro.js'
+import { usePrices } from '../../utils/prices.js'
 
 /**
- * The forecast beside the wheel: a day or a week from today. The transits are a calculation and
- * open to everyone; the text is «Небосвод», so without it the first lines fade into the haze.
+ * The forecast beside the wheel: a day, a week or the star calendar of the month. The transits
+ * are a calculation and open to everyone; the text is «Небосвод», so without it the first lines
+ * fade into the haze, and the calendar shows its first week only.
  */
 
 defineProps({
@@ -21,18 +25,28 @@ const router = useRouter()
 const { hot } = useChart()
 const { forecasts, load } = useForecast()
 
-const period = computed(() => (route.query.period === 'week' ? 'week' : 'day'))
+const MODES = [
+  { id: 'day', name: 'День' },
+  { id: 'week', name: 'Неделя' },
+  { id: 'month', name: 'Месяц' },
+]
+const period = computed(() => (MODES.some((mode) => mode.id === route.query.period) ? route.query.period : 'day'))
+const { sky: skyPrice } = usePrices()
 const entry = computed(() => forecasts[period.value])
 const data = computed(() => entry.value.data)
 
-watch(period, (value) => load(value), { immediate: true })
+watch(period, (value) => {
+  load(value)
+  // Beside the calendar the wheel carries today's sky.
+  if (value === 'month') load('day')
+}, { immediate: true })
 onUnmounted(() => {
   hot.value = ''
 })
 
 function choose(value) {
   if (value === period.value) return
-  router.replace({ query: value === 'week' ? { period: 'week' } : {} })
+  router.replace({ query: value === 'day' ? {} : { period: value } })
 }
 
 const dayFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', timeZone: 'UTC' })
@@ -81,10 +95,9 @@ function setHot(key) {
 
 <template>
   <div class="forecast-panel">
-    <div class="mode-toggle" role="group" aria-label="Прогноз на день или на неделю">
-      <span class="mode-thumb" :class="{ 'is-right': period === 'week' }" aria-hidden="true" />
-      <button type="button" :aria-pressed="period === 'day'" @click="choose('day')">День</button>
-      <button type="button" :aria-pressed="period === 'week'" @click="choose('week')">Неделя</button>
+    <div class="mode-toggle" role="group" aria-label="Прогноз на день, неделю или месяц">
+      <span class="mode-thumb" :style="{ transform: `translateX(${MODES.findIndex((mode) => mode.id === period) * 100}%)` }" aria-hidden="true" />
+      <button v-for="mode in MODES" :key="mode.id" type="button" :aria-pressed="period === mode.id" @click="choose(mode.id)">{{ mode.name }}</button>
     </div>
 
     <template v-if="entry.status === 'empty'">
@@ -100,6 +113,18 @@ function setHot(key) {
     <p v-else-if="entry.status === 'error'" class="error">{{ entry.message }}</p>
     <p v-else-if="!data" class="loading">Смотрим, что небо готовит…</p>
 
+    <template v-else-if="period === 'month'">
+      <PanelHead lead="Тридцать дней вперёд: у каждого своя звезда.">Звёздный <em>календарь</em></PanelHead>
+      <StarCalendar :month="data" />
+      <div v-if="data.locked" class="unlock">
+        <p class="unlock-note">Открыта первая неделя. Остальные дни месяца и главный транзит каждого — в «Небосводе».</p>
+        <RouterLink class="unlock-cta" :to="{ name: 'checkout', params: { product: 'sky' } }">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
+          Рассеять туман — {{ skyPrice }}
+        </RouterLink>
+      </div>
+    </template>
+
     <template v-else>
       <PanelHead :lead="dateLine">{{ data.title }}</PanelHead>
 
@@ -110,7 +135,7 @@ function setHot(key) {
         <p class="unlock-note">Транзиты открыты всем. Полный текст дня и недели — в «Небосводе».</p>
         <RouterLink class="unlock-cta" :to="{ name: 'checkout', params: { product: 'sky' } }">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
-          Открыть Небосвод — от … ₽
+          Зажечь Небосвод — {{ skyPrice }}
         </RouterLink>
       </div>
 
@@ -156,6 +181,10 @@ function setHot(key) {
         </ul>
         <p v-else class="quiet-text">Тесных транзитов нет: небо оставляет вам свободу.</p>
       </section>
+
+      <SkyNudge v-if="period === 'week'" :to="{ query: { period: 'month' } }" action="Открыть календарь">
+        Хотите видеть дальше недели? В звёздном календаре у каждого дня месяца своя звезда — лёгкая, бережная или ровная.
+      </SkyNudge>
     </template>
   </div>
 </template>
@@ -171,7 +200,7 @@ function setHot(key) {
 .mode-toggle {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   padding: 3px;
   border-radius: 999px;
   border: 1px solid rgba(240, 210, 150, 0.22);
@@ -196,12 +225,11 @@ function setHot(key) {
   top: 3px;
   bottom: 3px;
   left: 3px;
-  width: calc(50% - 3px);
+  width: calc((100% - 6px) / 3);
   border-radius: 999px;
   background: linear-gradient(180deg, #f4dba6, #dcb36c);
   transition: transform 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
 }
-.mode-thumb.is-right { transform: translateX(100%); }
 
 .text { display: grid; gap: 12px; }
 /* Without «Небосвод» the first lines dissolve into the haze. */

@@ -13,6 +13,7 @@ import CheckoutView from '../views/CheckoutView.vue'
 import InviteView from '../views/InviteView.vue'
 import PairPanel from '../views/cabinet/PairPanel.vue'
 import ChatPanel from '../views/cabinet/ChatPanel.vue'
+import ProfilePanel from '../views/cabinet/ProfilePanel.vue'
 import { SECTIONS } from '../components/cabinet/layout.js'
 import { readSession } from '../composables/useSession.js'
 
@@ -43,6 +44,7 @@ const router = createRouter({
       children: [
         { path: '', name: 'cabinet', component: OverviewPanel },
         { path: 'birth', name: 'cabinet-birth', component: BirthPanel },
+        { path: 'profile', name: 'cabinet-profile', component: ProfilePanel },
         ...SECTIONS.map((section) => ({
           // /cabinet/chart/venus: one point of the chart, chosen on the wheel or in the list.
           path: section.id === 'chart' ? 'chart/:item?' : section.id,

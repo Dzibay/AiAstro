@@ -3,12 +3,12 @@ import { webApi } from '../api/web.js'
 import { ApiError, errorText } from '../api/http.js'
 
 /**
- * The day and the week (GET /me/forecast), shared by the forecast panel, the wheel's transits and
+ * The day, the week (GET /me/forecast) and the star calendar of the month (GET /me/forecast/month), shared by the forecast panel, the wheel's transits and
  * the overview's line about the Moon. Each period is asked once per visit and forgotten when the
  * birth data change or «Небосвод» opens.
  */
 
-export const PERIODS = ['day', 'week']
+export const PERIODS = ['day', 'week', 'month']
 
 /** status: idle → loading → ready | empty (no birth date yet) | error */
 const blank = () => ({ status: 'idle', data: null, message: '' })
@@ -32,8 +32,7 @@ function load(period) {
   if (pending.has(period)) return pending.get(period)
   entry.status = 'loading'
   const asked = generation
-  const request = webApi
-    .forecast(period, zone())
+  const request = (period === 'month' ? webApi.month(zone()) : webApi.forecast(period, zone()))
     .then((data) => {
       if (asked !== generation) return
       entry.data = data

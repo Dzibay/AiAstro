@@ -80,6 +80,7 @@ function selectPoint(id) {
 }
 const kicker = computed(() => {
   if (section.value) return SECTION_BY_ID[section.value].label
+  if (route.name === 'cabinet-profile') return 'Профиль'
   return birthOpen.value ? 'Данные рождения' : 'Кабинет'
 })
 
@@ -124,6 +125,12 @@ function onSaved(next) {
   markUser(next)
   mark.flash += 1
   leaveBirth()
+}
+
+/** The name or the email changed in the profile: nothing about the sky depends on them but the star's name. */
+function onUpdated(next) {
+  user.value = next
+  markUser(next)
 }
 
 function logout() {
@@ -289,7 +296,7 @@ const sheetStyle = computed(() => {
           <p v-if="message" class="error">{{ message }}</p>
           <RouterView v-else-if="user" v-slot="{ Component, route: current }">
             <Transition :name="motion" mode="out-in" @after-enter="focusTitle">
-              <component :is="Component" :key="current.name" :user="user" @saved="onSaved" @done="leaveBirth" @logout="logout" />
+              <component :is="Component" :key="current.name" :user="user" @saved="onSaved" @updated="onUpdated" @done="leaveBirth" @logout="logout" />
             </Transition>
           </RouterView>
           <p v-else class="loading">Открываем ваше небо…</p>

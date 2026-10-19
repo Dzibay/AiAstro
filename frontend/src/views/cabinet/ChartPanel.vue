@@ -3,6 +3,8 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
 import ReadingText from '../../components/cabinet/ReadingText.vue'
+import SkyNudge from '../../components/sky/SkyNudge.vue'
+import { markStep } from '../../utils/newcomer.js'
 import { useChart } from '../../composables/useChart.js'
 import { errorText } from '../../api/http.js'
 import { formatDate } from '../../utils/format.js'
@@ -93,6 +95,7 @@ watch([item, () => status.value], async ([id], previous) => {
   try {
     const result = await reading(id)
     if (item.value === id) text.value = { id, ...result }
+    if (id === 'sun') markStep(props.user.id, 'sun')
   } catch (error) {
     if (item.value === id) textError.value = errorText(error)
   } finally {
@@ -108,6 +111,30 @@ watch([item, () => status.value], async ([id], previous) => {
 function setHot(id) {
   hot.value = id
 }
+
+/**
+ * The hint under a reading, once it is read: the planets of love lead to the pair, the rest to
+ * the sky of today over the same chart.
+ */
+const LOVE = {
+  venus: 'Венера говорит о том, как вы любите. Как она звучит рядом с картой близкого человека, покажет совместимость — по пяти сферам жизни.',
+  mars: 'Марс — ваша искра и ваш напор. Где он зажигает другого человека, а где спорит с ним, видно в совместимости двух карт.',
+  moon: 'Луна — то, что нужно вам, чтобы чувствовать себя дома. С кем этот дом складывается легче, подскажет совместимость.',
+}
+const nudge = computed(() => {
+  if (!text.value || text.value.id !== item.value) return null
+  if (LOVE[item.value]) {
+    return { tone: 'sky', text: LOVE[item.value], action: 'Сложить две карты', to: { name: 'cabinet-pair' } }
+  }
+  return {
+    tone: 'gold',
+    text: props.user.sky
+      ? 'Карта — то, с чем вы родились. Как небо касается её сегодня и в ближайший месяц, читайте в прогнозе.'
+      : 'Карта — то, с чем вы родились. Каждый день небо касается её по-новому: транзиты дня открыты всем, а полный прогноз и звёздный календарь горят в «Небосводе».',
+    action: 'Прогноз дня',
+    to: { name: 'cabinet-forecast' },
+  }
+})
 </script>
 
 <template>
@@ -161,6 +188,8 @@ function setHot(id) {
           </ul>
           <p v-else class="quiet-text">Мажорных аспектов нет: эта точка говорит сама за себя.</p>
         </section>
+
+        <SkyNudge v-if="nudge" :to="nudge.to" :action="nudge.action" :tone="nudge.tone">{{ nudge.text }}</SkyNudge>
       </template>
       <p v-else class="quiet-text">Такой точки в вашей карте нет.</p>
     </template>

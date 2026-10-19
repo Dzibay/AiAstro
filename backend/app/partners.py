@@ -218,7 +218,7 @@ def fill_invite(
 # ---- The pair ----
 
 def synastry_of(user_id: int, partner_id: int) -> dict:
-    """The free part (tone, key aspects) always; the reading only once the pair is bought."""
+    """The free part (tone, spheres, key aspects, the reading's opening) always; the whole reading once bought."""
     row = _own(user_id, partner_id)
     birth = _birth(row)
     if birth is None:
@@ -226,10 +226,11 @@ def synastry_of(user_id: int, partner_id: int) -> dict:
     mine = chart_of(user_id)
     pair = synastry.build(mine, chart_for(birth))
     bought = partner_id in _bought(user_id)
-    reading = None
-    if bought:
-        inputs = [pair["tone"], pair["elements"], [[a["a"], a["b"], a["type"]] for a in pair["key"][:3]]]
-        reading = cached("synastry", inputs, lambda: interpreter.synastry(pair))
+    inputs = [pair["tone"], pair["elements"], [[a["a"], a["b"], a["type"]] for a in pair["key"][:3]]]
+    reading = cached("synastry", inputs, lambda: interpreter.synastry(pair))
+    # Before the purchase only the essence and the first part leave the server: the page fades them.
+    if not bought:
+        reading = {**reading, "parts": reading["parts"][:1]}
     return {
         "partner": _public(row, {partner_id} if bought else set()),
         "tone": pair["tone"],
@@ -238,6 +239,7 @@ def synastry_of(user_id: int, partner_id: int) -> dict:
             {key: aspect[key] for key in ("a", "b", "type", "orb")} | {"title": pair_aspect_title(aspect)}
             for aspect in pair["key"]
         ],
+        "spheres": pair["spheres"],
         "reading": reading,
         "locked": not bought,
     }

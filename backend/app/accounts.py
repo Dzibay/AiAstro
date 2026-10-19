@@ -190,6 +190,68 @@ def set_birth(
     return _public(row)
 
 
+# ---- The person's own settings ----
+
+def _checked(user_id: int, password: str) -> dict:
+    """The person's row once the password is right: the email, the password and the account itself ask for it."""
+    with pool.connection() as conn:
+        row = conn.execute(
+            f"SELECT {_USER_COLUMNS}, password_hash FROM users WHERE id = %s",
+            (user_id,),
+        ).fetchone()
+    if row is None or row["blocked"]:
+        raise DomainError("unauthorized", 401)
+    if not verify_password(password, row["password_hash"]):
+        raise DomainError("wrong_password", 403)
+    return row
+
+
+def set_name(user_id: int, name: str) -> dict:
+    cleaned = " ".join(name.split())[:80]
+    if not cleaned:
+        raise DomainError("name")
+    with pool.connection() as conn:
+        row = conn.execute(
+            f"UPDATE users SET name = %s WHERE id = %s AND NOT blocked RETURNING {_USER_COLUMNS}",
+            (cleaned, user_id),
+        ).fetchone()
+    if row is None:
+        raise DomainError("unauthorized", 401)
+    return _public(row)
+
+
+def set_email(user_id: int, email: str, password: str) -> dict:
+    cleaned = _clean_email(email)
+    _checked(user_id, password)
+    try:
+        with pool.connection() as conn:
+            row = conn.execute(
+                f"UPDATE users SET email = %s WHERE id = %s RETURNING {_USER_COLUMNS}",
+                (cleaned, user_id),
+            ).fetchone()
+    except UniqueViolation as exc:
+        raise DomainError("exists", 409) from exc
+    return _public(row)
+
+
+def set_password(user_id: int, current: str, password: str) -> None:
+    if len(password) < 8:
+        raise DomainError("password")
+    _checked(user_id, current)
+    with pool.connection() as conn:
+        conn.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hash_password(password), user_id))
+
+
+def delete_account(user_id: int, password: str) -> None:
+    """The account and everything of it: partners, purchases and the conversation go with it (ON DELETE CASCADE).
+
+    The session is a signed token with no table behind it: once the row is gone it opens nothing.
+    """
+    _checked(user_id, password)
+    with pool.connection() as conn:
+        conn.execute("DELETE FROM users WHERE id = %s", (user_id,))
+
+
 # ---- The operator's side ----
 
 ADMIN_PAGE = 50

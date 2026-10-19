@@ -107,3 +107,20 @@ def forecast_of(user_id: int, period: str, tz: str | None = None) -> dict:
         "reading": reading if user["sky"] else {**reading, "parts": reading["parts"][:1]},
         "locked": not user["sky"],
     }
+
+
+# Without «Небосвод» the calendar shows the days the week forecast already shows; the rest stay veiled.
+OPEN_DAYS = forecast.WEEK_DAYS
+
+
+def month_of(user_id: int, tz: str | None = None) -> dict:
+    """The star calendar: thirty days from today, each with its tone and its strongest transit."""
+    user = get_user(user_id)
+    chart = chart_of(user_id)
+    zone = _zone(tz) or _zone(user["birth"]["tz"]) or "UTC"
+    today = datetime.now(ZoneInfo(zone)).date()
+    days = forecast.month(chart, today, zone)
+    if not user["sky"]:
+        days = [day if index < OPEN_DAYS else {"date": day["date"], "tone": None, "score": None, "top": None}
+                for index, day in enumerate(days)]
+    return {"start": today.isoformat(), "days": days, "open": len(days) if user["sky"] else OPEN_DAYS, "locked": not user["sky"]}

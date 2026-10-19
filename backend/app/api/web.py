@@ -3,9 +3,9 @@ import datetime as dt
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
-from app.accounts import authenticate, get_user, register, set_birth
+from app.accounts import authenticate, delete_account, get_user, register, set_birth, set_email, set_name, set_password
 from app.api.deps import as_http, require_web_user
-from app.charts import chart_item, chart_of, forecast_of
+from app.charts import chart_item, chart_of, forecast_of, month_of
 from app.chat import LENGTH, ask, history
 from app.errors import DomainError
 from app.partners import create_partner, delete_partner, fill_invite, invite, list_partners, open_invite, synastry_of
@@ -46,6 +46,24 @@ class InviteIn(BaseModel):
 class QuestionIn(BaseModel):
     # The length is checked again after the spaces are folded: here only the crude bound.
     text: str = Field(max_length=LENGTH * 2)
+
+
+class NameIn(BaseModel):
+    name: str = Field(max_length=80)
+
+
+class EmailIn(BaseModel):
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=200)
+
+
+class PasswordIn(BaseModel):
+    current: str = Field(max_length=200)
+    password: str = Field(max_length=200)
+
+
+class DeleteIn(BaseModel):
+    password: str = Field(max_length=200)
 
 
 class LoginIn(BaseModel):
@@ -100,6 +118,42 @@ def update_birth(body: BirthIn, user_id: int = Depends(require_web_user)) -> dic
         raise as_http(exc) from exc
 
 
+@router.put("/me/name")
+def update_name(body: NameIn, user_id: int = Depends(require_web_user)) -> dict:
+    try:
+        return set_name(user_id, body.name)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.put("/me/email")
+def update_email(body: EmailIn, user_id: int = Depends(require_web_user)) -> dict:
+    """A new email for signing in; the password confirms it is the person themselves."""
+    try:
+        return set_email(user_id, body.email, body.password)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.put("/me/password")
+def update_password(body: PasswordIn, user_id: int = Depends(require_web_user)) -> dict:
+    try:
+        set_password(user_id, body.current, body.password)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    return {"ok": True}
+
+
+@router.post("/me/delete")
+def remove_account(body: DeleteIn, user_id: int = Depends(require_web_user)) -> dict:
+    """Deletes the account for good; a POST with the password, not a bare DELETE, so it is never an accident."""
+    try:
+        delete_account(user_id, body.password)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    return {"ok": True}
+
+
 @router.get("/me/chart")
 def my_chart(user_id: int = Depends(require_web_user)) -> dict:
     try:
@@ -126,6 +180,15 @@ def my_forecast(
     """Transits of the day or the week over the natal chart; the full text only with «Небосвод»."""
     try:
         return forecast_of(user_id, period, tz)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/me/forecast/month")
+def my_month(tz: str = Query(default="", max_length=64), user_id: int = Depends(require_web_user)) -> dict:
+    """The star calendar of thirty days; without «Небосвод» only its first week is open."""
+    try:
+        return month_of(user_id, tz)
     except DomainError as exc:
         raise as_http(exc) from exc
 

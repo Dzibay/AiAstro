@@ -30,6 +30,7 @@ const ERRORS = {
   question: 'Напишите вопрос',
   question_long: 'Вопрос слишком длинный — сократите его до 600 знаков',
   trial_over: 'Пробные вопросы закончились',
+  wrong_password: 'Неверный пароль',
 }
 
 export function errorText(error) {

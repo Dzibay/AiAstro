@@ -9,6 +9,7 @@ import { HOUSE_SECTORS, useSkyFocus } from '../composables/useSkyFocus.js'
 import { useSkyJourney } from '../composables/useSkyJourney.js'
 import { fallbackConfig, useSiteConfig } from '../composables/useSiteConfig.js'
 import { useHead } from '../utils/useHead.js'
+import { usePrices } from '../utils/prices.js'
 import { skyOn } from '../utils/skyToday.js'
 
 const steps = [
@@ -88,17 +89,18 @@ function showSpan(next) {
   turnSky(next === 'week' ? WEEK_TURN : 0)
 }
 
-const plans = [
+const prices = usePrices()
+const plans = computed(() => [
   { title: 'Натальная карта', price: '0 ₽', term: 'навсегда', text: 'Полный разбор карты рождения' },
-  { title: 'Совместимость', price: 'от … ₽', term: 'разово', text: 'Две карты рядом: сильные и спорные места' },
+  { title: 'Совместимость', price: prices.synastry.value, term: 'разово', text: 'Две карты рядом: пять сфер жизни, сильные и спорные места' },
   {
     title: 'Небосвод',
-    price: 'от … ₽',
+    price: prices.sky.value,
     term: 'в месяц',
-    text: 'Прогноз на день и неделю, чат с ИИ-астрологом, все разборы',
+    text: 'Полные прогнозы на день и неделю, звёздный календарь на месяц, ИИ-астролог без ограничений и разбор пары дешевле',
     star: true,
   },
-]
+])
 
 // V. Reviews stay hidden until there are real ones: invented voices on a live site mislead.
 const SHOW_VOICES = false
@@ -310,7 +312,7 @@ onMounted(async () => {
                 <p class="compat-title">Совместимость</p>
                 <p class="compat-text">Две карты рядом: где ваши ритмы совпадают, а где спорят.</p>
                 <div class="compat-foot">
-                  <span class="compat-price">от … ₽</span>
+                  <span class="compat-price">{{ prices.synastry.value }}</span>
                   <RouterLink class="line-cta" :to="chartTo">
                     Проверить совместимость
                     <span aria-hidden="true">→</span>
