@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { onOrbit, signedAngle } from './sky.js'
+import { HOUSE_SECTORS, useSkyFocus } from '../../composables/useSkyFocus.js'
 
 const props = defineProps({
   geo: { type: Object, required: true },
@@ -80,6 +81,22 @@ const grid = computed(() => {
   return { cx, cy, r, top, lat, emblem, runner, bottom }
 })
 
+// A house sector lit from the page: a brighter stretch of ring with its numeral outside.
+const { skyHouse } = useSkyFocus()
+const sectors = computed(() => HOUSE_SECTORS.map((sector, index) => {
+  const { r } = orbit.value
+  const a = onOrbit(orbit.value, sector.from)
+  const b = onOrbit(orbit.value, sector.to)
+  const mid = (sector.from + sector.to) / 2
+  const label = onOrbit(orbit.value, mid, -52 * u.value)
+  return {
+    index,
+    arc: `M${a.x} ${a.y}A${r} ${r} 0 0 1 ${b.x} ${b.y}`,
+    ends: [a, b, onOrbit(orbit.value, sector.from, -14 * u.value), onOrbit(orbit.value, sector.to, -14 * u.value)],
+    label: { ...label, text: sector.label },
+  }
+}))
+
 function starPath(x, y, size) {
   const k = size * 0.22
   return `M${x} ${y - size}Q${x + k} ${y - k} ${x + size} ${y}Q${x + k} ${y + k} ${x} ${y + size}Q${x - k} ${y + k} ${x - size} ${y}Q${x - k} ${y - k} ${x} ${y - size}Z`
@@ -146,6 +163,13 @@ function starPath(x, y, size) {
         <circle class="bead-halo" :cx="bead.x" :cy="bead.y" :r="7 * u" />
         <circle class="bead-core" :cx="bead.x" :cy="bead.y" :r="2.6 * u" />
       </g>
+      <g v-for="sector in sectors" :key="sector.index" class="house" :class="{ 'is-lit': skyHouse === sector.index }">
+        <path class="house-halo" :d="sector.arc" />
+        <path class="house-arc" :d="sector.arc" filter="url(#bloom)" />
+        <line class="house-end" :x1="sector.ends[0].x" :y1="sector.ends[0].y" :x2="sector.ends[2].x" :y2="sector.ends[2].y" />
+        <line class="house-end" :x1="sector.ends[1].x" :y1="sector.ends[1].y" :x2="sector.ends[3].x" :y2="sector.ends[3].y" />
+        <text class="house-label" :x="sector.label.x" :y="sector.label.y" :font-size="46 * u">{{ sector.label.text }}</text>
+      </g>
     </g>
 
     <g class="planet-grid" clip-path="url(#planet-clip)">
@@ -191,6 +215,19 @@ function starPath(x, y, size) {
 
 .bead-halo { fill: #ffd27e; opacity: calc(0.12 + var(--glow) * 0.35); filter: blur(2px); }
 .bead-core { fill: #ffe2a6; opacity: calc(0.75 + var(--glow) * 0.25); }
+
+.house { opacity: 0; transition: opacity 0.45s ease; }
+.house.is-lit { opacity: 1; }
+.house-halo { fill: none; stroke: #ffc66e; stroke-width: 14; stroke-linecap: round; opacity: 0.22; filter: blur(3px); vector-effect: non-scaling-stroke; }
+.house-arc { fill: none; stroke: #ffe2a6; stroke-width: 3.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.house-end { stroke: #f3d39a; stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.house-label {
+  fill: #ffe7b8;
+  font-family: var(--serif);
+  letter-spacing: 0.08em;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
 
 .lat { fill: none; stroke-width: 1; }
 .lat-1 { opacity: 0.55; }

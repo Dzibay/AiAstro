@@ -5,6 +5,7 @@ import CosmosCanvas from './hero/CosmosCanvas.vue'
 import OrbitLayer from './hero/OrbitLayer.vue'
 import ConstellationLayer from './hero/ConstellationLayer.vue'
 import { useSession } from '../composables/useSession.js'
+import { useSkyFocus } from '../composables/useSkyFocus.js'
 import {
   MOON_OFFSET,
   SUN_HOME,
@@ -17,7 +18,7 @@ import {
   signedAngle,
   warmthOf,
 } from './hero/sky.js'
-import { LAST_STOP, framed, placeBand, sceneAt } from './hero/journey.js'
+import { LAST_STOP, STOPS, framed, placeBand, sceneAt } from './hero/journey.js'
 
 const STORE_KEY = 'astra-sun'
 
@@ -58,9 +59,16 @@ let travelling = false
 const geo = computed(() => layout(size.value.w, size.value.h))
 const scene = computed(() => sceneAt(geo.value, journey.value, theta.value))
 const frame = computed(() => scene.value.frame)
-const sun = computed(() => framed(frame.value, onOrbit(geo.value.orbit, scene.value.theta)))
-const moon = computed(() => framed(frame.value, onOrbit(geo.value.orbit, scene.value.theta + MOON_OFFSET)))
-const warm = computed(() => warmthOf(scene.value.theta))
+// The forecast preview can turn the Sun and Moon a little, but only while the sky rests there.
+const { skyTurn, skyTurning } = useSkyFocus()
+const FORECASTS = STOPS.findIndex((stop) => stop.id === 'forecasts')
+const bodyTheta = computed(() => {
+  const near = Math.max(0, 1 - Math.abs(journey.value - FORECASTS) * 2)
+  return scene.value.theta + skyTurn.value * near
+})
+const sun = computed(() => framed(frame.value, onOrbit(geo.value.orbit, bodyTheta.value)))
+const moon = computed(() => framed(frame.value, onOrbit(geo.value.orbit, bodyTheta.value + MOON_OFFSET)))
+const warm = computed(() => warmthOf(bodyTheta.value))
 const figures = computed(() => placeBand(geo.value))
 const planet = computed(() => {
   const { planet: p } = geo.value
@@ -206,7 +214,7 @@ function canvasState() {
     moonHover: hover.value.moon,
     intro,
     high: high.value,
-    busy: Boolean(dragging.value) || Math.abs(velocity) > 1e-5 || intro < 1 || travelling,
+    busy: Boolean(dragging.value) || Math.abs(velocity) > 1e-5 || intro < 1 || travelling || skyTurning.value,
     still: reduce.value,
   }
 }
@@ -417,8 +425,8 @@ onUnmounted(() => {
 
     <OrbitLayer
       :geo="geo"
-      :sun="scene.theta"
-      :moon="scene.theta + MOON_OFFSET"
+      :sun="bodyTheta"
+      :moon="bodyTheta + MOON_OFFSET"
       :active="dragging"
       :emblem-hot="emblemHot"
       :style="orbitStyle"
