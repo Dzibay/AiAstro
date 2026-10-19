@@ -9,7 +9,8 @@ import { readSession } from '../composables/useSession.js'
 const router = createRouter({
   history: createWebHistory(),
   scrollBehavior(to) {
-    if (to.hash) return { el: to.hash, behavior: 'smooth' }
+    // vue-router ignores scroll-margin, so leave room for the floating header here.
+    if (to.hash) return { el: to.hash, top: 96, behavior: 'smooth' }
     return { top: 0 }
   },
   routes: [

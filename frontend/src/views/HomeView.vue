@@ -11,6 +11,7 @@ const services = [
     text: 'Положения планет на момент рождения и что они значат в быту, работе и близких отношениях.',
   },
   {
+    id: 'forecasts',
     title: 'Период',
     text: 'Какие темы становятся громче в выбранные месяцы и где лучше не принимать решение с ходу.',
   },
@@ -40,7 +41,7 @@ onMounted(async () => {
       <div class="wrap">
         <h2>Что будет в разборе</h2>
         <div class="cards">
-          <article v-for="service in services" :key="service.title" class="card">
+          <article v-for="service in services" :id="service.id" :key="service.title" class="card">
             <h3>{{ service.title }}</h3>
             <p>{{ service.text }}</p>
           </article>
