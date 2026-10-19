@@ -6,6 +6,7 @@ import HeroOrbit from '../components/HeroOrbit.vue'
 import StopHead from '../components/home/StopHead.vue'
 import { useSession } from '../composables/useSession.js'
 import { HOUSE_SECTORS, useSkyFocus } from '../composables/useSkyFocus.js'
+import { useSkyJourney } from '../composables/useSkyJourney.js'
 import { fallbackConfig, useSiteConfig } from '../composables/useSiteConfig.js'
 import { useHead } from '../utils/useHead.js'
 import { skyOn } from '../utils/skyToday.js'
@@ -40,6 +41,8 @@ const arcPath = (() => {
   return `M${x(top)} ${top + 14}A${ARC_R} ${ARC_R} 0 0 1 ${x(bottom)} ${bottom + 14}`
 })()
 const { skyHouse, turnSky } = useSkyFocus()
+// The sky behind the page (SkyStage) follows the scroll from stop to stop.
+useSkyJourney()
 
 // IV. A sample forecast for the real sky of today: the Moon's sign sets the mood of the day.
 const MOOD = {
@@ -145,13 +148,19 @@ const principles = [
 ]
 
 const { webToken } = useSession()
-const chartTo = computed(() => (webToken.value ? '/cabinet' : '/login'))
+const chartTo = computed(() => (webToken.value ? '/cabinet' : '/login?mode=register'))
 const openFaq = ref(-1)
 
-// The form only collects for now: the chart itself is built in the cabinet.
+// The form only collects for now: the chart itself is built in the cabinet. Registration
+// picks the data up for its second step (LoginView, same key).
 const router = useRouter()
 const birth = reactive({ date: '', time: '', noTime: false, city: '' })
 function buildChart() {
+  try {
+    if (birth.date || birth.time || birth.city) sessionStorage.setItem('astra-birth', JSON.stringify(birth))
+  } catch {
+    /* private mode */
+  }
   router.push(chartTo.value)
 }
 

@@ -1,10 +1,12 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { RouterView } from 'vue-router'
+import { RouterView, useRoute } from 'vue-router'
+import SkyStage from './components/SkyStage.vue'
 import { useToast } from './composables/useToast.js'
 import { acceptConsent, hasConsent } from './utils/consent.js'
 
 const { items } = useToast()
+const route = useRoute()
 const showConsent = ref(false)
 
 onMounted(() => {
@@ -18,6 +20,8 @@ function accept() {
 </script>
 
 <template>
+  <!-- One sky for every route that asks for it, so moving between them never restarts it. -->
+  <SkyStage v-if="route.meta.sky" />
   <RouterView />
   <div class="toasts" aria-live="polite">
     <p v-for="item in items" :key="item.id" class="toast">{{ item.text }}</p>

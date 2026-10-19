@@ -16,6 +16,14 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
+-- Данные рождения: дата и место, время может быть неизвестно. Город пока строкой,
+-- координаты и часовой пояс понадобятся вместе с расчётом карты.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_time TIME;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_place TEXT NOT NULL DEFAULT '';
+-- Когда человек дал согласие на обработку персональных данных (галочка при регистрации).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_at TIMESTAMPTZ;
+
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_key ON users (email);
 
 INSERT INTO app_settings (key, value) VALUES

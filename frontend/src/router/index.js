@@ -14,9 +14,9 @@ const router = createRouter({
     return { top: 0 }
   },
   routes: [
-    { path: '/', name: 'home', component: HomeView },
+    { path: '/', name: 'home', component: HomeView, meta: { sky: 'journey' } },
     { path: '/legal/:page', name: 'legal', component: LegalView },
-    { path: '/login', name: 'login', component: LoginView },
+    { path: '/login', name: 'login', component: LoginView, meta: { sky: 'login' } },
     {
       path: '/cabinet',
       name: 'cabinet',

@@ -142,3 +142,34 @@ export function sceneAt(geo, journey, userTheta) {
 export function framed(frame, point) {
   return { x: point.x * frame.s + frame.tx, y: point.y * frame.s + frame.ty }
 }
+
+/**
+ * Still poses for pages that are not a journey, by route meta.sky. Same shape as a stop:
+ * `frame` puts the orbit centre at a screen fraction with a planet scale, `pan` is in screens.
+ */
+export const POSES = {
+  // Login: the planet rises from the lower left, the orbit crosses the middle, the right is open sky.
+  login: { theta: 0.12, pan: 0, frame: [0.3, 0.98, 0.8], narrow: [0.5, 0.36, 0.5] },
+}
+
+export function poseScene(geo, id, userTheta) {
+  const pose = POSES[id]
+  if (!pose) return sceneAt(geo, 0, userTheta)
+  const [fx, fy, s] = geo.narrow && pose.narrow ? pose.narrow : pose.frame
+  return {
+    pan: geo.W * pose.pan,
+    frame: { s, tx: fx * geo.W - geo.orbit.cx * s, ty: fy * geo.H - geo.orbit.cy * s },
+    theta: pose.theta ?? userTheta,
+    hero: 0,
+  }
+}
+
+/** A scene part way from one to another, for flights between poses. */
+export function mixScene(a, b, t) {
+  return {
+    pan: mix(a.pan, b.pan, t),
+    frame: { s: mix(a.frame.s, b.frame.s, t), tx: mix(a.frame.tx, b.frame.tx, t), ty: mix(a.frame.ty, b.frame.ty, t) },
+    theta: mix(a.theta, b.theta, t),
+    hero: mix(a.hero, b.hero, t),
+  }
+}
