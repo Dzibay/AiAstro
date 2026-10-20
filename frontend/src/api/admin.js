@@ -18,6 +18,13 @@ export const adminApi = {
       audience: 'admin',
       auth: true,
     }),
+  /** The support's correction of the birth data, past the person's own one. */
+  setBirth: (id, birth) =>
+    request(`/api/admin/users/${encodeURIComponent(id)}/birth`, { method: 'PUT', body: birth, audience: 'admin', auth: true }),
+  /** Every pair with both its sides; state: '' | bought | linked | waiting. */
+  pairs: (q, state) => request(`/api/admin/pairs?${new URLSearchParams({ q, state })}`, { audience: 'admin', auth: true }),
+  setPairBought: (id, bought) =>
+    request(`/api/admin/pairs/${encodeURIComponent(id)}/purchase`, { method: 'PUT', body: { bought }, audience: 'admin', auth: true }),
   partners: (id) => request(`/api/admin/users/${encodeURIComponent(id)}/partners`, { audience: 'admin', auth: true }),
   setBought: (id, partnerId, bought) =>
     request(`/api/admin/users/${encodeURIComponent(id)}/partners/${encodeURIComponent(partnerId)}/purchase`, {

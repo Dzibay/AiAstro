@@ -1,12 +1,15 @@
-from fastapi import APIRouter, Depends, Query
+import datetime as dt
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel, Field
 
-from app.accounts import SKY_DAYS, list_users, set_sky
+from app import notes
+from app.accounts import SKY_DAYS, list_users, set_birth, set_sky
 from app.api.deps import as_http, require_admin
 from app.config import settings
 from app.errors import DomainError
 from app.mailer import mail_on, send
-from app.partners import admin_partners, set_bought
+from app.partners import admin_pairs, admin_partners, mine_changed, set_bought, set_pair_bought
 from app.payments import list_payments
 from app.security import check_admin_password, make_admin_session
 from app.settings_store import list_editable, set_setting
@@ -25,6 +28,14 @@ class SkyIn(BaseModel):
 
 class BoughtIn(BaseModel):
     bought: bool
+
+
+class BirthIn(BaseModel):
+    date: dt.date
+    time: dt.time | None = None
+    place: str | None = Field(default=None, max_length=200)
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lon: float | None = Field(default=None, ge=-180, le=180)
 
 
 class TestMailIn(BaseModel):
@@ -105,9 +116,42 @@ def users_partners(user_id: int) -> dict:
 
 
 @router.put("/users/{user_id}/partners/{partner_id}/purchase", dependencies=[Depends(require_admin)])
-def users_purchase(user_id: int, partner_id: int, body: BoughtIn) -> dict:
+def users_purchase(user_id: int, partner_id: int, body: BoughtIn, background: BackgroundTasks) -> dict:
     """Marks the reading of this pair as bought by hand (a gift, a refund) or takes the mark back."""
     try:
-        return set_bought(user_id, partner_id, body.bought)
+        partner, told = set_bought(user_id, partner_id, body.bought)
     except DomainError as exc:
         raise as_http(exc) from exc
+    background.add_task(notes.pair_gift, told)
+    return partner
+
+
+@router.put("/users/{user_id}/birth", dependencies=[Depends(require_admin)])
+def users_birth(user_id: int, body: BirthIn) -> dict:
+    """The support corrects the birth data once the person's own correction is spent."""
+    try:
+        user = set_birth(user_id, body.date, body.time, body.place, body.lat, body.lon, operator=True)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    mine_changed(user_id)
+    return user
+
+
+@router.get("/pairs", dependencies=[Depends(require_admin)])
+def pairs(q: str = Query(default="", max_length=100), state: str = Query(default="", max_length=16)) -> dict:
+    """Every pair with both its sides: bought, linked or waiting for the partner."""
+    try:
+        return {"items": admin_pairs(q, state)}
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.put("/pairs/{pair_id}/purchase", dependencies=[Depends(require_admin)])
+def pair_purchase(pair_id: int, body: BoughtIn, background: BackgroundTasks) -> dict:
+    """Opens the reading for the pair, on both sides at once (with a letter), or closes it."""
+    try:
+        told = set_pair_bought(pair_id, body.bought)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    background.add_task(notes.pair_gift, told)
+    return {"ok": True}

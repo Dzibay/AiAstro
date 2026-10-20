@@ -23,13 +23,31 @@ export const webApi = {
   addPartner: (body) => request('/api/web/me/partners', { method: 'POST', body, audience: 'web', auth: true }),
   removePartner: (id) =>
     request(`/api/web/me/partners/${encodeURIComponent(id)}`, { method: 'DELETE', audience: 'web', auth: true }),
+  updatePartner: (id, body) =>
+    request(`/api/web/me/partners/${encodeURIComponent(id)}`, { method: 'PUT', body, audience: 'web', auth: true }),
+  /** The consent to show the joined partner one's own birth data. */
+  sharePartner: (id) =>
+    request(`/api/web/me/partners/${encodeURIComponent(id)}/share`, { method: 'POST', audience: 'web', auth: true }),
+  seenPartner: (id) =>
+    request(`/api/web/me/partners/${encodeURIComponent(id)}/seen`, { method: 'POST', audience: 'web', auth: true }),
+  pairForecast: (id, tz) =>
+    request(`/api/web/me/partners/${encodeURIComponent(id)}/forecast?${new URLSearchParams({ tz })}`, {
+      audience: 'web',
+      auth: true,
+    }),
   invitePartner: (id) =>
     request(`/api/web/me/partners/${encodeURIComponent(id)}/invite`, { method: 'POST', audience: 'web', auth: true }),
   synastry: (id) => request(`/api/web/me/partners/${encodeURIComponent(id)}/synastry`, { audience: 'web', auth: true }),
   chat: () => request('/api/web/me/chat', { audience: 'web', auth: true }),
   ask: (text) => request('/api/web/me/chat', { method: 'POST', body: { text }, audience: 'web', auth: true }),
-  /** The partner's side of an invitation: open, no account. */
-  invitation: (token) => request(`/api/web/invite/${encodeURIComponent(token)}`, { audience: 'web' }),
+  /** The partner's side of an invitation: open, no account (a session, if any, says whose it is). */
+  invitation: (token) => request(`/api/web/invite/${encodeURIComponent(token)}`, { audience: 'web', auth: true }),
+  /** The invitation answered from a cabinet: its own birth data light the star. */
+  acceptInvitation: (token, share) =>
+    request(`/api/web/invite/${encodeURIComponent(token)}/accept`, { method: 'POST', body: { share }, audience: 'web', auth: true }),
+  /** The pair joins the cabinet opened after the invitation was answered: the page's key proves it. */
+  linkInvitation: (token, claim) =>
+    request(`/api/web/invite/${encodeURIComponent(token)}/link`, { method: 'POST', body: { claim }, audience: 'web', auth: true }),
   answerInvitation: (token, body) =>
     request(`/api/web/invite/${encodeURIComponent(token)}`, { method: 'POST', body, audience: 'web' }),
   /** A payment at ЮKassa ({ product, partner }): { id, url } of its page; then its status after the return. */

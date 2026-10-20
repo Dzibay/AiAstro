@@ -8,13 +8,16 @@ from app.accounts import (
     authenticate, delete_account, get_user, register, request_reset, reset_password, set_birth, set_email,
     set_mail_notes, set_name, set_password,
 )
-from app.api.deps import as_http, require_web_user
+from app.api.deps import as_http, optional_web_user, require_web_user
 from app.charts import chart_item, chart_of, forecast_of, month_of, portrait_of
 from app.chat import LENGTH, ask, history
 from app.errors import DomainError
 from app.mailer import mail_on
 from app.payments import create_payment, payment_of
-from app.partners import create_partner, delete_partner, fill_invite, invite, list_partners, open_invite, synastry_of
+from app.partners import (
+    accept_invite, create_partner, delete_partner, fill_invite, forecast_of as pair_forecast_of, invite, link_invite,
+    list_partners, mine_changed, open_invite, seen, share, synastry_of, update_partner,
+)
 from app.places import search
 from app.security import make_web_session
 
@@ -41,12 +44,24 @@ class PartnerIn(BaseModel):
     name: str = Field(max_length=80)
     # Without the birth data the partner waits for an invitation.
     birth: BirthIn | None = None
+    # The invitation's tick: the partner, once joined, sees the person's own birth data.
+    share: bool = False
 
 
 class InviteIn(BaseModel):
     name: str = Field(default="", max_length=80)
     consent: bool = False
+    # The consent that the one who invited sees these data, and the pair is built of them.
+    share: bool = False
     birth: BirthIn
+
+
+class AcceptIn(BaseModel):
+    share: bool = False
+
+
+class LinkIn(BaseModel):
+    claim: str = Field(max_length=100)
 
 
 class QuestionIn(BaseModel):
@@ -163,9 +178,12 @@ def me(user_id: int = Depends(require_web_user)) -> dict:
 @router.put("/me/birth")
 def update_birth(body: BirthIn, user_id: int = Depends(require_web_user)) -> dict:
     try:
-        return set_birth(user_id, body.date, body.time, body.place, body.lat, body.lon)
+        user = set_birth(user_id, body.date, body.time, body.place, body.lat, body.lon)
     except DomainError as exc:
         raise as_http(exc) from exc
+    # The partners who see these data see them corrected (unless their pair is already bought).
+    mine_changed(user_id)
+    return user
 
 
 @router.put("/me/name")
@@ -204,12 +222,13 @@ def update_mail_notes(body: MailNotesIn, user_id: int = Depends(require_web_user
 
 
 @router.post("/me/delete")
-def remove_account(body: DeleteIn, user_id: int = Depends(require_web_user)) -> dict:
+def remove_account(body: DeleteIn, background: BackgroundTasks, user_id: int = Depends(require_web_user)) -> dict:
     """Deletes the account for good; a POST with the password, not a bare DELETE, so it is never an accident."""
     try:
-        delete_account(user_id, body.password)
+        told = delete_account(user_id, body.password)
     except DomainError as exc:
         raise as_http(exc) from exc
+    background.add_task(notes.pair_left, told)
     return {"ok": True}
 
 
@@ -281,18 +300,66 @@ def add_partner(body: PartnerIn, user_id: int = Depends(require_web_user)) -> di
             birth.place if birth else None,
             birth.lat if birth else None,
             birth.lon if birth else None,
+            body.share,
+        )
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.put("/me/partners/{partner_id}")
+def edit_partner(partner_id: int, body: PartnerIn, user_id: int = Depends(require_web_user)) -> dict:
+    """The name always; the birth data of a partner typed in by hand until the reading is bought."""
+    birth = body.birth
+    try:
+        return update_partner(
+            user_id,
+            partner_id,
+            body.name,
+            birth.date if birth else None,
+            birth.time if birth else None,
+            birth.place if birth else None,
+            birth.lat if birth else None,
+            birth.lon if birth else None,
         )
     except DomainError as exc:
         raise as_http(exc) from exc
 
 
 @router.delete("/me/partners/{partner_id}")
-def remove_partner(partner_id: int, user_id: int = Depends(require_web_user)) -> dict:
+def remove_partner(partner_id: int, background: BackgroundTasks, user_id: int = Depends(require_web_user)) -> dict:
+    """The person's side only: the partner's side keeps the pair and what was opened."""
     try:
-        delete_partner(user_id, partner_id)
+        told = delete_partner(user_id, partner_id)
     except DomainError as exc:
         raise as_http(exc) from exc
+    background.add_task(notes.pair_left, told)
     return {"ok": True}
+
+
+@router.post("/me/partners/{partner_id}/share")
+def share_with_partner(partner_id: int, user_id: int = Depends(require_web_user)) -> dict:
+    """The consent to show the joined partner one's own birth data."""
+    try:
+        return share(user_id, partner_id)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.post("/me/partners/{partner_id}/seen")
+def partner_seen(partner_id: int, user_id: int = Depends(require_web_user)) -> dict:
+    seen(user_id, partner_id)
+    return {"ok": True}
+
+
+@router.get("/me/partners/{partner_id}/forecast")
+def partner_forecast(
+    partner_id: int, tz: str = Query(default="", max_length=64), user_id: int = Depends(require_web_user),
+) -> dict:
+    """The pair's day under the sky: a bought pair with «Небосвод»; otherwise only what opens it."""
+    try:
+        return pair_forecast_of(user_id, partner_id, tz or None)
+    except DomainError as exc:
+        raise as_http(exc) from exc
 
 
 @router.post("/me/partners/{partner_id}/invite")
@@ -350,10 +417,10 @@ def payment(payment_id: int, user_id: int = Depends(require_web_user)) -> dict:
 
 
 @router.get("/invite/{token}")
-def invitation(token: str) -> dict:
-    """Open: the partner has no account. Only the first names are shown."""
+def invitation(token: str, user_id: int | None = Depends(optional_web_user)) -> dict:
+    """Open: the partner may have no account. Only the first names are shown."""
     try:
-        return open_invite(token)
+        return open_invite(token, user_id)
     except DomainError as exc:
         raise as_http(exc) from exc
 
@@ -362,10 +429,42 @@ def invitation(token: str) -> dict:
 def answer_invitation(token: str, body: InviteIn, background: BackgroundTasks) -> dict:
     birth = body.birth
     try:
-        answer = fill_invite(token, body.name, body.consent, birth.date, birth.time, birth.place, birth.lat, birth.lon)
+        answer = fill_invite(
+            token, body.name, body.consent, body.share, birth.date, birth.time, birth.place, birth.lat, birth.lon,
+        )
     except DomainError as exc:
         raise as_http(exc) from exc
-    background.add_task(notes.partner_filled, token)
+    background.add_task(notes.partner_filled, answer.pop("side"))
+    return answer
+
+
+@router.post("/invite/{token}/accept")
+def accept_invitation(
+    token: str, body: AcceptIn, background: BackgroundTasks, user_id: int = Depends(require_web_user),
+) -> dict:
+    """The invitation answered from a cabinet: its own birth data light the star, the pair is shared at once."""
+    try:
+        answer = accept_invite(user_id, token, body.share)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    side = answer.pop("side", None)
+    if side:
+        background.add_task(notes.pair_linked, side)
+    return answer
+
+
+@router.post("/invite/{token}/link")
+def link_invitation(
+    token: str, body: LinkIn, background: BackgroundTasks, user_id: int = Depends(require_web_user),
+) -> dict:
+    """The cabinet opened after the invitation was answered: the page's key joins the pair to it."""
+    try:
+        answer = link_invite(user_id, token, body.claim)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    side = answer.pop("side", None)
+    if side:
+        background.add_task(notes.pair_linked, side)
     return answer
 
 

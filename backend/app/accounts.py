@@ -13,7 +13,7 @@ from app.security import hash_password, verify_password
 _DUMMY_HASH = hash_password("not-a-real-password")
 _EARLIEST_BIRTH = date(1900, 1, 1)
 _USER_COLUMNS = (
-    "id, email, name, blocked, created_at, birth_date, birth_time, birth_place, birth_lat, birth_lon, birth_tz, sky_until, mail_notes"
+    "id, email, name, blocked, created_at, birth_date, birth_time, birth_place, birth_lat, birth_lon, birth_tz, sky_until, mail_notes, birth_edits"
 )
 
 
@@ -72,7 +72,13 @@ def _public(row: dict) -> dict:
         "sky_until": row["sky_until"].isoformat() if row["sky_until"] else None,
         "sky": _sky_active(row["sky_until"]),
         "mail_notes": row["mail_notes"],
+        # One correction of the birth data is the person's own; the next ones go through the support.
+        "birth_locked": row["birth_date"] is not None and row["birth_edits"] >= BIRTH_EDITS,
     }
+
+
+# A chart, a pair and a forecast are bought for these data: changed freely, they would open any other.
+BIRTH_EDITS = 1
 
 
 def _sky_active(until: datetime | None) -> bool:
@@ -175,18 +181,32 @@ def set_birth(
     birth_place: str | None,
     birth_lat: float | None = None,
     birth_lon: float | None = None,
+    operator: bool = False,
 ) -> dict:
-    """Fills in or corrects the birth data; the consent was given at registration."""
+    """Fills in or corrects the birth data; the consent was given at registration.
+
+    The first time they are free, and so is a time added where it was unknown; a correction of
+    them, once. `operator` is the support's hand from the admin panel, with no count.
+    """
     birth = _clean_birth(birth_date, birth_time, birth_place, birth_lat, birth_lon)
+    current = get_user(user_id)["birth"]
     with pool.connection() as conn:
+        edits = conn.execute("SELECT birth_edits FROM users WHERE id = %s", (user_id,)).fetchone()["birth_edits"]
+        free = operator or current is None or (
+            current["time"] is None and birth[1] is not None and current["date"] == birth[0].isoformat()
+            and (current["place"] or "") == birth[2]
+        )
+        if not free and edits >= BIRTH_EDITS:
+            raise DomainError("birth_locked", 409)
         row = conn.execute(
             f"""
             UPDATE users
-            SET birth_date = %s, birth_time = %s, birth_place = %s, birth_lat = %s, birth_lon = %s, birth_tz = %s
+            SET birth_date = %s, birth_time = %s, birth_place = %s, birth_lat = %s, birth_lon = %s, birth_tz = %s,
+                birth_edits = birth_edits + %s
             WHERE id = %s AND NOT blocked
             RETURNING {_USER_COLUMNS}
             """,
-            (*birth, user_id),
+            (*birth, 0 if free else 1, user_id),
         ).fetchone()
     if row is None:
         raise DomainError("unauthorized", 401)
@@ -316,14 +336,26 @@ def reset_password(token: str, password: str) -> dict:
     return _public(row)
 
 
-def delete_account(user_id: int, password: str) -> None:
-    """The account and everything of it: partners, purchases and the conversation go with it (ON DELETE CASCADE).
+def delete_account(user_id: int, password: str) -> list[dict]:
+    """The account and everything of it: partners and the conversation go with it (ON DELETE CASCADE).
 
-    The session is a signed token with no table behind it: once the row is gone it opens nothing.
+    A pair bought by the person stays bought for the partner who has it too: the purchase loses
+    only its payer. The session is a signed token with no table behind it: once the row is gone it opens nothing.
+    Gives the partners to write to: [{user_id, partner_id}].
     """
     _checked(user_id, password)
     with pool.connection() as conn:
+        others = conn.execute(
+            """
+            UPDATE partners o SET news = 'left', news_at = now()
+            FROM partners m
+            WHERE m.user_id = %s AND o.pair_id = m.pair_id AND o.id <> m.id AND o.joined_at IS NOT NULL
+            RETURNING o.id AS partner_id, o.user_id
+            """,
+            (user_id,),
+        ).fetchall()
         conn.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    return others
 
 
 # ---- The operator's side ----

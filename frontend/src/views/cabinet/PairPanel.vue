@@ -8,6 +8,7 @@ import PairSpheres from '../../components/sky/PairSpheres.vue'
 import PairShare from '../../components/sky/PairShare.vue'
 import { ASPECTS, POINTS } from '../../components/cabinet/astro.js'
 import { errorText } from '../../api/http.js'
+import { webApi } from '../../api/web.js'
 import { inviteLink, usePartners } from '../../composables/usePartners.js'
 import { useToast } from '../../composables/useToast.js'
 import { formatDate } from '../../utils/format.js'
@@ -20,6 +21,10 @@ import { paidId, usePayment } from '../../composables/usePayment.js'
  * ?add — the partner's data typed in by hand, ?invite — a link for the partner to fill in,
  * ?partner=<id> — one pair: the stars, the tone in a phrase, the five spheres, the key aspects
  * and the opening of the reading for free, the full reading once it is bought. The sky (CabinetView → PairSky) follows the same query.
+ * ?partner=<id>&edit — the data of a partner typed in by hand, corrected until the reading is bought.
+ *
+ * A pair joined by an invitation is shared by two cabinets: a reading bought on either side is
+ * open on both, and stays open on one side when the other deletes the pair.
  */
 
 const props = defineProps({
@@ -32,13 +37,15 @@ const router = useRouter()
 const { push } = useToast()
 const {
   partners, status, message, draft, hot, hotAspect, lit, syntheses,
-  load, add, invite, remove, synastry, clearDraft,
+  load, add, invite, update, remove, synastry, clearDraft, seen,
+  share: sharePair,
 } = usePartners()
 
 const mode = computed(() => {
   if (route.query.add !== undefined) return 'add'
   if (route.query.invite !== undefined) return 'invite'
-  return route.query.partner ? 'pair' : 'list'
+  if (!route.query.partner) return 'list'
+  return route.query.edit !== undefined && partner.value?.editable ? 'edit' : 'pair'
 })
 const partnerId = computed(() => Number(route.query.partner) || 0)
 const partner = computed(() => partners.value.find((item) => item.id === partnerId.value) || null)
@@ -67,7 +74,8 @@ onMounted(() => {
     delete syntheses[pid]
     await load(true)
     if (pid) synastry(pid)
-    push('Разбор открыт — он останется с этой парой навсегда')
+    const both = partners.value.find((item) => item.id === pid)?.kind === 'linked'
+    push(both ? 'Разбор открыт для вас обоих — он останется с этой парой навсегда' : 'Разбор открыт — он останется с этой парой навсегда')
   })
 })
 watch(partner, (value) => {
@@ -82,9 +90,31 @@ watch(mode, () => {
   if (mode.value !== 'add' && mode.value !== 'invite') clearDraft()
 })
 
+/* ---- What happened to the pair while it was closed: said once, then the mark goes out ---- */
+
+const NEWS = {
+  filled: (name) => `Пришёл ответ на приглашение: ${name} — вторая звезда зажглась.`,
+  linked: () => 'У партнёра теперь свой кабинет: пара стала общей, она видна вам обоим.',
+  bought: () => 'Партнёр открыл разбор пары — для вас обоих.',
+  gift: () => 'Подарок: мы открыли для вас полный разбор этой пары.',
+  left: () => 'Партнёр удалил пару у себя. У вас она остаётся — со всем, что было открыто.',
+  joined: (name) => `Пара теперь в вашем кабинете и общая с партнёром ${name}: разбор, открытый одним из вас, откроется у обоих.`,
+}
+const news = ref('')
+watch(partner, (value, old) => {
+  if (!value) return
+  if (value.id !== old?.id) news.value = route.query.joined ? 'joined' : ''
+  if (value.news) {
+    // Just joined from this side: the pair's own news about the joining would say it the other way round.
+    if (news.value !== 'joined') news.value = value.news
+    seen(value.id)
+  }
+}, { immediate: true })
+const newsText = computed(() => (news.value && partner.value ? NEWS[news.value]?.(partner.value.name) || '' : ''))
+
 /* ---- Waiting for invitations: the list is asked again, and a star that lit up flashes ---- */
 
-const waiting = computed(() => partners.value.some((item) => !item.birth && item.invite))
+const waiting = computed(() => partners.value.some((item) => !item.birth && (item.invite || item.waiting_share)))
 let timer = 0
 function poll() {
   if (document.visibilityState !== 'visible') return
@@ -125,7 +155,17 @@ function onAdded(created) {
   router.replace({ name: 'cabinet-pair', query: { partner: created.id } })
 }
 
+function editByHand({ name, birth }) {
+  return update(partner.value.id, { name, birth })
+}
+function onEdited(changed) {
+  push('Данные партнёра исправлены')
+  router.replace({ name: 'cabinet-pair', query: { partner: changed.id } })
+}
+
 const inviteName = ref('')
+/** The consent to show the partner one's own data once they open a cabinet: asked here, or later in the pair. */
+const inviteShare = ref(false)
 const inviting = ref(false)
 const inviteMessage = ref('')
 watch(inviteName, (name) => {
@@ -140,9 +180,10 @@ async function sendInvite() {
   inviteMessage.value = ''
   inviting.value = true
   try {
-    const created = await add({ name })
+    const created = await add({ name, share: inviteShare.value })
     await invite(created.id)
     inviteName.value = ''
+    inviteShare.value = false
     clearDraft()
     router.replace({ name: 'cabinet-pair', query: { partner: created.id } })
   } catch (error) {
@@ -168,7 +209,7 @@ async function copyLink() {
   }
 }
 const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
-function share() {
+function shareLink() {
   navigator.share({ title: 'Астра', text: `${props.user.name} приглашает вас зажечь свою звезду рядом`, url: link.value }).catch(() => {})
 }
 const relinking = ref(false)
@@ -182,6 +223,54 @@ async function makeLink() {
     relinking.value = false
   }
 }
+
+/** The partner has joined, but does not see this side's data yet: the consent opens them. */
+const sharing = ref(false)
+async function showMine() {
+  sharing.value = true
+  try {
+    await sharePair(partner.value.id)
+    push('Готово: теперь партнёр видит вашу звезду')
+  } catch (error) {
+    push(errorText(error))
+  } finally {
+    sharing.value = false
+  }
+}
+
+const linked = computed(() => partner.value?.kind === 'linked' && !partner.value.left)
+const boughtLine = computed(() => {
+  const item = partner.value
+  if (!item?.bought) return ''
+  const when = item.bought_at ? ` ${formatDate(item.bought_at.slice(0, 10))}` : ''
+  if (item.bought_by === 'partner') return `Разбор открыл партнёр${when} — для вас обоих.`
+  if (item.bought_by === 'gift') return `Разбор открыт в подарок${when}.`
+  return linked.value ? `Вы открыли разбор${when} — для вас обоих.` : `Вы открыли разбор${when}.`
+})
+
+/* ---- The pair's day: with the bought reading and «Небосвод» ---- */
+
+const forecast = ref(null)
+const forecastFailed = ref(false)
+const zone = (() => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || ''
+  } catch {
+    return ''
+  }
+})()
+watch(() => [partner.value?.id, partner.value?.bought, props.user.sky, pair.value?.data?.locked], async ([id, bought, , locked]) => {
+  forecast.value = null
+  forecastFailed.value = false
+  if (!id || !bought || locked !== false) return
+  try {
+    const data = await webApi.pairForecast(id, zone)
+    if (partner.value?.id === id) forecast.value = data
+  } catch {
+    forecastFailed.value = true
+  }
+}, { immediate: true })
+const TONE_WORD = { easy: 'легко', calm: 'ровно', tense: 'напряжённо' }
 
 const birthLine = computed(() => {
   const birth = partner.value?.birth
@@ -228,8 +317,11 @@ async function confirmRemove() {
 }
 
 function status_of(item) {
+  if (item.waiting_share) return 'общая пара · ждём согласия партнёра'
   if (!item.birth) return item.invite ? 'ждём ответа' : 'без данных'
-  return item.bought ? 'звезда горит · разбор открыт' : 'звезда горит'
+  const parts = [item.left ? 'партнёр удалил пару' : item.kind === 'linked' ? 'общая пара' : 'звезда горит']
+  if (item.bought) parts.push('разбор открыт')
+  return parts.join(' · ')
 }
 </script>
 
@@ -253,14 +345,39 @@ function status_of(item) {
       </template>
     </BirthForm>
 
+    <!-- ---- A partner typed in by hand, corrected ---- -->
+    <BirthForm
+      v-else-if="mode === 'edit'"
+      :key="`edit-${partner.id}`"
+      with-name
+      :name="partner.name"
+      :birth="partner.birth"
+      :sky="false"
+      :submit="editByHand"
+      submit-label="Сохранить"
+      @saved="onEdited"
+      @cancel="go({ partner: partner.id })"
+    >
+      <template #head>
+        <PanelHead lead="Данные партнёра можно исправлять, пока разбор пары не открыт: потом он держится за них.">
+          Данные <em>партнёра</em>
+        </PanelHead>
+      </template>
+    </BirthForm>
+
     <!-- ---- By invitation ---- -->
     <form v-else-if="mode === 'invite'" class="invite-form" novalidate @submit.prevent="sendInvite">
-      <PanelHead lead="Партнёр откроет ссылку, увидит ваше небо и сам укажет свои данные — без регистрации.">
+      <PanelHead lead="Партнёр откроет ссылку, увидит ваше небо и сам укажет свои данные — без регистрации. А откроет свой кабинет — пара станет общей: разбор, открытый одним из вас, откроется у обоих.">
         <em>Приглашение</em>
       </PanelHead>
       <label class="field">
         <span class="field-label">Как зовут партнёра</span>
         <input v-model="inviteName" type="text" maxlength="80" autocomplete="off" />
+      </label>
+      <label class="check">
+        <input v-model="inviteShare" type="checkbox" />
+        <span class="check-box" aria-hidden="true" />
+        <span>Показать партнёру мои данные рождения, когда партнёр откроет свой кабинет</span>
       </label>
       <p v-if="inviteMessage" class="error" role="alert">{{ inviteMessage }}</p>
       <div class="actions">
@@ -274,7 +391,18 @@ function status_of(item) {
 
     <!-- ---- One pair ---- -->
     <template v-else-if="mode === 'pair' && partner">
-      <template v-if="!partner.birth">
+      <p v-if="newsText" class="news" role="status">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
+        {{ newsText }}
+      </p>
+
+      <template v-if="partner.waiting_share">
+        <PanelHead :lead="`Пара уже общая. Когда ${partner.name} согласится показать вам свои данные рождения, на небе зажжётся вторая звезда.`">
+          Ждём <em>согласия</em>
+        </PanelHead>
+      </template>
+
+      <template v-else-if="!partner.birth">
         <PanelHead :lead="`Когда ${partner.name} откроет ссылку и укажет данные рождения, на небе зажжётся вторая звезда.`">
           Ждём <em>ответа</em>
         </PanelHead>
@@ -282,7 +410,7 @@ function status_of(item) {
           <input class="link" :value="link" readonly aria-label="Ссылка-приглашение" @focus="$event.target.select()" />
           <div class="link-actions">
             <button type="button" class="soft-button" @click="copyLink">{{ copied ? 'Скопировано' : 'Скопировать ссылку' }}</button>
-            <button v-if="canShare" type="button" class="quiet" @click="share">Поделиться</button>
+            <button v-if="canShare" type="button" class="quiet" @click="shareLink">Поделиться</button>
           </div>
           <p class="hint">Ссылка ведёт только к этой паре: по ней видно лишь ваше имя, не ваши данные.</p>
         </div>
@@ -292,6 +420,15 @@ function status_of(item) {
       <template v-else>
         <PanelHead :lead="pair?.data?.phrase || ''">Вы и <em>{{ partner.name }}</em></PanelHead>
         <p class="birth-line">{{ birthLine }}</p>
+        <p v-if="linked" class="shared-note">Общая пара: её видите вы оба.</p>
+        <p v-else-if="partner.left && news !== 'left'" class="shared-note">Партнёр удалил пару у себя — у вас она остаётся.</p>
+
+        <div v-if="linked && !partner.shared" class="share-box">
+          <p>{{ partner.name }} пока не видит вашу звезду: в общей паре ваши данные рождения откроются партнёру только с вашего согласия.</p>
+          <button type="button" class="soft-button" :disabled="sharing" @click="showMine">
+            {{ sharing ? 'Минуту…' : 'Показать партнёру мои данные' }}
+          </button>
+        </div>
 
         <template v-if="pair?.status === 'empty'">
           <p class="quiet-text">Чтобы сложить две карты, нужна и ваша — укажите свою дату рождения.</p>
@@ -354,7 +491,8 @@ function status_of(item) {
               <p class="unlock-note">
                 Дальше — что стоит за каждой из пяти сфер, все связи ваших карт с толкованием,
                 где планеты партнёра стоят в ваших домах и каким получается ваш союз как целое.
-                Разбор открывается один раз и остаётся с этой парой навсегда.
+                Разбор открывается один раз и остаётся с этой парой навсегда<template v-if="linked">
+                — у вас обоих: партнёру платить не нужно</template>.
               </p>
               <dl class="pair-prices">
                 <div :class="{ 'is-mine': !user.sky }"><dt>Отдельно</dt><dd>{{ pairPrice }}</dd></div>
@@ -368,6 +506,7 @@ function status_of(item) {
               <button type="button" class="unlock-cta" :disabled="paying || !payOn || !priceSet || paid === 'checking'" @click="buy">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
                 <template v-if="paying">Открываем ЮKassa…</template>
+                <template v-else-if="linked">Открыть разбор для нас обоих — {{ user.sky ? pairSkyPrice : pairPrice }}</template>
                 <template v-else>Открыть разбор — {{ user.sky ? pairSkyPrice : pairPrice }}</template>
               </button>
               <p v-if="payMessage" class="pay-error" role="alert">{{ payMessage }}</p>
@@ -377,15 +516,47 @@ function status_of(item) {
               </RouterLink>
             </div>
           </template>
-          <section v-else class="block" aria-labelledby="reading-title">
-            <h3 id="reading-title" class="block-title">Разбор пары</h3>
-            <ReadingText :reading="pair.data.reading" />
-          </section>
+          <template v-else>
+            <section class="block" aria-labelledby="reading-title">
+              <h3 id="reading-title" class="block-title">Разбор пары</h3>
+              <p v-if="boughtLine" class="bought-line">{{ boughtLine }}</p>
+              <ReadingText :reading="pair.data.reading" />
+            </section>
+
+            <section class="block" aria-labelledby="pair-day-title">
+              <h3 id="pair-day-title" class="block-title">Ваш день вдвоём</h3>
+              <template v-if="forecast?.locked">
+                <p class="quiet-text">
+                  Как сегодняшнее небо проходит по связям ваших карт и какой день недели для вас двоих самый лёгкий —
+                  это прогноз пары, он открыт с «Небосводом».
+                </p>
+                <RouterLink class="sky-link" :to="{ name: 'cabinet-sky' }">Открыть «Небосвод» →</RouterLink>
+              </template>
+              <template v-else-if="forecast">
+                <p class="day-text">{{ forecast.text }}</p>
+                <ul v-if="forecast.lit.length" class="lit">
+                  <li v-for="(item, index) in forecast.lit" :key="index">
+                    <span class="lit-planet">{{ item.planet_name }}</span> · {{ item.title }}
+                  </li>
+                </ul>
+                <ol class="week" aria-label="Неделя пары">
+                  <li v-for="(day, index) in forecast.week" :key="day.date" :class="[`tone-${day.tone}`, { 'is-today': index === 0 }]">
+                    <span class="week-day">{{ index === 0 ? 'сегодня' : day.weekday.slice(0, 2) }}</span>
+                    <span class="week-dot" aria-hidden="true" />
+                    <span class="week-tone">{{ TONE_WORD[day.tone] }}</span>
+                  </li>
+                </ol>
+              </template>
+              <p v-else-if="forecastFailed" class="quiet-text">Небо пары сейчас не ответило — загляните чуть позже.</p>
+              <p v-else class="loading">Смотрим на небо над вами двумя…</p>
+            </section>
+          </template>
         </template>
       </template>
 
       <footer class="pair-foot">
         <button type="button" class="quiet" @click="go({})">← Все пары</button>
+        <button v-if="partner.editable && partner.birth" type="button" class="quiet" @click="go({ partner: partner.id, edit: null })">Исправить данные</button>
         <span v-if="asking" class="confirm">
           Удалить пару?
           <button type="button" class="quiet danger" :disabled="removing" @click="confirmRemove">Да</button>
@@ -415,6 +586,7 @@ function status_of(item) {
             <span class="pair-star" aria-hidden="true" />
             <span class="pair-name">{{ item.name }}</span>
             <span class="pair-status">{{ status_of(item) }}</span>
+            <span v-if="item.news" class="pair-news" aria-label="Есть новости" />
           </RouterLink>
         </li>
       </ul>
@@ -475,7 +647,83 @@ function status_of(item) {
 .ways { display: flex; flex-wrap: wrap; gap: 10px; }
 .ways .gold-cta { flex: none; }
 
+.pair-row { position: relative; }
+.pair-news {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: #f0cd8a;
+  box-shadow: 0 0 8px 2px rgba(240, 205, 138, 0.6);
+}
+
+/* ---- One pair: what happened, and the shared pair ---- */
+.news {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(240, 205, 138, 0.35);
+  background: rgba(240, 205, 138, 0.06);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 15.5px;
+  line-height: 1.4;
+  color: #f3dcae;
+}
+.news svg { flex: none; width: 10px; height: 10px; margin-top: 6px; fill: #f0cd8a; filter: drop-shadow(0 0 5px rgba(255, 200, 110, 0.8)); }
+.shared-note { margin: -10px 0 0; text-align: center; font-size: 12.5px; letter-spacing: 0.04em; color: rgba(233, 194, 124, 0.75); }
+.share-box { display: grid; gap: 10px; padding: 12px 14px; border-radius: 14px; border: 1px dashed rgba(240, 205, 138, 0.35); }
+.share-box p { margin: 0; font-size: 14px; line-height: 1.5; color: rgba(226, 220, 210, 0.75); }
+.bought-line { margin: 0 0 6px; font-size: 13px; color: rgba(233, 194, 124, 0.8); }
+
+/* ---- The pair's day ---- */
+.day-text { margin: 0; font-family: var(--book); font-size: 15px; line-height: 1.6; color: #efe7d8; }
+.lit { display: grid; gap: 4px; margin: 10px 0 0; padding: 0; list-style: none; font-size: 13.5px; color: rgba(226, 220, 210, 0.7); }
+.lit-planet { color: #f0cd8a; }
+.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 14px 0 0; padding: 0; list-style: none; }
+.week li { display: grid; justify-items: center; gap: 6px; padding: 8px 2px; border-radius: 12px; border: 1px solid rgba(240, 210, 150, 0.1); }
+.week li.is-today { border-color: rgba(240, 205, 138, 0.45); }
+.week-day { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(226, 214, 192, 0.66); }
+.week-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(226, 220, 210, 0.45); }
+.week .tone-easy .week-dot { background: #f0cd8a; box-shadow: 0 0 8px rgba(240, 205, 138, 0.7); }
+.week .tone-tense .week-dot { background: #d98b7a; }
+.week-tone { font-family: var(--serif); font-style: italic; font-size: 12.5px; color: rgba(226, 220, 210, 0.6); }
+
 /* ---- Forms and buttons (as the birth form's) ---- */
+.check { position: relative; display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 18px; color: rgba(226, 220, 210, 0.78); cursor: pointer; }
+.check input { position: absolute; opacity: 0; pointer-events: none; }
+.check-box {
+  flex: none;
+  position: relative;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  border-radius: 4px;
+  border: 1px solid rgba(240, 210, 150, 0.4);
+  background: rgba(255, 240, 210, 0.04);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.check-box::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1.5px;
+  width: 3px;
+  height: 6px;
+  border: solid #2b1d0b;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform 0.2s ease;
+}
+.check input:checked + .check-box { background: #e9c47e; border-color: #e9c47e; }
+.check input:checked + .check-box::after { transform: rotate(45deg) scale(1); }
+.check input:focus-visible + .check-box { box-shadow: 0 0 0 3px rgba(240, 205, 138, 0.25); }
 .invite-form { display: grid; gap: 14px; }
 .field { display: grid; gap: 7px; }
 .field-label { line-height: 16px; font-size: 10.5px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(226, 214, 192, 0.66); }
@@ -648,6 +896,7 @@ function status_of(item) {
 @media (max-width: 760px) {
   .field input, .link { font-size: 16px; }
   .chip, .unlock-cta, .add-birth, .soft-button, .quiet, .pair-row { min-height: 44px; }
+  .week-tone { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .unlock-cta { transition: none; }

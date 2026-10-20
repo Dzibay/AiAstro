@@ -101,7 +101,7 @@ onMounted(async () => {
   if (!authed.value) return
   try {
     await adminApi.me()
-    await Promise.all([loadSettings(), loadUsers(), loadPayments()])
+    await Promise.all([loadSettings(), loadUsers(), loadPayments(), loadAllPairs()])
   } catch (error) {
     authed.value = false
     message.value = errorText(error)
@@ -116,7 +116,7 @@ async function login() {
     writeSession('admin', result.token)
     authed.value = true
     password.value = ''
-    await Promise.all([loadSettings(), loadUsers(), loadPayments()])
+    await Promise.all([loadSettings(), loadUsers(), loadPayments(), loadAllPairs()])
   } catch (error) {
     message.value = errorText(error)
   } finally {
@@ -179,12 +179,97 @@ async function setBought(user, partner, bought) {
   }
 }
 
+/* ---- Every pair, both sides at once ---- */
+
+const PAIR_STATES = [
+  { id: '', label: 'Все' },
+  { id: 'bought', label: 'Разбор открыт' },
+  { id: 'linked', label: 'Общие' },
+  { id: 'waiting', label: 'Ждут ответа' },
+]
+const SOURCE = { pay: 'оплата', admin: 'подарок' }
+const dayFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
+const pairQuery = ref('')
+const pairState = ref('')
+const allPairs = ref([])
+const pairsMessage = ref('')
+const pairBusy = ref(null)
+let pairTimer = 0
+async function loadAllPairs() {
+  pairsMessage.value = ''
+  const asked = `${pairQuery.value}|${pairState.value}`
+  try {
+    const data = await adminApi.pairs(pairQuery.value, pairState.value)
+    // An older answer must not overwrite the list of a newer filter.
+    if (asked === `${pairQuery.value}|${pairState.value}`) allPairs.value = data.items
+  } catch (error) {
+    pairsMessage.value = errorText(error)
+  }
+}
+watch(pairQuery, () => {
+  clearTimeout(pairTimer)
+  pairTimer = setTimeout(loadAllPairs, 300)
+})
+watch(pairState, loadAllPairs)
+onBeforeUnmount(() => clearTimeout(pairTimer))
+function sideState(side) {
+  if (side.linked) return 'свой кабинет'
+  if (side.filled) return side.invite ? 'ответ по ссылке' : 'введён вручную'
+  return side.invite ? 'ждём ответа' : 'без данных'
+}
+async function setPairBought(pair, bought) {
+  pairsMessage.value = ''
+  pairBusy.value = pair.id
+  try {
+    await adminApi.setPairBought(pair.id, bought)
+    push(bought ? `Разбор пары № ${pair.id} открыт` : `Разбор пары № ${pair.id} закрыт`)
+    await loadAllPairs()
+  } catch (error) {
+    pairsMessage.value = errorText(error)
+  } finally {
+    pairBusy.value = null
+  }
+}
+
+/* ---- The birth data, corrected by the support past the person's own correction ---- */
+
+const birthEdit = reactive({ id: null, date: '', time: '', busy: false })
+function editBirth(user) {
+  if (birthEdit.id === user.id) {
+    birthEdit.id = null
+    return
+  }
+  Object.assign(birthEdit, { id: user.id, date: user.birth?.date || '', time: user.birth?.time || '', busy: false })
+}
+async function saveBirth(user) {
+  usersMessage.value = ''
+  birthEdit.busy = true
+  try {
+    const birth = user.birth || {}
+    const saved = await adminApi.setBirth(user.id, {
+      date: birthEdit.date,
+      time: birthEdit.time || null,
+      place: birth.place || null,
+      lat: birth.lat ?? null,
+      lon: birth.lon ?? null,
+    })
+    Object.assign(user, saved)
+    birthEdit.id = null
+    push(`Данные рождения исправлены: ${user.email}`)
+  } catch (error) {
+    usersMessage.value = errorText(error)
+  } finally {
+    birthEdit.busy = false
+  }
+}
+
 function logout() {
   clearSession('admin')
   authed.value = false
   items.value = []
   users.value = []
   payments.value = []
+  allPairs.value = []
 }
 </script>
 
@@ -255,6 +340,55 @@ function logout() {
           </ul>
           <p v-else class="meta">Платежей пока не было.</p>
 
+          <h2 class="admin-heading">Пары</h2>
+          <p class="meta">
+            Все пары, новые сверху. Общая — у обоих свой кабинет: разбор, открытый здесь, откроется у обоих, и им уйдёт письмо.
+            Пара, удалённая одним, остаётся у второго.
+          </p>
+          <div class="form pair-filters">
+            <Field v-model="pairQuery" label="Поиск по почте или имени" type="search" autocomplete="off" />
+            <div class="chips" role="group" aria-label="Какие пары">
+              <button
+                v-for="item in PAIR_STATES"
+                :key="item.id"
+                type="button"
+                class="text-button chip"
+                :class="{ 'is-on': pairState === item.id }"
+                :aria-pressed="pairState === item.id"
+                @click="pairState = item.id"
+              >
+                {{ item.label }}
+              </button>
+            </div>
+          </div>
+          <p v-if="pairsMessage" class="error">{{ pairsMessage }}</p>
+          <ul v-if="allPairs.length" class="users">
+            <li v-for="pair in allPairs" :key="pair.id" class="user-row">
+              <div class="user-who">
+                <strong>Пара № {{ pair.id }}<span v-if="pair.sides.length > 1" class="tag">общая</span></strong>
+                <span v-for="side in pair.sides" :key="side.partner_id" class="meta">
+                  {{ side.email }}<template v-if="side.user_name"> ({{ side.user_name }})</template> → {{ side.name }} · {{ sideState(side) }}
+                </span>
+                <span class="meta">
+                  создана {{ dayFormat.format(new Date(pair.created_at)) }}<template v-if="pair.bought">
+                    · разбор открыт {{ dayFormat.format(new Date(pair.bought_at)) }},
+                    {{ SOURCE[pair.source] || 'оплата' }}<template v-if="pair.payer">: {{ pair.payer }}</template></template>
+                </span>
+              </div>
+              <div class="user-actions">
+                <button
+                  class="text-button"
+                  type="button"
+                  :disabled="pairBusy === pair.id || (!pair.bought && !pair.sides.some((side) => side.filled))"
+                  @click="setPairBought(pair, !pair.bought)"
+                >
+                  {{ pair.bought ? 'Закрыть разбор' : 'Открыть разбор' }}
+                </button>
+              </div>
+            </li>
+          </ul>
+          <p v-else-if="!pairsMessage" class="meta">Пар не нашлось.</p>
+
           <h2 class="admin-heading">Пользователи</h2>
           <p class="meta">Оплаченное через ЮKassa открывается само. Здесь — вручную: «Небосвод» на {{ SKY_DAYS }} дней от конца текущего срока (подарок, возврат), разбор пары — в списке пар человека.</p>
           <div class="form">
@@ -282,10 +416,24 @@ function logout() {
                 >
                   Снять
                 </button>
+                <button class="text-button" type="button" :aria-expanded="birthEdit.id === user.id" @click="editBirth(user)">
+                  {{ birthEdit.id === user.id ? 'Скрыть данные' : user.birth_locked ? 'Данные рождения · правка исчерпана' : 'Данные рождения' }}
+                </button>
                 <button class="text-button" type="button" :aria-expanded="Boolean(pairs[user.id])" @click="togglePairs(user)">
                   {{ pairs[user.id] ? 'Скрыть пары' : 'Пары' }}
                 </button>
               </div>
+              <form v-if="birthEdit.id === user.id" class="form birth-edit" @submit.prevent="saveBirth(user)">
+                <Field v-model="birthEdit.date" label="Дата рождения" type="date" />
+                <Field v-model="birthEdit.time" label="Время (пусто — неизвестно)" type="time" />
+                <p class="meta">
+                  Город остаётся прежним: {{ user.birth?.place || 'не указан' }}. Правка поддержки не тратит правку человека;
+                  пары, где разбор ещё не открыт, получат новые данные.
+                </p>
+                <div class="setting-actions">
+                  <button class="button button-small" type="submit" :disabled="!birthEdit.date || birthEdit.busy">Сохранить</button>
+                </div>
+              </form>
               <template v-if="pairs[user.id]">
                 <ul v-if="pairs[user.id].length" class="pairs">
                   <li v-for="partner in pairs[user.id]" :key="partner.id" class="pair-row">
@@ -342,6 +490,12 @@ function logout() {
 .button-small { padding: 8px 16px; font-size: 15px; }
 
 .logout { margin-top: 28px; }
+.pair-filters { gap: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.chip { opacity: 0.6; }
+.chip.is-on { opacity: 1; text-decoration: underline; text-underline-offset: 4px; }
+.tag { margin-left: 8px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; font-weight: 500; opacity: 0.8; }
+.birth-edit { padding-left: 14px; border-left: 1px solid var(--line); }
 
 .setting-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
 .pay-state { margin: 4px 0 14px; font-weight: 600; color: #f2a48c; }

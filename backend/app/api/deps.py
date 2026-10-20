@@ -21,6 +21,14 @@ def require_web_user(authorization: str | None = Header(default=None)) -> int:
         raise HTTPException(status_code=exc.status, detail=exc.code) from exc
 
 
+def optional_web_user(authorization: str | None = Header(default=None)) -> int | None:
+    """The person if a valid session came along; an open page works without it."""
+    try:
+        return read_web_session(_bearer(authorization))
+    except (HTTPException, DomainError):
+        return None
+
+
 def require_admin(authorization: str | None = Header(default=None)) -> None:
     token = _bearer(authorization)
     try:

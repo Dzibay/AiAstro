@@ -11,6 +11,7 @@ There is no auto-renewal: every payment is one charge for one term, as the offer
 import base64
 import json
 import logging
+import threading
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -34,7 +35,7 @@ PLANS = {
 }
 PRODUCTS = (*PLANS, PAIR)
 
-_COLUMNS = "id, user_id, email, product, partner_id, days, amount, title, status, yookassa_id, created_at, paid_at"
+_COLUMNS = "id, user_id, email, product, partner_id, pair_id, days, amount, title, status, yookassa_id, created_at, paid_at"
 
 
 def _call(method: str, url: str, body: dict | None = None, key: str = "") -> dict:
@@ -69,6 +70,7 @@ def _public(row: dict) -> dict:
         "id": row["id"],
         "product": row["product"],
         "partner_id": row["partner_id"],
+        "pair_id": row["pair_id"],
         "days": row["days"],
         "amount": row["amount"],
         "title": row["title"],
@@ -92,18 +94,22 @@ def create_payment(user_id: int, product: str, partner_id: int | None = None) ->
     if product not in PRODUCTS:
         raise DomainError("product")
     user = get_user(user_id)
+    pair_id = None
     if product == PAIR:
         if partner_id is None:
             raise DomainError("missing", 404)
         partner = _own(user_id, partner_id)
         if partner["birth_date"] is None:
             raise DomainError("pending", 409)
-        if partner_id in _bought(user_id):
+        pair_id = partner["pair_id"]
+        if pair_id in _bought(user_id):
             raise DomainError("bought", 409)
         days = 0
         # The discount is decided now, by the subscription as it stands at the moment of buying.
         amount = _price("price_synastry_sky" if user["sky"] else "price_synastry")
-        title = f"Разбор пары: вы и {partner['name']}"[:128]
+        # With a partner who has a cabinet too, the reading opens for both: the receipt says so.
+        both = partner["linked_user_id"] is not None
+        title = f"Разбор пары: вы и {partner['name']}{' — для вас обоих' if both else ''}"[:128]
         back = f"/cabinet/pair?partner={partner_id}&paid="
     else:
         partner_id = None
@@ -114,11 +120,11 @@ def create_payment(user_id: int, product: str, partner_id: int | None = None) ->
     with pool.connection() as conn:
         row = conn.execute(
             f"""
-            INSERT INTO payments (user_id, email, product, partner_id, days, amount, title)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO payments (user_id, email, product, partner_id, pair_id, days, amount, title)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING {_COLUMNS}
             """,
-            (user_id, user["email"], product, partner_id, days, amount, title),
+            (user_id, user["email"], product, partner_id, pair_id, days, amount, title),
         ).fetchone()
 
     receipt = {
@@ -165,7 +171,11 @@ def create_payment(user_id: int, product: str, partner_id: int | None = None) ->
 
 
 def _apply(row: dict) -> None:
-    """The purchase, once: the status changes and the purchase is written in one transaction."""
+    """The purchase, once: the status changes and the purchase is written in one transaction.
+
+    A pair's reading belongs to the pair: it opens on the partner's side too, and they are told.
+    """
+    told = []
     with pool.connection() as conn:
         won = conn.execute(
             "UPDATE payments SET status = 'succeeded', paid_at = now() WHERE id = %s AND status <> 'succeeded' RETURNING id",
@@ -174,14 +184,25 @@ def _apply(row: dict) -> None:
         if won is None or row["user_id"] is None:
             return
         if row["product"] == PAIR:
-            if row["partner_id"] is not None:
-                conn.execute(
+            # The pair stays even when the side it was paid from is deleted meanwhile.
+            if row["pair_id"] is not None:
+                bought = conn.execute(
                     """
-                    INSERT INTO purchases (user_id, product, partner_id) VALUES (%s, %s, %s)
-                    ON CONFLICT (user_id, product, partner_id) WHERE partner_id IS NOT NULL DO NOTHING
+                    INSERT INTO purchases (user_id, product, partner_id, pair_id, source) VALUES (%s, %s, %s, %s, 'pay')
+                    ON CONFLICT (product, pair_id) WHERE pair_id IS NOT NULL DO NOTHING
+                    RETURNING id
                     """,
-                    (row["user_id"], PAIR, row["partner_id"]),
-                )
+                    (row["user_id"], PAIR, row["partner_id"], row["pair_id"]),
+                ).fetchone()
+                if bought is not None:
+                    told = conn.execute(
+                        """
+                        UPDATE partners SET news = 'bought', news_at = now()
+                        WHERE pair_id = %s AND user_id <> %s
+                        RETURNING id AS partner_id, user_id
+                        """,
+                        (row["pair_id"], row["user_id"]),
+                    ).fetchall()
         else:
             # Counted from the end of the current term if it still runs, as the offer says.
             conn.execute(
@@ -191,6 +212,11 @@ def _apply(row: dict) -> None:
                 """,
                 (row["days"], row["user_id"]),
             )
+    if told:
+        from app import notes
+
+        # Letters go by SMTP, slowly: the answer to ЮKassa or to the page does not wait for them.
+        threading.Thread(target=notes.pair_bought, args=(told,), daemon=True).start()
 
 
 def _settle(row: dict) -> dict:

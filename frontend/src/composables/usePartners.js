@@ -80,6 +80,24 @@ async function invite(id) {
   return replace(await webApi.invitePartner(id))
 }
 
+async function update(id, body) {
+  const partner = replace(await webApi.updatePartner(id, body))
+  delete syntheses[id]
+  return partner
+}
+
+async function share(id) {
+  return replace(await webApi.sharePartner(id))
+}
+
+/** The pair is open on the screen: its mark («звезда зажглась», «разбор открыт») goes out. */
+function seen(id) {
+  const partner = partners.value.find((item) => item.id === id)
+  if (!partner?.news) return
+  replace({ ...partner, news: null })
+  webApi.seenPartner(id).catch(() => {})
+}
+
 async function remove(id) {
   await webApi.removePartner(id)
   partners.value = partners.value.filter((item) => item.id !== id)
@@ -128,11 +146,48 @@ function forget() {
 export function usePartners() {
   return {
     partners, status, message, draft, hot, hotAspect, lit, syntheses,
-    load, add, invite, remove, synastry, clearDraft, forgetSyntheses, forget,
+    load, add, update, share, seen, invite, remove, synastry, clearDraft, forgetSyntheses, forget,
   }
 }
 
 /** The link the partner opens: /invite/<token> on this site. */
 export function inviteLink(token) {
   return `${window.location.origin}/invite/${token}`
+}
+
+/**
+ * An invitation answered without a cabinet: the page keeps { token, claim, name } until the
+ * cabinet opens (here, or after a sign-up later), then joins the pair to it.
+ */
+const PENDING_KEY = 'aiastro_invite'
+
+export function keepInvite(answer) {
+  try {
+    localStorage.setItem(PENDING_KEY, JSON.stringify(answer))
+  } catch {
+    // Private mode: the pair can still be joined by answering the invitation from the cabinet.
+  }
+}
+
+export function pendingInvite() {
+  try {
+    const found = JSON.parse(localStorage.getItem(PENDING_KEY) || 'null')
+    return found && found.token && found.claim ? found : null
+  } catch {
+    return null
+  }
+}
+
+/** Joins the kept invitation to the open cabinet: the partner id, or null; the key is spent either way but on a network failure. */
+export async function linkPendingInvite() {
+  const found = pendingInvite()
+  if (!found) return null
+  try {
+    const answer = await webApi.linkInvitation(found.token, found.claim)
+    localStorage.removeItem(PENDING_KEY)
+    return { ...found, partner: answer.partner }
+  } catch (error) {
+    if (error instanceof ApiError && error.status) localStorage.removeItem(PENDING_KEY)
+    throw error
+  }
 }

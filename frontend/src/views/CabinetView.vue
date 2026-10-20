@@ -13,7 +13,7 @@ import { clearSession } from '../composables/useSession.js'
 import { useSky } from '../composables/useSky.js'
 import { useChart } from '../composables/useChart.js'
 import { useForecast } from '../composables/useForecast.js'
-import { usePartners } from '../composables/usePartners.js'
+import { linkPendingInvite, pendingInvite, usePartners } from '../composables/usePartners.js'
 import { useChat } from '../composables/useChat.js'
 import { useHead } from '../utils/useHead.js'
 
@@ -104,6 +104,7 @@ onMounted(async () => {
   try {
     user.value = await webApi.me()
     markUser(user.value)
+    if (pendingInvite()) await joinPending()
   } catch (error) {
     if (error instanceof ApiError && (error.status === 401 || error.code === 'blocked')) {
       clearSession('web')
@@ -115,6 +116,26 @@ onMounted(async () => {
 })
 
 onUnmounted(clearMark)
+
+/**
+ * An invitation answered on this device before the cabinet was opened (or signed in to):
+ * its pair joins this cabinet now, with the birth data given in the answer if the cabinet had none.
+ */
+async function joinPending() {
+  try {
+    const joined = await linkPendingInvite()
+    if (!joined) return
+    user.value = await webApi.me()
+    markUser(user.value)
+    forgetChart()
+    forgetForecast()
+    await loadPartners(true)
+    router.replace({ name: 'cabinet-pair', query: { partner: joined.partner, joined: 1 } })
+  } catch (error) {
+    // The invitation was taken by another cabinet or withdrawn: the cabinet opens as it is.
+    if (!(error instanceof ApiError)) throw error
+  }
+}
 
 /** Back from the birth form: the way it came if it came from the overview, else to it. */
 function leaveBirth() {

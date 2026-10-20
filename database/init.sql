@@ -87,17 +87,54 @@ CREATE TABLE IF NOT EXISTS partners (
 CREATE UNIQUE INDEX IF NOT EXISTS partners_invite_key ON partners (invite_token);
 CREATE INDEX IF NOT EXISTS partners_user_idx ON partners (user_id, created_at);
 
+-- Сколько раз человек сам исправил свои данные рождения: одна правка, дальше — через поддержку.
+-- Иначе одна покупка разбора открывала бы любые пары с любыми датами.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_edits INTEGER NOT NULL DEFAULT 0;
+
+-- Пара — общая для двоих. Строка partners — сторона пары в кабинете одного человека: у пары по
+-- приглашению, когда партнёр завёл кабинет, сторон две, у введённой вручную — одна. Покупка
+-- принадлежит паре: разбор открыт обеим сторонам и остаётся у той, что не удаляла пару.
+CREATE TABLE IF NOT EXISTS pairs (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS pair_id BIGINT REFERENCES pairs (id) ON DELETE CASCADE;
+-- Кабинет партнёра, связанный с этой стороной. Данные рождения в строке — его, скопированные с его согласия.
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS linked_user_id BIGINT REFERENCES users (id) ON DELETE SET NULL;
+-- Согласие хозяина строки показать партнёру свои данные рождения (галочка у приглашения).
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS joined_at TIMESTAMPTZ;
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS share_at TIMESTAMPTZ;
+-- Хеш ключа, который получил заполнивший приглашение без кабинета: по нему пара привяжется к его новому кабинету.
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS claim_hash TEXT;
+-- Знак в кабинете: filled, linked, bought, gift, left — гаснет, когда человек открыл пару.
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS news TEXT NOT NULL DEFAULT '';
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS news_at TIMESTAMPTZ;
+
+-- Партнёры, заведённые до общих пар: каждому своя пара.
+DO $$ DECLARE r RECORD; pid BIGINT; BEGIN FOR r IN SELECT id, created_at FROM partners WHERE pair_id IS NULL LOOP INSERT INTO pairs (created_at) VALUES (r.created_at) RETURNING id INTO pid; UPDATE partners SET pair_id = pid WHERE id = r.id; END LOOP; END $$;
+
+CREATE INDEX IF NOT EXISTS partners_pair_idx ON partners (pair_id);
+CREATE INDEX IF NOT EXISTS partners_linked_idx ON partners (linked_user_id);
+
 -- Разовые покупки: их записывает оплата или оператор в админке. Сумм здесь нет, они в payments.
--- Удалённый партнёр не стирает покупку: ссылка на него просто становится пустой.
+-- Разбор пары принадлежит паре (pair_id); user_id — кто заплатил, source — pay или admin.
+-- Удалённая сторона или кабинет не стирают покупку: она остаётся у второй стороны.
 CREATE TABLE IF NOT EXISTS purchases (
     id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    user_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
     product TEXT NOT NULL,
     partner_id BIGINT REFERENCES partners (id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS purchases_partner_key ON purchases (user_id, product, partner_id) WHERE partner_id IS NOT NULL;
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS pair_id BIGINT REFERENCES pairs (id) ON DELETE CASCADE;
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'pay';
+ALTER TABLE purchases ALTER COLUMN user_id DROP NOT NULL;
+DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'purchases_user_id_fkey' AND confdeltype = 'c') THEN ALTER TABLE purchases DROP CONSTRAINT purchases_user_id_fkey; ALTER TABLE purchases ADD CONSTRAINT purchases_user_id_fkey FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL; END IF; END $$;
+UPDATE purchases pu SET pair_id = p.pair_id FROM partners p WHERE pu.pair_id IS NULL AND pu.partner_id = p.id;
+DROP INDEX IF EXISTS purchases_partner_key;
+CREATE UNIQUE INDEX IF NOT EXISTS purchases_pair_key ON purchases (product, pair_id) WHERE pair_id IS NOT NULL;
 
 -- Разговор с астрологом: вопросы человека (role = 'user') и ответы (role = 'astrologer').
 -- Пробные вопросы без «Небосвода» считаются по этой же таблице.
@@ -130,6 +167,10 @@ CREATE TABLE IF NOT EXISTS payments (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     paid_at TIMESTAMPTZ
 );
+
+-- Пара, за которую платят: сторона может исчезнуть, пока человек на странице ЮKassa, пара — нет.
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS pair_id BIGINT REFERENCES pairs (id) ON DELETE SET NULL;
+UPDATE payments pa SET pair_id = p.pair_id FROM partners p WHERE pa.pair_id IS NULL AND pa.partner_id = p.id;
 
 CREATE UNIQUE INDEX IF NOT EXISTS payments_yookassa_key ON payments (yookassa_id);
 CREATE INDEX IF NOT EXISTS payments_user_idx ON payments (user_id, created_at);

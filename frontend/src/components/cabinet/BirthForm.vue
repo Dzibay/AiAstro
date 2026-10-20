@@ -20,9 +20,11 @@ const props = defineProps({
   withName: { type: Boolean, default: false },
   name: { type: String, default: '' },
   withConsent: { type: Boolean, default: false },
+  /** A second tick, required too: on the invitation, the consent that the inviter sees these data. */
+  shareLabel: { type: String, default: '' },
   /** Whether the date tries the person's own Sun sign on their star. */
   sky: { type: Boolean, default: true },
-  /** ({ name, consent, birth }) → Promise of what `saved` carries. By default the person's own data. */
+  /** ({ name, consent, share, birth }) → Promise of what `saved` carries. By default the person's own data. */
   submit: { type: Function, default: ({ birth }) => webApi.setBirth(birth) },
   submitLabel: { type: String, default: 'Сохранить' },
   cancellable: { type: Boolean, default: true },
@@ -41,6 +43,7 @@ const saved = props.birth
 const form = reactive({
   name: props.name,
   consent: false,
+  share: false,
   date: saved?.date || '',
   time: saved?.time || '',
   noTime: Boolean(saved && !saved.time),
@@ -84,12 +87,16 @@ async function save() {
     message.value = 'Отметьте согласие на обработку данных'
     return
   }
+  if (props.shareLabel && !form.share) {
+    message.value = 'Отметьте согласие показать данные партнёру'
+    return
+  }
   message.value = ''
   pending.value = true
   const birth = { date: form.date, time: timeKnown.value ? form.time : null, place: form.city.trim() || null }
   if (form.place) Object.assign(birth, { lat: form.place.lat, lon: form.place.lon })
   try {
-    emit('saved', await props.submit({ name: form.name.trim(), consent: form.consent, birth }))
+    emit('saved', await props.submit({ name: form.name.trim(), consent: form.consent, share: form.share, birth }))
   } catch (error) {
     message.value = errorText(error)
   } finally {
@@ -145,6 +152,12 @@ async function save() {
         Даю согласие на обработку
         <a href="/legal/consent" target="_blank" rel="noopener">персональных данных</a>
       </span>
+    </label>
+
+    <label v-if="shareLabel" class="check consent">
+      <input v-model="form.share" type="checkbox" />
+      <span class="check-box" aria-hidden="true" />
+      <span>{{ shareLabel }}</span>
     </label>
 
     <Transition name="swap">
