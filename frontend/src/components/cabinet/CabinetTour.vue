@@ -101,7 +101,7 @@ const intro = computed(() => {
       target: 'help',
       route: OVERVIEW,
       title: 'Если забудете',
-      text: 'Нажмите «?» у вашей звезды — и знакомство начнётся заново. Оно есть и в профиле.',
+      text: 'Нажмите «?» у вашей звезды — и знакомство начнётся заново; оно есть и в профиле. А в каждом разделе — свой «?» в углу панели: он покажет, как устроен раздел.',
     },
   ]
   if (!tour.pair) return steps
@@ -156,7 +156,254 @@ const SKY_STEPS = [
   },
 ]
 
-const steps = computed(() => (tour.kind === 'sky' ? SKY_STEPS : intro.value))
+/*
+ * A section's own tour, from the «?» in the panel's corner. The targets are what the open section
+ * shows: `css` inside the panel, `stage` the picture behind it (the wheel, the pair's stars, the
+ * dome). A step whose target the section does not show right now (an empty list, a locked reading)
+ * is left out, so the walk always matches the screen.
+ */
+const IN = '.cabinet-panel '
+const SECTION_TOURS = {
+  chart: {
+    name: 'Карта',
+    steps: [
+      {
+        id: 'wheel',
+        stage: '.natal-wheel',
+        title: 'Колесо карты',
+        text: 'Небо в минуту вашего рождения: двенадцать знаков по кругу, дома и планеты. Наведите на планету — она загорится и в списке.',
+        free: true,
+      },
+      {
+        id: 'three',
+        css: `${IN}.three`,
+        title: 'Большая тройка',
+        text: 'Солнце, Луна и Асцендент: кто вы, что чувствуете, какой вас видят. Нажмите — откроется толкование.',
+        free: true,
+      },
+      {
+        id: 'portrait',
+        css: `${IN}[aria-labelledby="portrait-title"]`,
+        title: 'Портрет',
+        text: 'Карта, сложенная в одно целое. Первая глава — ядро карты — открыта всем, остальные главы зажигает «Небосвод».',
+        free: true,
+        paid: true,
+      },
+      {
+        id: 'balance',
+        css: `${IN}.balance`,
+        title: 'Стихии и кресты',
+        text: 'Сколько в вас огня, земли, воздуха и воды — и как вы действуете: начинаете, держите или меняетесь.',
+        free: true,
+      },
+      {
+        id: 'planets',
+        css: `${IN}[aria-labelledby="planets-title"]`,
+        title: 'Планеты',
+        text: 'Каждая строка — точка карты. Внутри — её толкование и аспекты; смысл каждого аспекта целиком — в «Небосводе».',
+        free: true,
+        paid: true,
+      },
+    ],
+  },
+  forecast: {
+    name: 'Прогноз',
+    steps: [
+      {
+        id: 'mode',
+        css: `${IN}.mode-toggle`,
+        title: 'День, неделя, месяц',
+        text: 'Переключайте, на какой срок смотреть: прогноз дня, семь дней недели или звёздный календарь на месяц.',
+      },
+      {
+        id: 'text',
+        css: [`${IN}.forecast-panel > .text`, `${IN}.star-calendar`],
+        title: 'Прогноз',
+        text: 'Как небо касается вашей карты. Первые строки — бесплатно; полные тексты и тридцать дней календаря — в «Небосводе».',
+        free: true,
+        paid: true,
+      },
+      {
+        id: 'spheres',
+        css: `${IN}[aria-labelledby="spheres-title"]`,
+        title: 'Сферы',
+        text: 'Где сегодня легче, а где стоит действовать бережнее: близкие, дела, разговоры, силы.',
+        free: true,
+      },
+      {
+        id: 'week',
+        css: `${IN}[aria-labelledby="week-title"]`,
+        title: 'Неделя',
+        text: 'Семь дней одной строкой: по цвету видно, какой день легче, а какой бережнее, — и лучшие дни для каждой сферы.',
+        free: true,
+      },
+      {
+        id: 'transits',
+        css: `${IN}[aria-labelledby="transits-title"]`,
+        title: 'Транзиты',
+        text: 'Какие планеты неба сейчас касаются точек вашей карты и до какого дня. На колесе они видны поверх карты.',
+        free: true,
+      },
+      {
+        id: 'sky-now',
+        css: `${IN}[aria-labelledby="sky-title"]`,
+        title: 'Небо дня',
+        text: 'Фаза Луны, события неба и ретроградные планеты — то, что сейчас происходит для всех.',
+        free: true,
+      },
+    ],
+  },
+  pair: {
+    name: 'Пара',
+    steps: [
+      {
+        id: 'stars',
+        stage: '.pair-sky',
+        title: 'Звёзды пар',
+        text: 'Ваша звезда и звёзды близких: нить между вами горит тем ярче, чем больше созвучия.',
+        free: true,
+      },
+      {
+        id: 'list',
+        css: `${IN}.pairs`,
+        title: 'Ваши пары',
+        text: 'Все пары списком, у каждой — её состояние. Нажмите на пару — откроется ваша совместимость; полный разбор открывается покупкой, у общей пары — сразу для обоих.',
+        free: true,
+      },
+      {
+        id: 'ways',
+        css: `${IN}.ways`,
+        title: 'Как добавить пару',
+        text: 'Введите данные партнёра сами — или отправьте приглашение: партнёр укажет их без регистрации, а заведёт кабинет — пара станет общей.',
+        free: true,
+      },
+      {
+        id: 'spheres',
+        css: `${IN}[aria-labelledby="spheres-title"]`,
+        title: 'Сферы пары',
+        text: 'Совместимость по сферам жизни: где вы звучите в унисон, а где учитесь друг у друга.',
+        free: true,
+      },
+      {
+        id: 'aspects',
+        css: `${IN}[aria-labelledby="aspects-title"]`,
+        title: 'Аспекты между картами',
+        text: 'Как планеты одного касаются планет другого. Наведите на аспект — нить загорится на небе.',
+        free: true,
+      },
+      {
+        id: 'reading',
+        css: [`${IN}.unlock`, `${IN}[aria-labelledby="reading-title"]`],
+        title: 'Разбор пары',
+        text: 'Полный разбор открывается один раз и остаётся с парой навсегда; у общей пары — сразу для обоих. С «Небосводом» он дешевле.',
+        paid: true,
+      },
+      {
+        id: 'pair-day',
+        css: `${IN}[aria-labelledby="pair-day-title"]`,
+        title: 'День пары',
+        text: 'Как сегодняшнее небо касается вас двоих — с «Небосводом» для каждой открытой пары.',
+        paid: true,
+      },
+      {
+        id: 'foot',
+        css: `${IN}.pair-foot`,
+        title: 'Управление парой',
+        text: 'Вернуться ко всем парам, исправить данные партнёра, пока разбор не открыт, или удалить пару.',
+      },
+    ],
+  },
+  chat: {
+    name: 'Астролог',
+    steps: [
+      {
+        id: 'starters',
+        css: [`${IN}.starters`, `${IN}.chat-panel .panel-head`],
+        title: 'С чего начать',
+        text: 'Не знаете, о чём спросить? Нажмите на готовый вопрос — астролог ответит по вашей карте.',
+        free: true,
+      },
+      {
+        id: 'thread',
+        css: `${IN}.thread`,
+        title: 'Разговор',
+        text: 'Ваши вопросы и ответы остаются здесь — к ним можно вернуться в любой день.',
+        free: true,
+      },
+      {
+        id: 'composer',
+        css: [`${IN}.composer`, `${IN}.unlock`],
+        title: 'Ваш вопрос',
+        text: 'Спросите о работе, любви или решении простыми словами. Два вопроса в подарок, с «Небосводом» — без счёта.',
+        free: true,
+        paid: true,
+      },
+    ],
+  },
+  sky: {
+    name: 'Небосвод',
+    steps: [
+      {
+        id: 'dome',
+        stage: '.sky-dome',
+        title: 'Купол неба',
+        text: 'Каждое созвездие на куполе — то, что зажигает «Небосвод». Наведите на созвездие — загорится его строка в списке.',
+      },
+      {
+        id: 'features',
+        css: `${IN}[aria-labelledby="sky-features"]`,
+        title: 'Что зажигает',
+        text: 'Всё, что открывает подписка, по разделам. Нажмите на строку — она раскроется и расскажет подробнее.',
+        paid: true,
+      },
+      {
+        id: 'compare',
+        css: `${IN}[aria-labelledby="sky-compare"]`,
+        title: 'Без подписки и с ней',
+        text: 'Что остаётся бесплатным навсегда и что «Небосвод» добавляет к нему.',
+        free: true,
+        paid: true,
+      },
+      {
+        id: 'plans',
+        css: `${IN}[aria-labelledby="sky-plans"]`,
+        title: 'Срок',
+        text: 'Выберите, на сколько зажечь небо: чем дольше срок, тем дешевле месяц. Без автопродления: одно списание за срок.',
+      },
+      {
+        id: 'pay',
+        css: `${IN}.pay`,
+        title: 'Оплата',
+        text: 'Оплата проходит через ЮKassa. Если «Небосвод» уже горит, новый срок прибавится к текущему.',
+      },
+      {
+        id: 'replay',
+        css: `${IN}.sky-replay`,
+        title: 'Что открылось',
+        text: 'Эта кнопка снова проведёт по всему, что зажёг ваш «Небосвод», — раздел за разделом.',
+      },
+    ],
+  },
+}
+
+/** The ids of the open section's steps it can show now; null until they are looked for. */
+const available = ref(null)
+const sectionTour = computed(() => SECTION_TOURS[route.meta.section] || null)
+
+const firstMatch = (css) => [].concat(css).map((selector) => document.querySelector(selector)).find((element) => {
+  if (!element) return false
+  const r = element.getBoundingClientRect()
+  return r.width > 0 && r.height > 0
+}) || null
+
+const targetOf = (item) => (item.stage ? firstMatch(item.stage) : item.css ? firstMatch(item.css) : null)
+
+const sectionSteps = computed(() => {
+  const all = sectionTour.value?.steps || []
+  return available.value ? all.filter((item) => available.value.includes(item.id)) : []
+})
+
+const steps = computed(() => (tour.kind === 'sky' ? SKY_STEPS : tour.kind === 'section' ? sectionSteps.value : intro.value))
 const step = computed(() => steps.value[tour.step] || null)
 const last = computed(() => tour.step >= steps.value.length - 1)
 
@@ -206,7 +453,7 @@ function measureStar() {
 function measure() {
   const centre = measureStar()
   if (centre) star.value = centre
-  const target = step.value?.target
+  const target = step.value && (tour.kind === 'section' ? 'section' : step.value.target)
   if (tour.scene || !target) {
     hole.value = null
     return
@@ -224,9 +471,64 @@ function measure() {
     next = rectOf('.cabinet-panel', 6)
   } else if (target.startsWith('point:')) {
     next = rectOf(`.cabinet-sky .point[data-section="${target.slice(6)}"]`, 8)
+  } else if (target === 'section') {
+    next = sectionRect(step.value)
   }
   hole.value = next
   if (card.value) cardHeight.value = card.value.offsetHeight
+}
+
+/** A section's target: the picture behind the panel whole, a part of the panel cut to what of it is seen. */
+function sectionRect(item) {
+  const element = targetOf(item)
+  if (!element) return rectOf('.cabinet-panel', 6)
+  const r = element.getBoundingClientRect()
+  const pad = item.stage ? 0 : 8
+  let box = { top: r.top - pad, bottom: r.bottom + pad, left: r.left - pad, right: r.right + pad }
+  if (item.stage) {
+    // The picture may run past the screen: the window stays on it.
+    box = { top: Math.max(box.top, 70), bottom: Math.min(box.bottom, window.innerHeight - 10), left: Math.max(box.left, 10), right: Math.min(box.right, window.innerWidth - 10) }
+    // …and on the sky the panel leaves free: beside it on a desktop, above the sheet on a phone.
+    const panel = document.querySelector('.cabinet-panel')?.getBoundingClientRect()
+    if (panel && narrow.value) box.bottom = Math.min(box.bottom, panel.top - 8)
+    else if (panel) box.right = Math.min(box.right, panel.left - 16)
+  } else {
+    const view = document.querySelector('.cabinet-panel .panel-scroll')?.getBoundingClientRect()
+    if (view) box = { ...box, top: Math.max(box.top, view.top - 4), bottom: Math.min(box.bottom, view.bottom + 4) }
+  }
+  if (box.bottom - box.top < 24) return rectOf('.cabinet-panel', 6)
+  return { x: box.left, y: box.top, w: box.right - box.left, h: box.bottom - box.top, round: false }
+}
+
+/** Brings a part of the panel into the middle of its scroll, smoothly, before the window opens on it. */
+function scrollToTarget(item) {
+  if (!item?.css) return
+  const element = targetOf(item)
+  const scroller = element?.closest('.panel-scroll')
+  if (!scroller) return
+  const r = element.getBoundingClientRect()
+  const view = scroller.getBoundingClientRect()
+  const top = r.height > view.height * 0.8 ? r.top - view.top - 16 : r.top - view.top - (view.height - r.height) / 2
+  scroller.scrollTo({ top: scroller.scrollTop + top, behavior: reduceMotion() ? 'auto' : 'smooth' })
+}
+const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/** What the open section shows now: waits for its data (a «…» line) to settle, a few seconds at most. */
+async function prepareSection() {
+  available.value = null
+  const deadline = performance.now() + 4000
+  await nextTick()
+  while (performance.now() < deadline && document.querySelector('.cabinet-panel .loading')) {
+    await new Promise((resolve) => setTimeout(resolve, 150))
+  }
+  if (tour.kind !== 'section') return
+  const found = (sectionTour.value?.steps || []).filter((item) => targetOf(item)).map((item) => item.id)
+  if (!found.length) {
+    stopTour()
+    return
+  }
+  available.value = found
+  show(0)
 }
 
 /* The points fly and the panel slides after a change: the window follows them for a while. */
@@ -297,8 +599,9 @@ async function show(index) {
   tour.step = index
   if (next.route && route.name !== next.route.name) await router.push(next.route).catch(() => {})
   await nextTick()
+  scrollToTarget(tour.kind === 'section' ? next : null)
   measure()
-  follow()
+  follow(tour.kind === 'section' ? 1000 : 1800)
   primary.value?.focus({ preventScroll: true })
 }
 
@@ -315,7 +618,7 @@ function back() {
 }
 function finish() {
   const kind = tour.kind
-  markTourSeen(props.user.id, kind)
+  if (kind !== 'section') markTourSeen(props.user.id, kind)
   // The intro has already told a lit sky what it holds: the «Небосвод» tour would repeat it.
   if (kind === 'intro' && props.user.sky) markTourSeen(props.user.id, 'sky')
   stopTour()
@@ -362,6 +665,10 @@ function flare() {
 const sceneButton = ref(null)
 watch(() => [tour.kind, tour.scene], async ([kind, isScene]) => {
   if (!kind) return
+  if (kind === 'section' && tour.step < 0) {
+    prepareSection()
+    return
+  }
   if (isScene) {
     if (kind === 'sky') flare()
     await nextTick()
@@ -385,6 +692,17 @@ onUnmounted(() => {
   flareTimers.forEach(clearTimeout)
 })
 
+const label = computed(() => {
+  if (tour.kind === 'sky') return 'Что открыл «Небосвод»'
+  if (tour.kind === 'section') return `Как устроен раздел «${sectionTour.value?.name || ''}»`
+  return 'Знакомство с кабинетом'
+})
+
+/* Leaving the section mid-walk ends its tour: its steps belong to the section left behind. */
+watch(() => route.meta.section, () => {
+  if (tour.kind === 'section') stopTour()
+})
+
 const free = computed(() => step.value?.free)
 const paid = computed(() => step.value?.paid)
 </script>
@@ -398,7 +716,7 @@ const paid = computed(() => step.value?.paid)
         :class="[`is-${tour.kind}`, { 'is-scene': tour.scene, 'is-narrow': narrow }]"
         role="dialog"
         aria-modal="true"
-        :aria-label="tour.kind === 'sky' ? 'Что открыл «Небосвод»' : 'Знакомство с кабинетом'"
+        :aria-label="label"
       >
         <!-- The dim: a plain veil for the scene, a window cut by a wide shadow for the steps. -->
         <div v-if="tour.scene || !holeStyle" class="veil" />
@@ -434,7 +752,7 @@ const paid = computed(() => step.value?.paid)
           @touchend="onTouchEnd"
         >
           <div class="step-top">
-            <p class="kicker">{{ tour.step + 1 }} из {{ steps.length }}</p>
+            <p class="kicker"><template v-if="tour.kind === 'section'">{{ sectionTour?.name }} · </template>{{ tour.step + 1 }} из {{ steps.length }}</p>
             <button type="button" class="skip" @click="finish">Пропустить</button>
           </div>
           <h2 class="title">{{ step.title }}</h2>

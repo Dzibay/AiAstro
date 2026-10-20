@@ -8,6 +8,7 @@ import { usePrices } from '../../utils/prices.js'
 import { skyEnding, skyLine } from '../../utils/skyTerm.js'
 import { webApi } from '../../api/web.js'
 import { paidId, usePayment } from '../../composables/usePayment.js'
+import { startTour } from '../../utils/tour.js'
 
 /**
  * «Небосвод»: what the subscription lights, for how long and the way to pay for it. The list of
@@ -114,6 +115,12 @@ onUnmounted(() => {
       <template v-else-if="result === 'canceled'">Оплата не прошла, деньги не списаны. Можно попробовать ещё раз.</template>
       <template v-else>ЮKassa ещё не подтвердила оплату. Небосвод зажжётся сам, как только придёт ответ, — загляните чуть позже.</template>
     </p>
+
+    <!-- Once lit, the walk through what «Небосвод» opened can be taken again at any time. -->
+    <button v-if="user.sky" type="button" class="sky-replay" @click="startTour('sky')">
+      <svg viewBox="0 0 16 12" aria-hidden="true"><path d="M1.5 10.5L1 3l4 3.2L8 1l3 5.2L15 3l-.5 7.5z" /></svg>
+      Показать, что открыл «Небосвод»
+    </button>
 
     <section aria-labelledby="sky-features">
       <h3 id="sky-features" class="part-title">Что зажигается</h3>
@@ -227,6 +234,25 @@ onUnmounted(() => {
 <style scoped>
 .sky-panel { display: grid; gap: 20px; }
 .sky-panel > * { min-width: 0; }
+
+.sky-replay {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(240, 205, 138, 0.45);
+  background: rgba(240, 205, 138, 0.08);
+  font: inherit;
+  font-size: 14px;
+  color: #f3dcae;
+  cursor: pointer;
+  transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.sky-replay svg { width: 13px; height: 10px; fill: currentColor; }
+.sky-replay:hover { border-color: #f0cd8a; background: rgba(240, 205, 138, 0.16); box-shadow: 0 6px 22px rgba(230, 170, 80, 0.2); }
+.sky-replay:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 3px; }
 
 .part-title { margin: 0 0 10px; font-family: var(--caps); font-weight: 600; font-size: 15px; letter-spacing: 0.12em; color: rgba(240, 205, 138, 0.85); }
 

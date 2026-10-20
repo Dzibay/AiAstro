@@ -202,6 +202,18 @@ function focusTitle() {
   panel.value?.querySelector('.panel-title, h2')?.focus({ preventScroll: true })
 }
 
+/* ---- The section's own «?»: a short walk through the open section (CabinetTour) ---- */
+
+const sectionHelp = computed(() => (section.value && user.value ? SECTION_BY_ID[section.value]?.label || '' : ''))
+async function openSectionTour() {
+  if (route.params.item) {
+    // One point of the chart is open: the walk goes through the whole chart.
+    await router.push({ name: 'cabinet-chart' }).catch(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 600))
+  }
+  startTour('section')
+}
+
 /* ---- The phone sheet ---- */
 
 const raised = ref(false)
@@ -347,6 +359,15 @@ const sheetStyle = computed(() => {
 
         <div class="panel-top">
           <p class="kicker">{{ kicker }}</p>
+          <button
+            v-if="sectionHelp"
+            type="button"
+            class="section-help"
+            :class="{ 'is-on': tour.kind === 'section' }"
+            :aria-label="`Как устроен раздел «${sectionHelp}»`"
+            :title="`Как устроен раздел «${sectionHelp}»`"
+            @click="openSectionTour"
+          >?</button>
           <RouterLink v-if="route.name !== 'cabinet'" class="close" :to="{ name: 'cabinet' }" aria-label="Закрыть и вернуться к обзору">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3L13 13M13 3L3 13" /></svg>
           </RouterLink>
@@ -431,6 +452,28 @@ const sheetStyle = computed(() => {
 
 .panel-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; }
 .kicker { margin: 0; font-size: 10px; letter-spacing: 0.26em; text-transform: uppercase; color: rgba(233, 194, 124, 0.75); }
+.section-help {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(240, 205, 138, 0.42);
+  background: rgba(240, 205, 138, 0.05);
+  font-family: var(--serif);
+  font-size: 14px;
+  line-height: 1;
+  color: #f3dcae;
+  cursor: pointer;
+  transition: border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+}
+.section-help:hover, .section-help.is-on { border-color: #f0cd8a; background: rgba(240, 205, 138, 0.16); box-shadow: 0 0 14px rgba(255, 200, 110, 0.4); }
+.section-help:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 3px; }
+/* A finger's target, larger than the circle. */
+.section-help::after { content: ''; position: absolute; inset: -10px; border-radius: 50%; }
 .close {
   display: grid;
   place-items: center;

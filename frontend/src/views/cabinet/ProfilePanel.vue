@@ -192,7 +192,11 @@ const showPassword = ref(false)
         <span class="value">Как устроен кабинет</span>
         <button type="button" class="link" @click="startTour('intro')">Пройти заново</button>
       </div>
-      <p class="hint">Звезда, пять разделов и что из них бесплатно — по шагам. То же открывает «?» у вашей звезды.</p>
+      <div v-if="user.sky" class="row">
+        <span class="value">Что открыл «Небосвод»</span>
+        <button type="button" class="link" @click="startTour('sky')">Показать снова</button>
+      </div>
+      <p class="hint">Звезда, пять разделов и что из них бесплатно — по шагам. То же открывает «?» у вашей звезды, а «?» в углу панели раздела рассказывает о нём самом.</p>
     </section>
 
     <p class="since">С нами с {{ formatDate(user.created_at) }}</p>

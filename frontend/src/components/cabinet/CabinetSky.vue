@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import { useSky } from '../../composables/useSky.js'
 import { startTour, tour } from '../../utils/tour.js'
 import { SECTION_BY_ID, cabinetLayout, mixLayout, starScale } from './layout.js'
@@ -24,6 +24,7 @@ const props = defineProps({
 })
 
 const { geo } = useSky()
+const route = useRoute()
 
 // SkyStage's FLIGHT_MS and its ease, so the points land with the sky.
 const FLIGHT_MS = 1400
@@ -140,7 +141,10 @@ onUnmounted(() => cancelAnimationFrame(raf))
     </svg>
 
     <RouterLink class="home-star" :to="homeTo" :aria-label="homeLabel" :style="home" />
+    <!-- Only on the overview: elsewhere the star moves aside, and each section has its own «?». -->
+    <Transition name="help">
     <button
+      v-if="route.name === 'cabinet'"
       type="button"
       class="tour-help"
       :class="{ 'is-on': tour.kind }"
@@ -149,6 +153,7 @@ onUnmounted(() => cancelAnimationFrame(raf))
       title="Знакомство с кабинетом"
       @click="startTour('intro')"
     >?</button>
+    </Transition>
 
     <!-- Re-keyed by section under reduced motion: the points fade in at their new places instead of flying. -->
     <div :key="reduce ? section : 'points'" class="points">
@@ -261,6 +266,8 @@ onUnmounted(() => cancelAnimationFrame(raf))
 .tour-help:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 3px; }
 /* A finger needs a larger target than the eye: the hit area reaches past the circle. */
 .tour-help::after { content: ''; position: absolute; inset: -8px; border-radius: 50%; }
+.help-enter-active, .help-leave-active { transition: opacity 0.4s ease, transform 0.4s ease; }
+.help-enter-from, .help-leave-to { opacity: 0; transform: scale(0.6); }
 
 .points { position: absolute; inset: 0; }
 /* The figure's centre sits on the point: the link is 150px wide and the figure 52px tall. */
