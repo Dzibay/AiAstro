@@ -50,8 +50,11 @@ def _strength(aspect: dict) -> float:
 
 
 def _element(chart: dict) -> str:
+    """The leading element; when two share the lead, the Sun's own one (as the star passport reads it)."""
     counts = chart["balance"]["elements"]
-    return max(ELEMENTS, key=lambda element: counts[element])
+    sun = next(point["sign"] for point in chart["points"] if point["id"] == "sun")
+    sun_element = ELEMENTS[SIGNS.index(sun) % 4]
+    return max(ELEMENTS, key=lambda element: (counts[element], element == sun_element))
 
 
 def build(mine: dict, theirs: dict) -> dict:

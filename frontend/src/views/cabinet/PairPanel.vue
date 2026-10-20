@@ -5,6 +5,7 @@ import PanelHead from '../../components/cabinet/PanelHead.vue'
 import ReadingText from '../../components/cabinet/ReadingText.vue'
 import BirthForm from '../../components/cabinet/BirthForm.vue'
 import PairSpheres from '../../components/sky/PairSpheres.vue'
+import PairShare from '../../components/sky/PairShare.vue'
 import { ASPECTS, POINTS } from '../../components/cabinet/astro.js'
 import { errorText } from '../../api/http.js'
 import { inviteLink, usePartners } from '../../composables/usePartners.js'
@@ -309,6 +310,7 @@ function status_of(item) {
           <section v-if="pair.data.spheres?.length" class="block" aria-labelledby="spheres-title">
             <h3 id="spheres-title" class="block-title">Пять сфер</h3>
             <PairSpheres :spheres="pair.data.spheres" />
+            <PairShare :mine="user.name" :theirs="partner.name" :phrase="pair.data.phrase" :spheres="pair.data.spheres" />
           </section>
 
           <section class="block" aria-labelledby="aspects-title">

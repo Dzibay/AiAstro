@@ -30,7 +30,23 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_at TIMESTAMPTZ;
 -- Подписка «Небосвод» действует до этого момента; NULL — подписки нет. Её продлевает оплата или оператор в админке.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS sky_until TIMESTAMPTZ;
 
+-- Письма о сроке «Небосвода» и об ответе партнёра; человек отключает их в кабинете.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS mail_notes BOOLEAN NOT NULL DEFAULT TRUE;
+-- Срок «Небосвода», о конце которого уже напомнили: новая оплата меняет sky_until, и напоминание придёт снова.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS sky_reminded TIMESTAMPTZ;
+
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_key ON users (email);
+
+-- Ссылки для нового пароля. Хранится только хеш: сама ссылка есть лишь в письме. Ссылка
+-- разовая и живёт час; новый пароль гасит все ссылки человека.
+CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS password_resets_user_idx ON password_resets (user_id, created_at);
 
 -- Посчитанные натальные карты. Ключ — хеш данных рождения и версии расчёта: исправленные
 -- данные или новая версия просто не находят старую строку, её можно удалить в любой момент.

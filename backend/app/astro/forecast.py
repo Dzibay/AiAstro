@@ -339,3 +339,20 @@ def month(chart: dict, start: date, tz: str) -> list[dict]:
             "events": events(day["date"]),
         })
     return days
+
+
+@lru_cache(maxsize=8)
+def public_sky(start: date) -> dict:
+    """The sky of the week for everyone, without a chart: the Moon, the retrograde planets, the events."""
+    sky = _sky_at_utc_noon(start)
+    week = []
+    for offset in range(7):
+        day = start + timedelta(days=offset)
+        week += [{**event, "date": day.isoformat()} for event in events(day)]
+    return {
+        "date": start.isoformat(),
+        "moon": {"sign": _sign(sky["moon"]["lon"]), "phase": moon_phase(start)},
+        "next": next_lunation(start),
+        "retro": retrograde(sky),
+        "events": week,
+    }

@@ -13,6 +13,9 @@ export const webApi = {
   month: (tz) => request(`/api/web/me/forecast/month?${new URLSearchParams({ tz })}`, { audience: 'web', auth: true }),
   setName: (name) => request('/api/web/me/name', { method: 'PUT', body: { name }, audience: 'web', auth: true }),
   setEmail: (body) => request('/api/web/me/email', { method: 'PUT', body, audience: 'web', auth: true }),
+  setMailNotes: (on) => request('/api/web/me/mail', { method: 'PUT', body: { on }, audience: 'web', auth: true }),
+  forgotPassword: (email) => request('/api/web/password/forgot', { method: 'POST', body: { email }, audience: 'web' }),
+  resetPassword: (body) => request('/api/web/password/reset', { method: 'POST', body, audience: 'web' }),
   setPassword: (body) => request('/api/web/me/password', { method: 'PUT', body, audience: 'web', auth: true }),
   deleteAccount: (password) =>
     request('/api/web/me/delete', { method: 'POST', body: { password }, audience: 'web', auth: true }),

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import SiteFrame from '../components/SiteFrame.vue'
 import Field from '../components/ui/Field.vue'
 import { adminApi } from '../api/admin.js'
@@ -34,6 +34,7 @@ function skyStatus(user) {
 const GROUPS = [
   { id: 'site', title: 'Сайт', note: 'Название, подзаголовок и почта поддержки.' },
   { id: 'prices', title: 'Цены', note: 'Целые рубли. Пока цена пуста, сайт пишет «от … ₽», а этот тариф не продаётся.' },
+  { id: 'mail', title: 'Почта', note: 'SMTP почтового сервиса (Яндекс 360, Mail.ru для бизнеса, Unisender Go и подобные). С неё уходят ссылки для нового пароля, напоминание за три дня до конца «Небосвода» и весть об ответе партнёра.' },
   { id: 'pay', title: 'ЮKassa', note: 'shopId и секретный ключ — в личном кабинете ЮKassa, «Интеграция → Ключи API». Ключ test_… — для проверки без настоящих денег. Коды чека — из справочника ЮKassa (54-ФЗ).' },
 ]
 const groups = computed(() => GROUPS.map((group) => ({ ...group, items: items.value.filter((item) => item.group === group.id) })))
@@ -42,6 +43,24 @@ const payOn = computed(() => {
   const secret = items.value.find((item) => item.key === 'yookassa_secret_key')
   return Boolean(shop?.value && secret?.filled)
 })
+
+const value = (key) => items.value.find((item) => item.key === key)?.value || ''
+const mailOn = computed(() => Boolean(value('smtp_host') && (value('mail_from') || value('smtp_user')).includes('@')))
+const testMail = reactive({ email: '', busy: false, result: '', ok: false })
+async function sendTestMail() {
+  testMail.busy = true
+  testMail.result = ''
+  try {
+    const answer = await adminApi.testMail(testMail.email.trim())
+    testMail.ok = answer.ok
+    testMail.result = answer.ok ? 'Письмо ушло — проверьте ящик (и папку «Спам»).' : `Сервер не принял письмо: ${answer.error}`
+  } catch (error) {
+    testMail.ok = false
+    testMail.result = errorText(error)
+  } finally {
+    testMail.busy = false
+  }
+}
 
 async function loadSettings() {
   const data = await adminApi.settings()
@@ -184,6 +203,9 @@ function logout() {
           <template v-for="group in groups" :key="group.id">
             <h2 class="admin-heading">{{ group.title }}</h2>
             <p class="meta">{{ group.note }}</p>
+            <p v-if="group.id === 'mail'" class="pay-state" :class="{ 'is-on': mailOn }">
+              {{ mailOn ? 'Почта включена: письма уходят.' : 'Почта выключена: заполните сервер и адрес отправителя. Восстановить пароль пока нельзя.' }}
+            </p>
             <p v-if="group.id === 'pay'" class="pay-state" :class="{ 'is-on': payOn }">
               {{ payOn ? 'Оплата включена: кнопки оплаты на сайте работают.' : 'Оплата выключена: заполните shopId и секретный ключ.' }}
             </p>
@@ -192,13 +214,22 @@ function logout() {
                 v-model="item.value"
                 :label="item.label"
                 :type="item.secret ? 'password' : 'text'"
-                :placeholder="item.secret && item.filled ? 'Ключ сохранён — введите новый, чтобы заменить' : ''"
+                :placeholder="item.secret && item.filled ? `${item.key === 'smtp_password' ? 'Пароль сохранён' : 'Ключ сохранён'} — введите новый, чтобы заменить` : ''"
                 autocomplete="off"
               />
               <div class="setting-actions">
                 <button class="button" type="submit" :disabled="item.secret && !item.value">Сохранить</button>
-                <button v-if="item.secret && item.filled" class="text-button" type="button" @click="save(item, '')">Стереть ключ</button>
+                <button v-if="item.secret && item.filled" class="text-button" type="button" @click="save(item, '')">{{ item.key === 'smtp_password' ? 'Стереть пароль' : 'Стереть ключ' }}</button>
               </div>
+            </form>
+            <form v-if="group.id === 'mail' && mailOn" class="form setting" @submit.prevent="sendTestMail">
+              <Field v-model="testMail.email" label="Пробное письмо на адрес" type="email" autocomplete="off" />
+              <div class="setting-actions">
+                <button class="button" type="submit" :disabled="!testMail.email.includes('@') || testMail.busy">
+                  {{ testMail.busy ? 'Отправляем…' : 'Отправить' }}
+                </button>
+              </div>
+              <p v-if="testMail.result" class="meta" :class="testMail.ok ? 'mail-ok' : 'error'">{{ testMail.result }}</p>
             </form>
             <div v-if="group.id === 'pay' && notifyUrl" class="notify">
               <p class="meta">
@@ -315,6 +346,7 @@ function logout() {
 .setting-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
 .pay-state { margin: 4px 0 14px; font-weight: 600; color: #f2a48c; }
 .pay-state.is-on { color: #9fd3a8; }
+.mail-ok { color: #9fd3a8; }
 .notify { display: grid; gap: 6px; margin-top: 4px; }
 .notify-url { overflow-wrap: anywhere; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255, 240, 210, 0.04); font-size: 14px; user-select: all; }
 

@@ -1,13 +1,18 @@
 import datetime as dt
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from pydantic import BaseModel, Field
 
-from app.accounts import authenticate, delete_account, get_user, register, set_birth, set_email, set_name, set_password
+from app import notes
+from app.accounts import (
+    authenticate, delete_account, get_user, register, request_reset, reset_password, set_birth, set_email,
+    set_mail_notes, set_name, set_password,
+)
 from app.api.deps import as_http, require_web_user
 from app.charts import chart_item, chart_of, forecast_of, month_of, portrait_of
 from app.chat import LENGTH, ask, history
 from app.errors import DomainError
+from app.mailer import mail_on
 from app.payments import create_payment, payment_of
 from app.partners import create_partner, delete_partner, fill_invite, invite, list_partners, open_invite, synastry_of
 from app.places import search
@@ -78,6 +83,19 @@ class LoginIn(BaseModel):
     password: str = Field(max_length=200)
 
 
+class ForgotIn(BaseModel):
+    email: str = Field(max_length=254)
+
+
+class ResetIn(BaseModel):
+    token: str = Field(max_length=100)
+    password: str = Field(max_length=200)
+
+
+class MailNotesIn(BaseModel):
+    on: bool
+
+
 @router.post("/register")
 def register_user(body: RegisterIn) -> dict:
     birth = body.birth
@@ -103,6 +121,31 @@ def register_user(body: RegisterIn) -> dict:
 def login_user(body: LoginIn) -> dict:
     try:
         user = authenticate(body.email, body.password)
+        token = make_web_session(user["id"])
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    return {"token": token, "user": user}
+
+
+@router.post("/password/forgot")
+def forgot_password(body: ForgotIn, background: BackgroundTasks) -> dict:
+    """Always the same answer, so the form does not tell whose mail is registered; the letter goes in the background."""
+    try:
+        if not mail_on():
+            raise DomainError("mail_off", 409)
+        found = request_reset(body.email)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    if found:
+        background.add_task(notes.reset_letter, found)
+    return {"ok": True}
+
+
+@router.post("/password/reset")
+def new_password(body: ResetIn) -> dict:
+    """The new password by the letter's link; the person is signed in at once."""
+    try:
+        user = reset_password(body.token, body.password)
         token = make_web_session(user["id"])
     except DomainError as exc:
         raise as_http(exc) from exc
@@ -149,6 +192,15 @@ def update_password(body: PasswordIn, user_id: int = Depends(require_web_user)) 
     except DomainError as exc:
         raise as_http(exc) from exc
     return {"ok": True}
+
+
+@router.put("/me/mail")
+def update_mail_notes(body: MailNotesIn, user_id: int = Depends(require_web_user)) -> dict:
+    """The letters about «Небосвод» and the partners: on or off."""
+    try:
+        return set_mail_notes(user_id, body.on)
+    except DomainError as exc:
+        raise as_http(exc) from exc
 
 
 @router.post("/me/delete")
@@ -307,12 +359,14 @@ def invitation(token: str) -> dict:
 
 
 @router.post("/invite/{token}")
-def answer_invitation(token: str, body: InviteIn) -> dict:
+def answer_invitation(token: str, body: InviteIn, background: BackgroundTasks) -> dict:
     birth = body.birth
     try:
-        return fill_invite(token, body.name, body.consent, birth.date, birth.time, birth.place, birth.lat, birth.lon)
+        answer = fill_invite(token, body.name, body.consent, birth.date, birth.time, birth.place, birth.lat, birth.lon)
     except DomainError as exc:
         raise as_http(exc) from exc
+    background.add_task(notes.partner_filled, token)
+    return answer
 
 
 @router.get("/places")

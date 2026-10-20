@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 from datetime import date, datetime, time, timezone
 
 from psycopg.errors import UniqueViolation
@@ -11,7 +13,7 @@ from app.security import hash_password, verify_password
 _DUMMY_HASH = hash_password("not-a-real-password")
 _EARLIEST_BIRTH = date(1900, 1, 1)
 _USER_COLUMNS = (
-    "id, email, name, blocked, created_at, birth_date, birth_time, birth_place, birth_lat, birth_lon, birth_tz, sky_until"
+    "id, email, name, blocked, created_at, birth_date, birth_time, birth_place, birth_lat, birth_lon, birth_tz, sky_until, mail_notes"
 )
 
 
@@ -69,6 +71,7 @@ def _public(row: dict) -> dict:
         # «Небосвод»: the forecasts' text and the astrologer. The date is shown, the flag decides.
         "sky_until": row["sky_until"].isoformat() if row["sky_until"] else None,
         "sky": _sky_active(row["sky_until"]),
+        "mail_notes": row["mail_notes"],
     }
 
 
@@ -240,6 +243,77 @@ def set_password(user_id: int, current: str, password: str) -> None:
     _checked(user_id, current)
     with pool.connection() as conn:
         conn.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hash_password(password), user_id))
+
+
+def set_mail_notes(user_id: int, on: bool) -> dict:
+    with pool.connection() as conn:
+        row = conn.execute(
+            f"UPDATE users SET mail_notes = %s WHERE id = %s AND NOT blocked RETURNING {_USER_COLUMNS}",
+            (on, user_id),
+        ).fetchone()
+    if row is None:
+        raise DomainError("unauthorized", 401)
+    return _public(row)
+
+
+# ---- A forgotten password ----
+
+RESET_MINUTES = 60
+# One letter in this many minutes: the form cannot be turned into a way to flood someone's mail.
+RESET_PAUSE_MINUTES = 2
+
+
+def _reset_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def request_reset(email: str) -> dict | None:
+    """The link's token and the person's name, or None when no letter should go.
+
+    The page says the same either way, so the form does not tell whose mail is registered.
+    """
+    cleaned = _clean_email(email)
+    with pool.connection() as conn:
+        row = conn.execute("SELECT id, name, blocked FROM users WHERE email = %s", (cleaned,)).fetchone()
+        if row is None or row["blocked"]:
+            return None
+        recent = conn.execute(
+            "SELECT 1 FROM password_resets WHERE user_id = %s AND created_at > now() - make_interval(mins => %s)",
+            (row["id"], RESET_PAUSE_MINUTES),
+        ).fetchone()
+        if recent:
+            return None
+        token = secrets.token_urlsafe(32)
+        conn.execute("DELETE FROM password_resets WHERE user_id = %s AND expires_at < now()", (row["id"],))
+        conn.execute(
+            "INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (%s, %s, now() + make_interval(mins => %s))",
+            (_reset_hash(token), row["id"], RESET_MINUTES),
+        )
+    return {"email": cleaned, "name": row["name"], "token": token}
+
+
+def reset_password(token: str, password: str) -> dict:
+    """The new password by the letter's link; the link is spent, and so are the person's other links."""
+    if len(password) < 8:
+        raise DomainError("password")
+    if not token or len(token) > 100:
+        raise DomainError("reset")
+    _require_web_secret()
+    with pool.connection() as conn:
+        found = conn.execute(
+            "DELETE FROM password_resets WHERE token_hash = %s RETURNING user_id, expires_at",
+            (_reset_hash(token),),
+        ).fetchone()
+        if found is None or found["expires_at"] < datetime.now(timezone.utc):
+            raise DomainError("reset")
+        row = conn.execute(
+            f"UPDATE users SET password_hash = %s WHERE id = %s AND NOT blocked RETURNING {_USER_COLUMNS}",
+            (hash_password(password), found["user_id"]),
+        ).fetchone()
+        if row is None:
+            raise DomainError("reset")
+        conn.execute("DELETE FROM password_resets WHERE user_id = %s", (found["user_id"],))
+    return _public(row)
 
 
 def delete_account(user_id: int, password: str) -> None:

@@ -1,6 +1,10 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, HTTPException
 
 from app import legal
+from app.astro import forecast
 from app.config import settings
 from app.settings_store import public_config
 
@@ -18,6 +22,12 @@ def _fill(value, names: dict):
     if isinstance(value, list):
         return [_fill(item, names) for item in value]
     return {key: _fill(item, names) for key, item in value.items()}
+
+
+@router.get("/sky")
+def site_sky() -> dict:
+    """Today's sky for the home page: the same for everyone, by the Moscow date."""
+    return forecast.public_sky(datetime.now(ZoneInfo("Europe/Moscow")).date())
 
 
 @router.get("/legal/{page}")

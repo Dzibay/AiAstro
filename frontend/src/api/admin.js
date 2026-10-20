@@ -6,6 +6,8 @@ export const adminApi = {
   settings: () => request('/api/admin/settings', { audience: 'admin', auth: true }),
   saveSetting: (body) =>
     request('/api/admin/settings', { method: 'PUT', body, audience: 'admin', auth: true }),
+  /** A letter sent at once, to check the SMTP settings: { ok, error }. */
+  testMail: (email) => request('/api/admin/mail/test', { method: 'POST', body: { email }, audience: 'admin', auth: true }),
   /** The latest payments through ЮKassa and the address for its notifications. */
   payments: () => request('/api/admin/payments', { audience: 'admin', auth: true }),
   users: (q) => request(`/api/admin/users?${new URLSearchParams({ q })}`, { audience: 'admin', auth: true }),

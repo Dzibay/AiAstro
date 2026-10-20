@@ -63,6 +63,15 @@ function savePassword() {
   }, 'Пароль изменён')
 }
 
+/** The letters about «Небосвод» and the partners; the password link comes regardless. */
+const letters = form({})
+function toggleLetters() {
+  const on = !props.user.mail_notes
+  send(letters, async () => {
+    emit('updated', await webApi.setMailNotes(on))
+  }, on ? 'Письма снова будут приходить' : 'Больше не напишем')
+}
+
 const removal = form({ open: false, password: '' })
 function removeAccount() {
   send(removal, async () => {
@@ -158,9 +167,22 @@ const showPassword = ref(false)
       </div>
       <p class="hint">
         {{ user.sky
-          ? 'Автопродления нет: когда срок выйдет, Небосвод просто погаснет, а карта останется с вами.'
+          ? `Автопродления нет: когда срок выйдет, Небосвод просто погаснет, а карта останется с вами.${user.mail_notes ? ' За три дня до конца придёт письмо.' : ''}`
           : 'Натальная карта бесплатна навсегда. Небосвод добавляет полные прогнозы, календарь и астролога без ограничений.' }}
       </p>
+    </section>
+
+    <section class="block" aria-labelledby="letters-title">
+      <h3 id="letters-title" class="block-title">Письма</h3>
+      <div class="row">
+        <span class="value">{{ user.mail_notes ? 'Приходят' : 'Отключены' }}</span>
+        <button type="button" class="link" :disabled="letters.busy" @click="toggleLetters">
+          {{ user.mail_notes ? 'Отключить' : 'Включить' }}
+        </button>
+      </div>
+      <p class="hint">Напоминание о конце «Небосвода» и весть, когда партнёр ответил на приглашение. Ссылка для нового пароля приходит всегда.</p>
+      <p v-if="letters.error" class="error" role="alert">{{ letters.error }}</p>
+      <p v-else-if="letters.done" class="done" role="status">✦ {{ letters.done }}</p>
     </section>
 
     <p class="since">С нами с {{ formatDate(user.created_at) }}</p>

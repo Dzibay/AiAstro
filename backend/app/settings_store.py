@@ -21,10 +21,16 @@ FIELDS = {
     "yookassa_secret_key": ("Секретный ключ", "", "pay"),
     "receipt_vat_code": ("Ставка НДС в чеке, код ЮKassa (1 — без НДС)", "1", "pay"),
     "receipt_tax_system": ("Система налогообложения, код ЮKassa 1–6 (пусто — не передавать)", "", "pay"),
+    # SMTP: letters go out once the server and the sender's address are set.
+    "smtp_host": ("SMTP-сервер", "", "mail"),
+    "smtp_port": ("Порт (465 — SSL, 587 — STARTTLS)", "465", "mail"),
+    "smtp_user": ("Логин", "", "mail"),
+    "smtp_password": ("Пароль", "", "mail"),
+    "mail_from": ("Адрес отправителя (пусто — логин)", "", "mail"),
 }
 PRICES = ("price_sky", "price_sky_3", "price_sky_12", "price_synastry", "price_synastry_sky")
 # Never sent back to the page: the admin sees only whether it is set.
-SECRETS = ("yookassa_secret_key",)
+SECRETS = ("yookassa_secret_key", "smtp_password")
 
 _cache: dict[str, str] = {}
 _loaded = False
@@ -86,8 +92,9 @@ def set_setting(key: str, value: str) -> dict[str, str]:
     global _loaded, _loaded_at
     if key not in FIELDS:
         raise DomainError("setting")
-    cleaned = " ".join(value.split())
-    if key == "support_email":
+    # A password may hold spaces of its own; everything else folds them.
+    cleaned = value.strip() if key == "smtp_password" else " ".join(value.split())
+    if key in ("support_email", "mail_from", "smtp_host"):
         cleaned = cleaned.lower()
     if key in PRICES and cleaned and not _digits(cleaned, 7):
         raise DomainError("setting")
@@ -101,6 +108,12 @@ def set_setting(key: str, value: str) -> dict[str, str]:
     if key == "receipt_vat_code" and not (_digits(cleaned, 2) and 1 <= int(cleaned) <= 12):
         raise DomainError("setting")
     if key == "receipt_tax_system" and cleaned and not (_digits(cleaned, 1) and 1 <= int(cleaned) <= 6):
+        raise DomainError("setting")
+    if key == "smtp_port" and not (_digits(cleaned, 5) and 1 <= int(cleaned) <= 65535):
+        raise DomainError("setting")
+    if key == "smtp_host" and cleaned and not (cleaned.isascii() and " " not in cleaned):
+        raise DomainError("setting")
+    if key == "mail_from" and cleaned and not (" " not in cleaned and cleaned.count("@") == 1):
         raise DomainError("setting")
     if len(cleaned) > 300:
         raise DomainError("setting")

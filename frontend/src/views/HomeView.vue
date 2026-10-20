@@ -11,6 +11,9 @@ import { fallbackConfig, useSiteConfig } from '../composables/useSiteConfig.js'
 import { useHead } from '../utils/useHead.js'
 import { usePrices } from '../utils/prices.js'
 import { skyOn } from '../utils/skyToday.js'
+import { siteApi } from '../api/site.js'
+import { POINTS } from '../components/cabinet/astro.js'
+import { PHASES, eventLine } from '../components/sky/forecastWords.js'
 
 const steps = [
   { num: 'I', title: 'Дата, время и место', text: 'Чем точнее минута рождения, тем точнее дома и асцендент.' },
@@ -83,7 +86,34 @@ const forecasts = {
   },
 }
 const span = ref('day')
-const forecast = computed(() => forecasts[span.value])
+// The real sky from the server: the phase, the nearest lunation, the retrograde planets and the week's events.
+// Until it answers (or if it does not), the card keeps what the browser itself computed.
+const liveSky = ref(null)
+const shortWeekday = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'short' })
+const lunationLine = (next) => {
+  if (!next) return ''
+  const name = next.kind === 'full' ? 'Полнолуние' : 'Новолуние'
+  const when = dayMonth(new Date(`${next.date}T12:00:00`))
+  if (next.in === 0) return `${name} сегодня`
+  if (next.in === 1) return `${name} завтра, ${when}`
+  return `${name} ${when}`
+}
+const forecast = computed(() => {
+  const base = forecasts[span.value]
+  const live = liveSky.value
+  if (!live) return base
+  if (span.value === 'day') {
+    const lines = [lunationLine(live.next)]
+    if (live.retro.length) lines.push(`Попятно: ${live.retro.map((id) => POINTS[id].name).join(', ')}`)
+    return {
+      ...base,
+      sky: `Луна ${skyNow.moon.in} · ${PHASES[live.moon.phase].name.toLowerCase()}`,
+      lines: lines.filter(Boolean),
+    }
+  }
+  const lines = live.events.slice(0, 4).map((event) => `${shortWeekday(event.date)} — ${eventLine(event)}`)
+  return { ...base, lines }
+})
 function showSpan(next) {
   span.value = next
   turnSky(next === 'week' ? WEEK_TURN : 0)
@@ -91,13 +121,13 @@ function showSpan(next) {
 
 const prices = usePrices()
 const plans = computed(() => [
-  { title: 'Натальная карта', price: '0 ₽', term: 'навсегда', text: 'Полный разбор карты рождения' },
+  { title: 'Натальная карта', price: '0 ₽', term: 'навсегда', text: 'Планеты в знаках и домах с толкованием, аспекты и стихии' },
   { title: 'Совместимость', price: prices.synastry.value, term: 'разово', text: 'Две карты рядом: пять сфер жизни, сильные и спорные места' },
   {
     title: 'Небосвод',
     price: prices.sky.value,
     term: 'в месяц',
-    text: 'Полные прогнозы на день и неделю, звёздный календарь на месяц, ИИ-астролог без ограничений и разбор пары дешевле',
+    text: 'Портрет карты целиком, полные прогнозы на день и неделю, звёздный календарь на месяц, ИИ-астролог без ограничений и разбор пары дешевле',
     star: true,
   },
 ])
@@ -122,7 +152,9 @@ const faq = [
   {
     glyph: '♊︎',
     q: 'Натальная карта правда бесплатна?',
-    a: 'Да, навсегда и полностью. Платными будут только совместимость и подписка «Небосвод».',
+    a: 'Да, навсегда: планеты в знаках и домах с толкованием, аспекты, стихии и кресты — бесплатно. '
+      + 'Портрет карты целиком и смысл каждого аспекта, полные прогнозы и астролог без ограничений входят в «Небосвод», '
+      + 'а разбор пары оплачивается отдельно.',
   },
   {
     glyph: '♋︎',
@@ -132,8 +164,9 @@ const faq = [
   },
   {
     glyph: '♌︎',
-    q: 'Как отменить подписку?',
-    a: 'В любой момент, без звонков и писем. Доступ сохранится до конца оплаченного периода.',
+    q: '«Небосвод» продлевается сам?',
+    a: 'Нет: вы оплачиваете месяц, три месяца или год — и всё. Автоматических списаний нет, '
+      + 'а за несколько дней до конца мы напомним письмом.',
   },
   {
     glyph: '♍︎',
@@ -195,6 +228,7 @@ const tagline = computed(() => config.value?.tagline || fallbackConfig.tagline)
 
 onMounted(async () => {
   watchArrival()
+  siteApi.sky().then((sky) => { liveSky.value = sky }).catch(() => {})
   await load()
   useHead({
     title: `${name.value} — ${tagline.value}`,
@@ -331,7 +365,7 @@ onMounted(async () => {
           <div class="forecasts-copy">
             <StopHead num="IV" signs="♐ ♑" label="Прогнозы и тарифы">Небо меняется <em>каждый день</em></StopHead>
             <p class="stop-lead" data-reveal style="--r: 3">
-              Подписка «Небосвод» каждый день сверяет ваше небо с нынешним и отвечает на вопросы,
+              «Небосвод» каждый день сверяет ваше небо с нынешним и отвечает на вопросы,
               когда звёзды молчат.
             </p>
 
@@ -360,6 +394,9 @@ onMounted(async () => {
                   <p class="forecast-title">{{ forecast.title }}</p>
                   <p class="forecast-sky"><span aria-hidden="true">☽</span> {{ forecast.sky }}</p>
                   <p class="forecast-text">{{ forecast.text }}</p>
+                  <ul v-if="forecast.lines?.length" class="forecast-lines">
+                    <li v-for="line in forecast.lines" :key="line">{{ line }}</li>
+                  </ul>
                 </div>
               </Transition>
             </div>
@@ -367,7 +404,7 @@ onMounted(async () => {
             <div class="sky-card chat" data-reveal style="--r: 6">
               <div class="card-top">
                 <span class="card-kicker">Чат с ИИ-астрологом</span>
-                <span class="soon">скоро</span>
+                <span class="soon">2 вопроса бесплатно</span>
               </div>
               <p class="bubble from-you">Почему на этой неделе всё валится из рук?</p>
               <p class="bubble from-astra">
@@ -833,6 +870,16 @@ onMounted(async () => {
 .forecast-title { font-family: var(--serif); font-size: 22px; line-height: 1.15; color: #f6efe2; }
 .forecast-sky { margin-top: 4px !important; font-size: 12.5px; color: #f0cd8a; }
 .forecast-text { margin-top: 10px !important; font-size: 14px; line-height: 1.5; color: rgba(232, 224, 210, 0.82); }
+.forecast-lines {
+  margin: 10px 0 0;
+  padding: 10px 0 0;
+  list-style: none;
+  border-top: 1px solid rgba(240, 205, 138, 0.12);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: rgba(232, 224, 210, 0.62);
+}
+.forecast-lines li::first-letter { text-transform: uppercase; }
 .swap-enter-active, .swap-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
 .swap-enter-from { opacity: 0; transform: translateY(6px); }
 .swap-leave-to { opacity: 0; transform: translateY(-6px); }

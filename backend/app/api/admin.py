@@ -5,6 +5,7 @@ from app.accounts import SKY_DAYS, list_users, set_sky
 from app.api.deps import as_http, require_admin
 from app.config import settings
 from app.errors import DomainError
+from app.mailer import mail_on, send
 from app.partners import admin_partners, set_bought
 from app.payments import list_payments
 from app.security import check_admin_password, make_admin_session
@@ -24,6 +25,10 @@ class SkyIn(BaseModel):
 
 class BoughtIn(BaseModel):
     bought: bool
+
+
+class TestMailIn(BaseModel):
+    email: str = Field(max_length=254)
 
 
 class SettingIn(BaseModel):
@@ -50,7 +55,7 @@ def me() -> dict:
 @router.get("/settings", dependencies=[Depends(require_admin)])
 def settings_list() -> dict:
     try:
-        return {"items": list_editable()}
+        return {"items": list_editable(), "mail": mail_on()}
     except DomainError as exc:
         raise as_http(exc) from exc
 
@@ -61,6 +66,18 @@ def settings_update(body: SettingIn) -> dict:
         return set_setting(body.key, body.value)
     except DomainError as exc:
         raise as_http(exc) from exc
+
+
+@router.post("/mail/test", dependencies=[Depends(require_admin)])
+def mail_test(body: TestMailIn) -> dict:
+    """A letter sent now, not in the background: the operator sees the SMTP server's own answer."""
+    if not mail_on():
+        raise as_http(DomainError("mail_off", 409))
+    try:
+        send(body.email.strip(), "Пробное письмо", "Почта настроена: письма о новом пароле и напоминания будут уходить с этого адреса.")
+    except Exception as exc:  # noqa: BLE001 — whatever the server said goes back to the operator
+        return {"ok": False, "error": str(exc)[:300]}
+    return {"ok": True}
 
 
 @router.get("/payments", dependencies=[Depends(require_admin)])

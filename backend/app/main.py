@@ -1,8 +1,10 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app import notes
 from app.api.admin import router as admin_router
 from app.api.pay import router as pay_router
 from app.api.site import router as site_router
@@ -22,7 +24,9 @@ async def lifespan(app: FastAPI):
     if not settings.admin_session_secret or not settings.admin_password:
         log.warning("Секрет или пароль админки пуст — вход оператора закрыт")
     ensure_schema()
+    reminders = asyncio.create_task(notes.loop())
     yield
+    reminders.cancel()
     close_pool()
 
 

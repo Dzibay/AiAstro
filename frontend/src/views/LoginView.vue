@@ -26,7 +26,10 @@ const router = useRouter()
 const { config, load } = useSiteConfig()
 const { mark, markUser, clearMark } = useSky()
 
-const mode = ref(route.query.mode === 'register' ? 'register' : 'login')
+/** The letter's link brings `?reset=<token>`: the card asks for the new password straight away. */
+const resetToken = typeof route.query.reset === 'string' ? route.query.reset : ''
+/** login | register | forgot (the email for the link) | reset (the new password by the link). */
+const mode = ref(resetToken ? 'reset' : route.query.mode === 'register' ? 'register' : 'login')
 const step = ref(1)
 const email = ref('')
 const password = ref('')
@@ -37,11 +40,16 @@ const consent = ref(false)
 const showPassword = ref(false)
 const message = ref('')
 const pending = ref(false)
+/** A quiet answer that is not an error: the link is on its way. */
+const note = ref('')
 /** Set once the sky is entered: the card dissolves and the star stays for the cabinet. */
 const leaving = ref(false)
 
 const registering = computed(() => mode.value === 'register')
 const onSky = computed(() => registering.value && step.value === 2)
+const forgot = computed(() => mode.value === 'forgot')
+const resetting = computed(() => mode.value === 'reset')
+const headKey = computed(() => (registering.value ? `step-${step.value}` : mode.value))
 
 const sky = skyOn(new Date())
 const today = `Сегодня Луна ${sky.moon.in}, ${sky.phase}`
@@ -75,10 +83,12 @@ function settleStar() {
   mark.flash += 1
 }
 
+const TITLES = { register: 'Регистрация', forgot: 'Новый пароль', reset: 'Новый пароль' }
 watch(mode, (value) => {
   message.value = ''
+  note.value = ''
   step.value = 1
-  useHead({ title: value === 'register' ? 'Регистрация' : 'Вход', noindex: true })
+  useHead({ title: TITLES[value] || 'Вход', noindex: true })
 }, { immediate: true })
 watch(step, () => { message.value = '' })
 // The header leads here as well, to the login side.
@@ -93,6 +103,10 @@ function say(error) {
       return mail ? `Кабинет закрыт. Напишите нам: ${mail}` : 'Кабинет закрыт. Напишите в поддержку'
     }
     if (error.code === 'exists') return 'Эта почта уже открывала кабинет — войдите'
+    if (error.code === 'mail_off') {
+      const mail = config.value?.support_email
+      return mail ? `Письма пока не отправляются. Напишите нам: ${mail}` : 'Письма пока не отправляются — напишите в поддержку'
+    }
   }
   return errorText(error)
 }
@@ -160,14 +174,39 @@ function finish(withBirth) {
   enter(() => webApi.register(body))
 }
 
+/** The same answer whether the mail is known or not: the form does not tell whose it is. */
+async function sendLink() {
+  message.value = ''
+  note.value = ''
+  if (!EMAIL.test(email.value.trim())) {
+    message.value = 'Почта выглядит неполной'
+    return
+  }
+  pending.value = true
+  try {
+    await webApi.forgotPassword(email.value.trim())
+    note.value = 'Если кабинет с этой почтой есть, письмо со ссылкой уже летит к вам. Ссылка открыта час.'
+  } catch (error) {
+    message.value = say(error)
+  } finally {
+    pending.value = false
+  }
+}
+
 function submit() {
-  if (!registering.value) enter(() => webApi.login({ email: email.value.trim(), password: password.value }))
+  if (forgot.value) sendLink()
+  else if (resetting.value) {
+    if (password.value.length < 8) message.value = 'Пароль — не короче 8 символов'
+    else enter(() => webApi.resetPassword({ token: resetToken, password: password.value }))
+  } else if (!registering.value) enter(() => webApi.login({ email: email.value.trim(), password: password.value }))
   else if (step.value === 1) toSky()
   else finish(true)
 }
 
 const cta = computed(() => {
   if (pending.value) return 'Минуту…'
+  if (forgot.value) return 'Прислать ссылку'
+  if (resetting.value) return 'Сохранить и войти'
   if (!registering.value) return 'Войти'
   return step.value === 1 ? 'Дальше' : 'Открыть моё небо'
 })
@@ -205,15 +244,18 @@ onUnmounted(() => {
           </div>
 
           <Transition name="swap" mode="out-in">
-            <div :key="registering ? `step-${step}` : 'login'" class="card-head">
+            <div :key="headKey" class="card-head">
               <p v-if="registering" class="step-kicker">Шаг {{ step }} из 2</p>
               <h1>
-                <template v-if="!registering">С <em>возвращением</em></template>
+                <template v-if="forgot || resetting">Новый <em>пароль</em></template>
+                <template v-else-if="!registering">С <em>возвращением</em></template>
                 <template v-else-if="step === 1">Откройте <em>своё</em> небо</template>
                 <template v-else>Ваше <em>небо</em></template>
               </h1>
               <p>
-                <template v-if="!registering">Ваше небо на месте. Войдите, чтобы продолжить.</template>
+                <template v-if="forgot">Назовите почту кабинета — пришлём ссылку, по которой можно задать новый пароль.</template>
+                <template v-else-if="resetting">Придумайте новый пароль — и небо откроется сразу.</template>
+                <template v-else-if="!registering">Ваше небо на месте. Войдите, чтобы продолжить.</template>
                 <template v-else-if="step === 1">Назовите себя — и на небе зажжётся ваша звезда.</template>
                 <template v-else>Дата покажет знак Солнца, время — Луну. Натальная карта бесплатна навсегда.</template>
               </p>
@@ -236,19 +278,22 @@ onUnmounted(() => {
                   />
                 </label>
               </div>
-              <label class="field">
+              <label v-if="!resetting" class="field">
                 <span class="field-label">Почта</span>
                 <input v-model="email" type="email" autocomplete="email" inputmode="email" required />
               </label>
-              <div class="field">
-                <label class="field-label" for="login-password">Пароль</label>
+              <div v-if="!forgot" class="field">
+                <span class="field-head">
+                  <label class="field-label" for="login-password">{{ resetting ? 'Новый пароль' : 'Пароль' }}</label>
+                  <button v-if="mode === 'login'" type="button" class="forgot-link" @click="mode = 'forgot'">Забыли?</button>
+                </span>
                 <span class="password">
                   <input
                     id="login-password"
                     v-model="password"
                     :type="showPassword ? 'text' : 'password'"
-                    :autocomplete="registering ? 'new-password' : 'current-password'"
-                    :placeholder="registering ? 'Не короче 8 символов' : ''"
+                    :autocomplete="registering || resetting ? 'new-password' : 'current-password'"
+                    :placeholder="registering || resetting ? 'Не короче 8 символов' : ''"
                     required
                   />
                   <button
@@ -308,12 +353,19 @@ onUnmounted(() => {
 
           <Transition name="swap">
             <p v-if="message" class="error" role="alert">{{ message }}</p>
+            <p v-else-if="note" class="note" role="status">✦ {{ note }}</p>
           </Transition>
 
           <button class="gold-cta" type="submit" :disabled="pending">
             <span>{{ cta }}</span>
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4" /></svg>
           </button>
+          <div v-if="forgot || resetting" class="step-actions">
+            <button type="button" class="quiet" :disabled="pending" @click="mode = 'login'">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 8H3M7 4 3 8l4 4" /></svg>
+              Ко входу
+            </button>
+          </div>
           <div v-if="onSky" class="step-actions">
             <button type="button" class="quiet" :disabled="pending" @click="step = 1">
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 8H3M7 4 3 8l4 4" /></svg>
@@ -559,6 +611,32 @@ onUnmounted(() => {
   line-height: 1.4;
   color: #f2c3ae;
 }
+
+.note {
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(240, 205, 138, 0.26);
+  background: rgba(240, 205, 138, 0.06);
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: #f3dcae;
+}
+.forgot-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: rgba(240, 205, 138, 0.8);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: rgba(240, 205, 138, 0.3);
+  text-underline-offset: 3px;
+  transition: color 0.25s ease;
+}
+.forgot-link:hover { color: #f0cd8a; text-decoration-color: currentColor; }
+.forgot-link:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 2px; border-radius: 4px; }
 
 .gold-cta {
   display: inline-flex;

@@ -6,6 +6,9 @@ import { useSky } from '../../composables/useSky.js'
 import { useSiteConfig, fallbackConfig } from '../../composables/useSiteConfig.js'
 import { chartItems, SIGN_BY_ID } from '../cabinet/astro.js'
 import { formatDate } from '../../utils/format.js'
+import {
+  canSharePictures, cssFont, downloadPicture, finishPicture, paintStar, PICTURE, sharePicture, startPicture, SYMBOLS,
+} from '../../utils/sharePicture.js'
 
 /**
  * «Звёздный паспорт»: the person in one card — the name, the Sun, the Moon and the Ascendant,
@@ -42,12 +45,16 @@ const three = computed(() => [
 
 const element = computed(() => {
   const counts = chart.value?.balance?.elements
+  const sun = SIGN_IDS.indexOf(byId.value.sun?.sign || mark.sun)
+  const sunElement = sun >= 0 ? ELEMENT_OF[sun % 4] : null
   if (counts) {
-    const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]
-    if (best && best[1] > 0) return { id: best[0], ...ELEMENTS[best[0]] }
+    const top = Math.max(...Object.values(counts))
+    const tied = Object.keys(counts).filter((id) => counts[id] === top)
+    // Two elements sharing the lead: the Sun's own one speaks for the person.
+    const id = tied.includes(sunElement) ? sunElement : tied[0]
+    if (top > 0) return { id, ...ELEMENTS[id] }
   }
-  const sun = SIGN_IDS.indexOf(mark.sun)
-  return sun >= 0 ? { id: ELEMENT_OF[sun % 4], ...ELEMENTS[ELEMENT_OF[sun % 4]] } : null
+  return sunElement ? { id: sunElement, ...ELEMENTS[sunElement] } : null
 })
 
 const birthLine = computed(() => {
@@ -59,63 +66,16 @@ const birthLine = computed(() => {
 /* ---- The picture ---- */
 
 const busy = ref(false)
-const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
-
-const cssFont = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || 'Georgia, serif'
+const canShare = canSharePictures
 
 async function draw() {
-  await document.fonts?.ready
-  const W = 1080
-  const H = 1350
-  const canvas = document.createElement('canvas')
-  canvas.width = W
-  canvas.height = H
-  const ctx = canvas.getContext('2d')
+  const { W, H } = PICTURE
+  const { canvas, ctx } = await startPicture(props.user.name)
   const caps = cssFont('--caps')
   const serif = cssFont('--serif')
   const book = cssFont('--book')
+  const star = (x, y, r, color) => paintStar(ctx, x, y, r, color)
 
-  const sky = ctx.createRadialGradient(W / 2, H * 0.32, 60, W / 2, H * 0.45, H * 0.85)
-  sky.addColorStop(0, '#2a2140')
-  sky.addColorStop(0.55, '#120f22')
-  sky.addColorStop(1, '#06050c')
-  ctx.fillStyle = sky
-  ctx.fillRect(0, 0, W, H)
-
-  let seed = [...props.user.name].reduce((sum, char) => sum + char.charCodeAt(0), 11)
-  const random = () => {
-    seed = (seed * 16807) % 2147483647
-    return seed / 2147483647
-  }
-  for (let index = 0; index < 260; index += 1) {
-    ctx.globalAlpha = 0.2 + random() * 0.7
-    ctx.fillStyle = random() > 0.85 ? '#ffe4a8' : '#efe7d8'
-    ctx.beginPath()
-    ctx.arc(random() * W, random() * H, 0.6 + random() * 1.8, 0, Math.PI * 2)
-    ctx.fill()
-  }
-  ctx.globalAlpha = 1
-
-  // The folio's frame: a double gold rule.
-  ctx.strokeStyle = 'rgba(240, 205, 138, 0.55)'
-  ctx.lineWidth = 2
-  ctx.strokeRect(60, 60, W - 120, H - 120)
-  ctx.strokeStyle = 'rgba(240, 205, 138, 0.25)'
-  ctx.strokeRect(76, 76, W - 152, H - 152)
-
-  const star = (x, y, r, color) => {
-    ctx.save()
-    ctx.translate(x - r, y - r)
-    ctx.scale(r / 10, r / 10)
-    ctx.fillStyle = color
-    ctx.shadowColor = 'rgba(255, 205, 120, 0.9)'
-    ctx.shadowBlur = 24
-    ctx.fill(new Path2D('M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z'))
-    ctx.restore()
-  }
-
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'alphabetic'
   ctx.fillStyle = 'rgba(240, 205, 138, 0.85)'
   ctx.font = `600 40px ${caps}`
   ctx.fillText('звёздный паспорт', W / 2, 190)
@@ -134,7 +94,7 @@ async function draw() {
   columns.forEach((entry, index) => {
     const x = W / 2 + (index - 1) * 300
     ctx.fillStyle = '#f0cd8a'
-    ctx.font = entry.id === 'asc' ? `600 50px ${caps}` : `64px 'Segoe UI Symbol', 'Noto Sans Symbols', sans-serif`
+    ctx.font = entry.id === 'asc' ? `600 50px ${caps}` : `64px ${SYMBOLS}`
     ctx.fillText(entry.id === 'asc' ? 'Asc' : entry.glyph, x, 680)
     ctx.fillStyle = 'rgba(226, 220, 210, 0.66)'
     ctx.font = `600 34px ${caps}`
@@ -166,7 +126,7 @@ async function draw() {
   ctx.font = `600 32px ${caps}`
   ctx.fillText((config.value?.site_name || fallbackConfig.site_name).toLowerCase(), W / 2, H - 120)
 
-  return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
+  return finishPicture(canvas)
 }
 
 const fileName = () => `zvezdnyj-pasport.png`
@@ -176,13 +136,7 @@ async function save() {
   busy.value = true
   try {
     const blob = await draw()
-    if (!blob) return
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = fileName()
-    link.click()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    if (blob) downloadPicture(blob, fileName())
   } finally {
     busy.value = false
   }
@@ -193,13 +147,8 @@ async function share() {
   busy.value = true
   try {
     const blob = await draw()
-    if (!blob) return
-    const file = new File([blob], fileName(), { type: 'image/png' })
-    const data = { files: [file], title: 'Звёздный паспорт' }
-    if (navigator.canShare?.(data)) await navigator.share(data)
-    else await navigator.share({ title: 'Звёздный паспорт', text: `${props.user.name}: ${three.value.filter((entry) => entry.info).map((entry) => `${entry.name} ${entry.info.in}`).join(', ')}` })
-  } catch {
-    // The person closed the share sheet: nothing to say.
+    const text = `${props.user.name}: ${three.value.filter((entry) => entry.info).map((entry) => `${entry.name} ${entry.info.in}`).join(', ')}`
+    if (blob) await sharePicture(blob, fileName(), 'Звёздный паспорт', text)
   } finally {
     busy.value = false
   }

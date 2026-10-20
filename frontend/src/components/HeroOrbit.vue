@@ -32,7 +32,7 @@ const phaseLabel = computed(() => {
 <template>
   <section class="hero" data-sky-stop="hero" :style="sceneStyle">
     <div class="hero-copy" :class="{ 'is-dimmed': openStop === 0 }">
-      <p class="kicker">Твоя личная карта</p>
+      <p class="kicker">Ваша личная карта</p>
       <div class="ornament" aria-hidden="true">
         <span class="ornament-line" />
         <span class="ornament-dot" />
@@ -41,7 +41,7 @@ const phaseLabel = computed(() => {
         <span class="ornament-line" />
       </div>
       <h1>Астрология<br />нового поколения</h1>
-      <p class="sub">Глубокий анализ вашей натальной карты <br />и точные прогнозы на будущее с помощью ИИ</p>
+      <p class="sub">Глубокий разбор вашей натальной карты <br />и прогнозы на каждый день — простыми словами</p>
       <RouterLink class="cta" :to="chartTo">
         <span>Узнать свою карту</span>
         <svg class="cta-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4" /></svg>
