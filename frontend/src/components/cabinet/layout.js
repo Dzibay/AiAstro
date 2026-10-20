@@ -166,7 +166,8 @@ export function cabinetLayout(geo, section) {
     const half = (span * k) / 2
     const right = panelLeft(W) - 40
     star = { x: clamp(W * 0.3, half + 24, right - half), y: clamp(H * 0.42, 100 + half, H - half - 60), k }
-    const reach = half + 56
+    // Past the corners of the engraving's box, so even a wide, detailed sign (Pisces) leaves the menu clear.
+    const reach = half * 1.16 + 54
     points = SECTIONS.map((item, index) => {
       // The four sections at the corners, «Небосвод» under the star (above it the header is too close).
       const angle = rad([-150, -30, 30, 150, 90][index])

@@ -212,12 +212,6 @@ async function share() {
       <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
       Звёздный паспорт
     </p>
-    <RouterLink class="gear" :to="{ name: 'cabinet-profile' }" aria-label="Профиль и настройки" title="Профиль и настройки">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M10.3 2.5h3.4l.5 2.6 1.7.9 2.5-.9 1.7 2.9-2 1.7v2l2 1.7-1.7 2.9-2.5-.9-1.7.9-.5 2.6h-3.4l-.5-2.6-1.7-.9-2.5.9-1.7-2.9 2-1.7v-2l-2-1.7 1.7-2.9 2.5.9 1.7-.9z" />
-        <circle cx="12" cy="12" r="3.2" />
-      </svg>
-    </RouterLink>
     <p v-if="birthLine" class="passport-birth">
       {{ birthLine }}
       <RouterLink class="edit" :to="{ name: 'cabinet-birth' }" aria-label="Изменить данные рождения">изменить</RouterLink>
@@ -268,25 +262,6 @@ async function share() {
   outline-offset: -6px;
   background: radial-gradient(120% 90% at 50% 0%, rgba(240, 205, 138, 0.07), transparent 70%);
 }
-/* The way to the profile: a small engraved gear in the corner, gold on hover. */
-.gear {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  color: rgba(240, 205, 138, 0.6);
-  transition: color 0.25s ease, background 0.25s ease;
-}
-.gear svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linejoin: round; transition: transform 0.6s ease; }
-.gear:hover, .gear:focus-visible { color: #f0cd8a; background: rgba(240, 205, 138, 0.08); }
-.gear:hover svg { transform: rotate(60deg); }
-.gear:focus-visible { outline: 1px solid rgba(240, 205, 138, 0.6); outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) { .gear svg { transition: none; } .gear:hover svg { transform: none; } }
-
 .passport-kicker {
   display: flex;
   justify-content: center;

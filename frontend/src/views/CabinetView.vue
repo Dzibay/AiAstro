@@ -69,11 +69,9 @@ const pairStars = computed(() => {
     hot: hot.value === item.id,
     flash: lit.value.has(item.id),
   })
-  if (query.partner) {
-    const item = partners.value.find((entry) => entry.id === Number(query.partner))
-    return item ? [star(item)] : []
-  }
-  return partners.value.map(star)
+  // An open pair keeps the others on the sky, stepped back, so another star can be pressed instead.
+  const open = Number(query.partner) || 0
+  return partners.value.map((item) => ({ ...star(item), open: item.id === open }))
 })
 const pairTone = computed(() => syntheses[Number(route.query.partner)]?.data?.tone || '')
 /** A partner's star pressed on the sky opens its pair, as its row in the panel does. */
@@ -301,6 +299,12 @@ const sheetStyle = computed(() => {
           <RouterLink v-if="route.name !== 'cabinet'" class="close" :to="{ name: 'cabinet' }" aria-label="Закрыть и вернуться к обзору">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3L13 13M13 3L3 13" /></svg>
           </RouterLink>
+          <RouterLink v-else-if="user" class="close gear" :to="{ name: 'cabinet-profile' }" aria-label="Профиль и настройки" title="Профиль и настройки">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M10.3 2.5h3.4l.5 2.6 1.7.9 2.5-.9 1.7 2.9-2 1.7v2l2 1.7-1.7 2.9-2.5-.9-1.7.9-.5 2.6h-3.4l-.5-2.6-1.7-.9-2.5.9-1.7-2.9 2-1.7v-2l-2-1.7 1.7-2.9 2.5.9 1.7-.9z" />
+              <circle cx="12" cy="12" r="3.2" />
+            </svg>
+          </RouterLink>
         </div>
 
         <div class="panel-scroll">
@@ -389,6 +393,10 @@ const sheetStyle = computed(() => {
 .close svg { width: 12px; height: 12px; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; fill: none; }
 .close:hover { color: #f0cd8a; background: rgba(240, 205, 138, 0.08); }
 .close:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 1px; }
+/* On the overview the corner holds the way to the profile instead: an engraved gear. */
+.gear { color: rgba(240, 205, 138, 0.6); }
+.gear svg { width: 18px; height: 18px; stroke-width: 1.3; stroke-linejoin: round; transition: transform 0.6s ease; }
+.gear:hover svg { transform: rotate(60deg); }
 
 /* Reaches into the card's padding, so the glow of buttons at its edges is not cut square. */
 .panel-scroll {
@@ -475,6 +483,8 @@ const sheetStyle = computed(() => {
   .cabinet-panel { animation: card-fade 0.4s ease both; transition: none; }
   .card-sheen { animation: none; }
   .next-enter-from, .next-leave-to, .prev-enter-from, .prev-leave-to, .swap-enter-from, .swap-leave-to { transform: none; }
+  .gear svg { transition: none; }
+  .gear:hover svg { transform: none; }
 }
 @keyframes card-fade { from { opacity: 0; } }
 </style>

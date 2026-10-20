@@ -17,11 +17,12 @@ import { cabinetLayout, wheelSpot } from './layout.js'
  *
  * In the list every star can be pressed to open its pair (`select`), and the pointer over it
  * lights its row in the panel (`hover`). The one open pair wears the engraving of its Sun sign,
- * as the person's own star does.
+ * as the person's own star does; the others dim and step back to a ring, and a press on any of
+ * them opens it instead.
  */
 
 const props = defineProps({
-  /** [{ id, name, date, time, lit, hot, flash }]: `lit` once the birth data are known. */
+  /** [{ id, name, date, time, lit, hot, flash, open }]: `lit` once the birth data are known, `open` for the pair in the panel. */
   stars: { type: Array, default: () => [] },
   /** The tone of the open pair (GET /me/partners/{id}/synastry): the colour of its thread. */
   tone: { type: String, default: '' },
@@ -56,12 +57,23 @@ function delayOf(id) {
   return delays.get(id)
 }
 
+/** Once a star's sign has been drawn for the first time, a later choice of it draws at once. */
+const signDelays = new Map()
+function signDelayOf(key, known, delay) {
+  if (!signDelays.has(key)) signDelays.set(key, known ? 0.1 : delay + 1.2)
+  return signDelays.get(key)
+}
+
+/** The pair in the panel: the only star on the sky, or the one the others step back from. */
+const focusId = computed(() => (props.stars.length === 1 ? props.stars[0].id : props.stars.find((star) => star.open)?.id ?? null))
+const stepped = computed(() => props.stars.length > 1 && focusId.value !== null)
+
 const COLOURS = { easy: '#f0cd8a', tense: '#e08a76', mixed: '#eab48a', calm: '#e6e0f4' }
 
 /** The partner's sign as large as the person's own in a section, but never wider than the free sky. */
 const signSpan = computed(() => {
   const { star } = cabinetLayout(geo.value, 'pair')
-  return Math.min(star.span * star.k, room.value.r * 1.7)
+  return Math.min(star.span * star.k, room.value.r * (stepped.value ? 1.25 : 1.7))
 })
 
 const drawn = computed(() => {
@@ -69,10 +81,22 @@ const drawn = computed(() => {
   const from = origin.value
   const n = props.stars.length
   const narrow = geo.value.narrow
+  const others = props.stars.filter((star) => star.id !== focusId.value)
   return props.stars.map((star, index) => {
+    const known = delays.has(star.id)
+    const delay = delayOf(star.id)
+    const focus = star.id === focusId.value
+    const aside = stepped.value && !focus
     let x = cx
     let y = cy
-    if (n > 1) {
+    if (aside) {
+      // The others wait on a ring below the open pair, as far from the panel and the person's star as the sky allows.
+      const slot = others.indexOf(star)
+      const t = others.length === 1 ? 0.5 : slot / (others.length - 1)
+      const angle = ((25 + 130 * t) * Math.PI) / 180
+      x = cx + r * 0.9 * Math.cos(angle)
+      y = cy + r * 0.9 * Math.sin(angle)
+    } else if (n > 1 && !stepped.value) {
       // A gentle arc bowing away from the person's star, top to bottom.
       const t = n === 1 ? 0.5 : index / (n - 1)
       const spread = Math.min(r * 1.5, (narrow ? 34 : 70) * (n - 1))
@@ -85,29 +109,33 @@ const drawn = computed(() => {
     const radius = star.lit ? 1.8 + Math.min([...star.name].length, 12) * 0.28 : 3.2
     const signs = star.date ? birthSigns(star.date, star.time) : null
     const sun = signs ? SIGN_BY_ID[signs.sun] : null
-    const single = n === 1
     return {
-      figure: single && star.lit && signs ? signFigure(signs.sun, signSpan.value) : null,
+      figure: focus && star.lit && signs ? signFigure(signs.sun, signSpan.value) : null,
+      signDelay: focus && signs ? signDelayOf(`${star.id}:${signs.sun}`, known, delay) : 0,
       ...star,
+      focus,
+      aside,
       x,
       y,
       radius,
       d: `M${fixed(from.x)} ${fixed(from.y)}Q${fixed(control[0])} ${fixed(control[1])} ${fixed(x)} ${fixed(y)}`,
       mid,
-      colour: single && props.tone ? COLOURS[props.tone] : '#f3dcae',
+      colour: focus && props.tone ? COLOURS[props.tone] : '#f3dcae',
       sun: sun ? `${sun.glyph} ${sun.in}` : '',
-      delay: delayOf(star.id),
-      // In the list only the hovered pair speaks its sign; one pair always does.
-      caption: single || star.hot,
-      // Long names on a phone would leave the strip: they go under the star.
-      below: narrow || x + radius * 3 + 10 + [...star.name].length * 11 > geo.value.W - 12,
+      delay,
+      // In the list only the hovered pair speaks its sign; the open one always does.
+      caption: focus || star.hot,
+      // Long names on a phone would leave the strip: they go under the star. A star on the ring
+      // keeps its name inside the free sky, the panel is just past it.
+      below: narrow || x + radius * 3 + 10 + [...star.name].length * 11 > (aside ? cx + r + 30 : geo.value.W - 12),
     }
   })
 })
 
 const label = computed(() => {
-  if (!props.aspect || drawn.value.length !== 1) return null
-  const [x, y] = drawn.value[0].mid
+  const open = drawn.value.find((star) => star.focus)
+  if (!props.aspect || !open) return null
+  const [x, y] = open.mid
   return {
     x,
     y: y - 12,
@@ -116,7 +144,6 @@ const label = computed(() => {
   }
 })
 
-const pickable = computed(() => drawn.value.length > 1)
 function pick(star) {
   emit('hover', null)
   emit('select', star.id)
@@ -156,29 +183,31 @@ const aria = computed(() => {
       v-for="star in drawn"
       :key="star.id"
       class="pair"
-      :class="{ 'is-lit': star.lit, 'is-hot': star.hot, 'is-quiet': drawn.length > 1 && !star.hot }"
+      :class="{ 'is-lit': star.lit, 'is-hot': star.hot, 'is-aside': star.aside, 'is-quiet': drawn.length > 1 && !star.focus && !star.aside && !star.hot }"
       :style="{ '--d0': `${star.delay}s`, '--c': star.colour }"
     >
       <path class="thread-glow" :d="star.d" pathLength="1" />
       <path class="thread" :d="star.d" pathLength="1" />
 
-      <g class="partner" :style="{ transform: `translate(${fixed(star.x)}px, ${fixed(star.y)}px)` }">
-        <g v-if="star.figure" :key="star.figure.id" class="sign">
-          <g class="sign-art" filter="url(#pair-sign-glow)">
-            <path
-              v-for="stroke in star.figure.art"
-              :key="stroke.index"
-              :class="`art-${stroke.kind}`"
-              :d="stroke.d"
-              pathLength="1"
-              :style="{ '--i': stroke.index / Math.max(1, star.figure.art.length - 1) }"
-            />
+      <g class="partner" :style="{ transform: `translate(${fixed(star.x)}px, ${fixed(star.y)}px)${star.aside ? ' scale(0.82)' : ''}` }">
+        <Transition name="sign">
+          <g v-if="star.figure" :key="star.figure.id" class="sign" :style="{ '--sd': `${star.signDelay}s` }">
+            <g class="sign-art" filter="url(#pair-sign-glow)">
+              <path
+                v-for="stroke in star.figure.art"
+                :key="stroke.index"
+                :class="`art-${stroke.kind}`"
+                :d="stroke.d"
+                pathLength="1"
+                :style="{ '--i': stroke.index / Math.max(1, star.figure.art.length - 1) }"
+              />
+            </g>
+            <g class="sign-lines">
+              <line v-for="line in star.figure.lines" :key="line.key" :x1="line.a.x" :y1="line.a.y" :x2="line.b.x" :y2="line.b.y" />
+            </g>
+            <circle v-for="(dot, index) in star.figure.stars" :key="index" class="sign-star" :cx="dot.x" :cy="dot.y" :r="dot.r" />
           </g>
-          <g class="sign-lines">
-            <line v-for="line in star.figure.lines" :key="line.key" :x1="line.a.x" :y1="line.a.y" :x2="line.b.x" :y2="line.b.y" />
-          </g>
-          <circle v-for="(dot, index) in star.figure.stars" :key="index" class="sign-star" :cx="dot.x" :cy="dot.y" :r="dot.r" />
-        </g>
+        </Transition>
         <template v-if="star.lit">
           <circle class="partner-halo" :r="star.radius * 7" fill="url(#pair-halo)" />
           <path
@@ -206,10 +235,9 @@ const aria = computed(() => {
         >{{ star.lit ? star.sun : 'звезда ещё не зажглась' }}</text>
 
         <g
-          v-if="pickable"
+          v-if="drawn.length > 1 && !star.focus"
           class="partner-hit"
           role="button"
-          tabindex="-1"
           :aria-label="`Открыть пару: ${star.name}`"
           @click="pick(star)"
           @pointerenter="emit('hover', star.id)"
@@ -243,6 +271,8 @@ const aria = computed(() => {
   left: 0;
   overflow: visible;
   pointer-events: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
   animation: show-sky 0.6s ease both;
 }
 
@@ -262,10 +292,15 @@ const aria = computed(() => {
 .pair:not(.is-lit) .thread-glow { display: none; }
 .pair.is-quiet .thread { opacity: 0.32; }
 .pair.is-quiet .thread-glow { opacity: 0.05; }
+.pair.is-aside .thread { opacity: 0.2; }
+.pair.is-aside .thread-glow { opacity: 0.04; }
 .pair.is-hot .thread { opacity: 1; stroke-width: 1.5; }
 .pair.is-hot .thread-glow { opacity: 0.22; }
 
-.partner { transition: transform 0.9s cubic-bezier(0.3, 0.7, 0.2, 1); }
+.partner { transition: transform 0.9s cubic-bezier(0.3, 0.7, 0.2, 1), opacity 0.6s ease; }
+/* The pairs the open one has stepped back from: dimmer and smaller, brighter again under the pointer. */
+.pair.is-aside .partner { opacity: 0.5; }
+.pair.is-aside.is-hot .partner { opacity: 0.95; }
 .partner > * { opacity: 0; animation: show 0.8s ease calc(var(--d0) + 1.1s) forwards; }
 .partner-halo { --o: 1; transform-origin: 0 0; animation: show 0.8s ease calc(var(--d0) + 1.1s) forwards, breathe 4.6s ease-in-out calc(var(--d0) + 2s) infinite; }
 .partner-spike { --o: 1; fill: rgba(255, 228, 220, 0.5); }
@@ -302,23 +337,26 @@ const aria = computed(() => {
 }
 
 /* The open pair's sign: the same engraving as the person's own, a shade rosier. */
-.partner > .sign { --o: 1; }
+.partner > .sign { --o: 1; animation-duration: 0.4s; animation-delay: var(--sd, 0s); }
 .sign-art path {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: draw 1.8s cubic-bezier(0.4, 0.1, 0.2, 1) calc(var(--d0) + 1.3s + var(--i) * 0.9s) forwards;
+  animation: draw 0.9s cubic-bezier(0.4, 0.1, 0.2, 1) calc(var(--sd, 0s) + var(--i) * 0.35s) forwards;
 }
 .art-outline { stroke: #f2cdb4; stroke-width: 1.15; opacity: 0.8; }
 .art-detail { stroke: #e8bfa6; stroke-width: 0.8; opacity: 0.55; }
 .art-hatch { stroke: #d9ad96; stroke-width: 0.6; opacity: 0.35; }
 .sign-lines line { stroke: #ecd2c4; stroke-width: 0.8; stroke-linecap: round; opacity: 0.35; }
 .sign-star { fill: #fff1ea; filter: drop-shadow(0 0 3px rgba(255, 190, 160, 0.9)); }
+/* The sign of a pair that is no longer open lets go quickly while the next one draws. */
+.partner > .sign.sign-leave-active { animation: sign-out 0.25s ease forwards; }
 
 /* A star in the list opens its pair: the circle around it and its name answer the pointer. */
 .partner > .partner-hit { --o: 1; pointer-events: auto; cursor: pointer; }
+.partner-hit { outline: none; }
 .partner-hit circle, .partner-hit rect { fill: transparent; }
 
 .aspect-label {
@@ -337,6 +375,7 @@ const aria = computed(() => {
 
 @keyframes draw { to { stroke-dashoffset: 0; } }
 @keyframes show { to { opacity: var(--o, 1); } }
+@keyframes sign-out { to { opacity: 0; } }
 @keyframes show-sky { from { opacity: 0; } }
 @keyframes breathe { 50% { transform: scale(0.86); opacity: 0.8; } }
 @keyframes flash {

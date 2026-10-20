@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useSky } from '../../composables/useSky.js'
 import { useSkyOffer } from '../../composables/useSkyOffer.js'
 import { wheelSpot } from '../cabinet/layout.js'
@@ -87,6 +87,18 @@ watch(() => offer.celebrate, (value) => {
   if (value) burst.value = value
 })
 
+/** The constellations take light one after another only while the subscription is switching; under the pointer they answer at once. */
+const turning = ref(false)
+let turningTimer = 0
+watch(() => props.lit || offer.preview, () => {
+  turning.value = true
+  clearTimeout(turningTimer)
+  turningTimer = setTimeout(() => {
+    turning.value = false
+  }, 1600)
+})
+onUnmounted(() => clearTimeout(turningTimer))
+
 function enter(id) {
   offer.focus = id
 }
@@ -95,7 +107,9 @@ function leave(id) {
 }
 /** Fingers have no hover: a tap names the constellation, a second tap lets it go. */
 function tap(id) {
-  offer.focus = offer.focus === id ? '' : id
+  const next = offer.opened === id ? '' : id
+  offer.opened = next
+  offer.focus = next
 }
 
 const aria = computed(() => {
@@ -108,7 +122,7 @@ const aria = computed(() => {
 <template>
   <svg
     class="sky-dome"
-    :class="{ 'is-lit': lit || offer.preview, 'has-focus': offer.focus, 'motion-off': reduce, 'is-narrow': narrow }"
+    :class="{ 'is-lit': lit || offer.preview, 'is-turning': turning, 'has-focus': offer.focus, 'motion-off': reduce, 'is-narrow': narrow }"
     :width="geo.W"
     :height="geo.H"
     :viewBox="`0 0 ${geo.W} ${geo.H}`"
@@ -219,13 +233,16 @@ const aria = computed(() => {
   stroke-width: 0.9;
   stroke-dasharray: 1.5 3.5;
   stroke-linecap: round;
-  transition: stroke 0.6s ease calc(var(--i) * 0.12s), stroke-width 0.4s ease;
+  transition: stroke 0.3s ease, stroke-width 0.3s ease;
 }
 .figure-star {
   fill: rgba(214, 222, 238, 0.4);
-  transition: fill 0.6s ease calc(var(--i) * 0.12s), filter 0.6s ease calc(var(--i) * 0.12s);
+  transition: fill 0.3s ease, filter 0.3s ease;
 }
-.figure-glow { opacity: 0; transition: opacity 0.6s ease calc(var(--i) * 0.12s); }
+.figure-glow { opacity: 0; transition: opacity 0.3s ease; }
+.is-turning .figure-line { transition: stroke 0.6s ease calc(var(--i) * 0.12s), stroke-width 0.3s ease; }
+.is-turning .figure-star { transition: fill 0.6s ease calc(var(--i) * 0.12s), filter 0.6s ease calc(var(--i) * 0.12s); }
+.is-turning .figure-glow { transition: opacity 0.6s ease calc(var(--i) * 0.12s); }
 .figure-name {
   font-family: var(--caps);
   font-weight: 600;
@@ -268,5 +285,5 @@ const aria = computed(() => {
 
 .motion-off .vault, .motion-off .figure { animation: none; }
 .motion-off .is-burst .figure-flash, .motion-off .is-burst .figure-star { animation: none; }
-.motion-off .figure-line, .motion-off .figure-star, .motion-off .figure-glow { transition: none; }
+.motion-off .figure-line, .motion-off .figure-star, .motion-off .figure-glow { transition: none !important; }
 </style>

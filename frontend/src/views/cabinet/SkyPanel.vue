@@ -12,7 +12,8 @@ import { paidId, usePayment } from '../../composables/usePayment.js'
 /**
  * «Небосвод»: what the subscription lights, for how long and the way to pay for it. The list of
  * features and the dome on the sky (SkyDome) answer each other: a row under the pointer lights
- * its constellation, a constellation under the pointer opens its row.
+ * its constellation, a constellation under the pointer lights its row; a press opens a row,
+ * smoothly, and the rest slides down with it.
  *
  * ЮKassa brings the person back here with ?paid=ID: the panel asks how the payment stands until
  * it is settled, then the sky catches fire.
@@ -60,15 +61,16 @@ const state = computed(() => (props.user.sky ? `Небосвод ${skyLine(props
 
 /* ---- The features, in step with the dome ---- */
 
-const open = computed(() => offer.focus)
+const open = computed(() => offer.opened)
 function hover(id) {
   offer.focus = id
 }
 function unhover(id) {
-  if (offer.focus === id) offer.focus = ''
+  if (offer.focus === id && offer.opened !== id) offer.focus = ''
 }
 function toggle(id) {
-  offer.focus = offer.focus === id ? '' : id
+  offer.opened = offer.opened === id ? '' : id
+  offer.focus = offer.opened
 }
 
 /* ---- Paying, and the way back from ЮKassa ---- */
@@ -91,6 +93,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   offer.focus = ''
+  offer.opened = ''
   offer.preview = false
 })
 </script>
@@ -119,7 +122,7 @@ onUnmounted(() => {
           v-for="feature in FEATURES"
           :key="feature.id"
           class="feature"
-          :class="{ 'is-open': open === feature.id, 'is-on': feature.always || user.sky || offer.preview }"
+          :class="{ 'is-open': open === feature.id, 'is-hot': offer.focus === feature.id, 'is-on': feature.always || user.sky || offer.preview }"
           @pointerenter="hover(feature.id)"
           @pointerleave="unhover(feature.id)"
         >
@@ -135,9 +138,11 @@ onUnmounted(() => {
             <span class="feature-name">{{ feature.name }}</span>
             <span class="feature-sky">{{ feature.always ? 'уже ваша' : feature.sky }}</span>
           </button>
-          <div v-show="open === feature.id" :id="`feature-${feature.id}`" class="feature-more">
-            <p>{{ feature.about }}</p>
-            <p v-if="!feature.always" class="feature-free">Без подписки: {{ feature.free }}</p>
+          <div :id="`feature-${feature.id}`" class="feature-more" :aria-hidden="open === feature.id ? 'false' : 'true'">
+            <div class="feature-more-in">
+              <p>{{ feature.about }}</p>
+              <p v-if="!feature.always" class="feature-free">Без подписки: {{ feature.free }}</p>
+            </div>
           </div>
         </li>
       </ul>
@@ -209,6 +214,7 @@ onUnmounted(() => {
 /* The features: a quiet list; the open row shows what it gives and what stays free. */
 .features { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .feature { border-radius: 12px; transition: background 0.25s ease; }
+.feature.is-hot { background: rgba(240, 205, 138, 0.035); }
 .feature.is-open { background: rgba(240, 205, 138, 0.06); }
 .feature-head {
   display: grid;
@@ -231,9 +237,19 @@ onUnmounted(() => {
 .feature-name { font-family: var(--serif); font-size: 18px; color: #f6efe2; }
 .feature-sky { justify-self: end; text-align: right; font-size: 12.5px; line-height: 1.35; color: rgba(226, 220, 210, 0.6); }
 .feature.is-on .feature-sky { color: rgba(240, 205, 138, 0.85); }
-.feature-more { padding: 0 12px 12px 34px; }
+/* A row opens by height, not by a jump: the rest of the page slides down with it. */
+.feature-more {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition: grid-template-rows 0.4s cubic-bezier(0.3, 0.7, 0.2, 1), visibility 0s linear 0.4s;
+}
+.feature.is-open .feature-more { grid-template-rows: 1fr; visibility: visible; transition-delay: 0s; }
+.feature-more-in { min-height: 0; overflow: hidden; padding: 0 12px 0 34px; opacity: 0; transition: opacity 0.25s ease; }
+.feature.is-open .feature-more-in { opacity: 1; transition: opacity 0.35s ease 0.12s; }
 .feature-more p { margin: 0; font-family: var(--book); font-size: 14.5px; line-height: 1.55; color: rgba(239, 231, 216, 0.85); }
 .feature-more .feature-free { margin-top: 6px; font-size: 12.5px; color: rgba(226, 220, 210, 0.55); }
+.feature-more-in > :last-child { margin-bottom: 12px; }
 
 .try {
   margin-top: 8px;
@@ -334,6 +350,6 @@ onUnmounted(() => {
   .try { min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pay-cta, .feature-star { transition: none; }
+  .pay-cta, .feature-star, .feature-more, .feature-more-in { transition: none; }
 }
 </style>

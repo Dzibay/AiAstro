@@ -6,7 +6,7 @@ import ReadingText from '../../components/cabinet/ReadingText.vue'
 import StarCalendar from '../../components/sky/StarCalendar.vue'
 import SkyNudge from '../../components/sky/SkyNudge.vue'
 import { useChart } from '../../composables/useChart.js'
-import { useForecast } from '../../composables/useForecast.js'
+import { PERIODS, useForecast } from '../../composables/useForecast.js'
 import { ASPECTS, POINTS } from '../../components/cabinet/astro.js'
 import { usePrices } from '../../utils/prices.js'
 
@@ -35,10 +35,12 @@ const { sky: skyPrice } = usePrices()
 const entry = computed(() => forecasts[period.value])
 const data = computed(() => entry.value.data)
 
+// The open period first, then the other two in the background: the toggle never waits for them.
 watch(period, (value) => {
   load(value)
-  // Beside the calendar the wheel carries today's sky.
-  if (value === 'month') load('day')
+  for (const other of PERIODS) {
+    if (other !== value) load(other)
+  }
 }, { immediate: true })
 onUnmounted(() => {
   hot.value = ''
