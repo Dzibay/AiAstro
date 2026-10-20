@@ -1,6 +1,7 @@
-import { reactive } from 'vue'
+import { reactive, watch } from 'vue'
 import { webApi } from '../api/web.js'
 import { ApiError, errorText } from '../api/http.js'
+import { webToken } from './useSession.js'
 
 /**
  * The day, the week (GET /me/forecast) and the star calendar of the month (GET /me/forecast/month), shared by the forecast panel, the wheel's transits and
@@ -59,6 +60,9 @@ function forget() {
   for (const period of PERIODS) Object.assign(state[period], blank())
   pending.clear()
 }
+
+/** Another session (a logout, a login, another account) starts afresh: one person's data never show to the next. */
+watch(webToken, () => forget(), { flush: 'sync' })
 
 export function useForecast() {
   return { forecasts: state, load, forget }

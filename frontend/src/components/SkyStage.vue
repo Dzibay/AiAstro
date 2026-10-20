@@ -72,6 +72,12 @@ const route = useRoute()
 /** 'journey' follows the home page scroll; anything else is a still pose from POSES. */
 const pose = computed(() => route.meta.sky || 'journey')
 const onJourney = computed(() => pose.value === 'journey')
+/**
+ * The calm home of phones: the first screen is drawn once and scrolls away with the page like any
+ * block, nothing flies or drags, and the signs below are laid along the page (PageSigns).
+ */
+const calm = computed(() => onJourney.value && geo.value.narrow)
+watch(calm, (value) => document.body.classList.toggle('home-calm', value), { immediate: true })
 /** Every cabinet pose shows the person's star; the sections only move it aside. */
 const markPose = computed(() => (pose.value.startsWith('cabinet') ? 'cabinet' : pose.value))
 const goalScene = computed(() => (onJourney.value
@@ -94,7 +100,7 @@ watch(pose, () => {
   if (!lastScene) return
   flightFrom = lastScene
   flightStart = performance.now()
-  flight.value = reduce.value ? 1 : 0
+  flight.value = reduce.value || calm.value ? 1 : 0
 })
 const frame = computed(() => scene.value.frame)
 /** The hint's demo: the Sun turns a little on its own and back, so the visitor sees it moves. */
@@ -120,13 +126,14 @@ const planet = computed(() => {
 /** The Sun and Moon can be dragged only where the planet sits at home: the hero and the finale. */
 const interactive = computed(() => {
   if (!onJourney.value) return Boolean(POSES[pose.value]?.drag)
+  if (calm.value) return false
   return journey.value < 0.12 || journey.value > LAST_STOP - 0.12
 })
 const atEnd = computed(() => journey.value > LAST_STOP - 0.5)
 
 /* ---- Hints: until the visitor has tried, the sky shows what it can do ---- */
 
-const atHero = computed(() => onJourney.value && journey.value < 0.12 && flight.value >= 1)
+const atHero = computed(() => onJourney.value && !calm.value && journey.value < 0.12 && flight.value >= 1)
 const sunHint = computed(() => {
   if (!atHero.value || !settled.value || tried.sun || dragging.value || !sunUp.value) return null
   // The words go on the outer side of the orbit, away from the page's own copy in its middle.
@@ -263,6 +270,12 @@ function liteStop(exact) {
 function follow() {
   const source = shared.source.value
   const exact = source ? source.at() : 0
+  if (calm.value) {
+    if (source?.fresh) source.fresh = false
+    travelling = false
+    journey.value = 0
+    return
+  }
   if (LITE) {
     const stop = liteStop(exact)
     travelling = false
@@ -308,7 +321,7 @@ function canvasState() {
     intro,
     high: high.value,
     busy: Boolean(dragging.value) || Boolean(nudge.value) || Math.abs(velocity) > 1e-5 || intro < 1 || travelling || skyTurning.value || flight.value < 1,
-    still: reduce.value,
+    still: reduce.value || calm.value,
   }
 }
 
@@ -329,7 +342,7 @@ function tick(now) {
   if (flight.value < 1) flight.value = clamp((now - flightStart) / FLIGHT_MS, 0, 1)
   lastScene = scene.value
   if (intro < 1) {
-    intro = reduce.value ? 1 : clamp((now - introStart) / 2400, 0, 1)
+    intro = reduce.value || calm.value ? 1 : clamp((now - introStart) / 2400, 0, 1)
     if (!dragging.value) {
       const e = 1 - (1 - intro) ** 3
       theta.value = introFrom + (target - introFrom) * e
@@ -463,7 +476,7 @@ function onBodyKey(event) {
 
 function toggleFigure(key) {
   // The cards lead to the chart, which only makes sense on the home page.
-  if (!onJourney.value) return
+  if (!onJourney.value || calm.value) return
   markTried('figure')
   openId.value = openId.value === key ? '' : key
   openedAt = journey.value
@@ -486,11 +499,13 @@ onBeforeMount(() => {
 onMounted(() => {
   reduce.value = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   measure()
-  introFrom = target - 0.55
-  theta.value = reduce.value ? target : introFrom
+  introFrom = calm.value ? target : target - 0.55
+  theta.value = reduce.value || calm.value ? target : introFrom
   introStart = performance.now()
   observer = new ResizeObserver(measure)
   observer.observe(sky.value)
+  // A turn of the phone or a resized window can switch the calm home on or off.
+  window.addEventListener('resize', measure, { passive: true })
   window.addEventListener('keydown', onKey)
   raf = requestAnimationFrame(tick)
 })
@@ -500,7 +515,8 @@ onUnmounted(() => {
   cancelAnimationFrame(raf)
   observer?.disconnect()
   window.removeEventListener('keydown', onKey)
-  document.body.classList.remove('home-sky', 'is-dragging-sky')
+  window.removeEventListener('resize', measure)
+  document.body.classList.remove('home-sky', 'home-calm', 'is-dragging-sky')
   shared.openStop.value = -1
 })
 </script>
@@ -510,7 +526,7 @@ onUnmounted(() => {
   <div
     ref="sky"
     class="sky-stage"
-    :class="{ 'is-dragging': dragging, 'near-ring': nearRing, 'no-webgl': !webgl, 'motion-off': reduce }"
+    :class="{ 'is-dragging': dragging, 'near-ring': nearRing, 'no-webgl': !webgl, 'motion-off': reduce, 'is-calm': calm }"
     @pointerdown="onSkyDown"
     @pointermove="onSkyMove"
   >
@@ -525,7 +541,7 @@ onUnmounted(() => {
       :style="orbitStyle"
     />
     <ConstellationLayer
-      :class="{ 'is-away': markPose === 'cabinet' }"
+      :class="{ 'is-away': markPose === 'cabinet', 'is-calm': calm }"
       :figures="figures"
       :geo="geo"
       :near="near"
@@ -537,7 +553,7 @@ onUnmounted(() => {
       @hover="hotId = $event"
       @toggle="toggleFigure"
     />
-    <SkyHints :sun="sunHint" :pressing="nudge > 0.01" :figure="figureHint" />
+    <SkyHints v-if="!calm" :sun="sunHint" :pressing="nudge > 0.01" :figure="figureHint" />
     <NameMark v-if="markPose === 'login' || markPose === 'cabinet'" :geo="geo" :pose="markPose" :section="route.meta.section || ''" />
 
     <button
@@ -897,6 +913,15 @@ onUnmounted(() => {
 @media (max-width: 760px) {
   .sky-stage { min-height: 780px; }
 }
+
+/* The calm home of phones: the first screen stays at the top of the page and fades into the
+   still starfield below (body.home-calm in site.css); the figures on it are only a picture. */
+.sky-stage.is-calm {
+  position: absolute;
+  -webkit-mask-image: linear-gradient(#000 84%, transparent);
+  mask-image: linear-gradient(#000 84%, transparent);
+}
+.zodiac-layer.is-calm :deep(.figure) { pointer-events: none; cursor: default; }
 
 @media (prefers-reduced-motion: reduce) {
   .card-sheen, .card-glyph-orbit, .zodiac-card > *, .emblem-btn.is-hot .emblem-label svg { animation: none; }

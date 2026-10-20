@@ -1,7 +1,7 @@
-import { reactive } from 'vue'
+import { reactive, watch } from 'vue'
 import { webApi } from '../api/web.js'
 import { ApiError, errorText } from '../api/http.js'
-import { readSession } from './useSession.js'
+import { readSession, webToken } from './useSession.js'
 
 /**
  * The conversation with the astrologer (GET/POST /me/chat). The history is asked once per visit
@@ -82,6 +82,12 @@ async function ask(text) {
 function forget() {
   reset()
 }
+
+/** A logout or another account clears the conversation at once, not only at the next look. */
+watch(webToken, () => {
+  reset()
+  owner = ''
+}, { flush: 'sync' })
 
 export function useChat() {
   return { chat: state, load, ask, forget }

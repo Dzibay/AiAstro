@@ -1,6 +1,7 @@
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { webApi } from '../api/web.js'
 import { ApiError, errorText } from '../api/http.js'
+import { webToken } from './useSession.js'
 
 /**
  * The person's pairs (GET /me/partners), shared by the «Пара» panel and the stars on the sky.
@@ -139,9 +140,15 @@ function forget() {
   status.value = 'idle'
   pending = null
   lit.value = new Set()
+  hot.value = null
+  hotAspect.value = null
+  message.value = ''
   forgetSyntheses()
   clearDraft()
 }
+
+/** Another session (a logout, a login, another account) starts afresh: one person's data never show to the next. */
+watch(webToken, () => forget(), { flush: 'sync' })
 
 export function usePartners() {
   return {

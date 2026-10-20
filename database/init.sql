@@ -90,6 +90,9 @@ CREATE INDEX IF NOT EXISTS partners_user_idx ON partners (user_id, created_at);
 -- Сколько раз человек сам исправил свои данные рождения: одна правка, дальше — через поддержку.
 -- Иначе одна покупка разбора открывала бы любые пары с любыми датами.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_edits INTEGER NOT NULL DEFAULT 0;
+-- Знакомство с кабинетом, пройденное этим человеком: туры (tour:intro, tour:sky) и шаги «Пути новичка»
+-- (step:sun, step:chat). Хранятся в аккаунте, чтобы не зависеть от браузера.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS marks TEXT[] NOT NULL DEFAULT '{}';
 
 -- Пара — общая для двоих. Строка partners — сторона пары в кабинете одного человека: у пары по
 -- приглашению, когда партнёр завёл кабинет, сторон две, у введённой вручную — одна. Покупка

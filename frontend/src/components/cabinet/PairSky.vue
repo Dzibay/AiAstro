@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useSky } from '../../composables/useSky.js'
 import { birthSigns } from '../../utils/skyToday.js'
 import { clamp } from '../hero/sky.js'
@@ -57,10 +57,14 @@ function delayOf(id) {
   return delays.get(id)
 }
 
-/** Once a star's sign has been drawn for the first time, a later choice of it draws at once. */
+/**
+ * A sign is drawn after its star is in place: on the first visit once the star itself has
+ * appeared, later once its flight to the middle is over (at once if it did not move).
+ * Fixed when the sign appears, so the frames of a flight do not shift it.
+ */
 const signDelays = new Map()
-function signDelayOf(key, known, delay) {
-  if (!signDelays.has(key)) signDelays.set(key, known ? 0.1 : delay + 1.2)
+function signDelayOf(key, known, delay, landing) {
+  if (!signDelays.has(key)) signDelays.set(key, known ? (landing ? landing + 0.05 : 0.1) : delay + 1.2)
   return signDelays.get(key)
 }
 
@@ -76,9 +80,9 @@ const signSpan = computed(() => {
   return Math.min(star.span * star.k, room.value.r * (stepped.value ? 1.25 : 1.7))
 })
 
-const drawn = computed(() => {
+/** Where each star is headed: the layout of the moment, before the flight that takes it there. */
+const layout = computed(() => {
   const { x: cx, y: cy, r } = room.value
-  const from = origin.value
   const n = props.stars.length
   const narrow = geo.value.narrow
   const others = props.stars.filter((star) => star.id !== focusId.value)
@@ -103,23 +107,20 @@ const drawn = computed(() => {
       y = cy - spread / 2 + spread * t
       x = cx + (narrow ? r * 0.5 : r * 0.35) * Math.sin(Math.PI * t) - (narrow ? r * 0.2 : r * 0.1)
     }
-    // Leaves level, above the fan of sections, and comes down onto the star.
-    const control = [from.x + (x - from.x) * 0.62, Math.min(from.y, y) - clamp(Math.abs(y - from.y) * 0.25, 20, 70)]
-    const mid = [0.25 * from.x + 0.5 * control[0] + 0.25 * x, 0.25 * from.y + 0.5 * control[1] + 0.25 * y]
     const radius = star.lit ? 1.8 + Math.min([...star.name].length, 12) * 0.28 : 3.2
     const signs = star.date ? birthSigns(star.date, star.time) : null
     const sun = signs ? SIGN_BY_ID[signs.sun] : null
     return {
       figure: focus && star.lit && signs ? signFigure(signs.sun, signSpan.value) : null,
-      signDelay: focus && signs ? signDelayOf(`${star.id}:${signs.sun}`, known, delay) : 0,
+      signKey: focus && signs ? `${star.id}:${signs.sun}:${focusTurn}` : '',
+      known,
       ...star,
       focus,
       aside,
       x,
       y,
+      s: aside ? 0.82 : 1,
       radius,
-      d: `M${fixed(from.x)} ${fixed(from.y)}Q${fixed(control[0])} ${fixed(control[1])} ${fixed(x)} ${fixed(y)}`,
-      mid,
       colour: focus && props.tone ? COLOURS[props.tone] : '#f3dcae',
       sun: sun ? `${sun.glyph} ${sun.in}` : '',
       delay,
@@ -128,6 +129,106 @@ const drawn = computed(() => {
       // Long names on a phone would leave the strip: they go under the star. A star on the ring
       // keeps its name inside the free sky, the panel is just past it.
       below: narrow || x + radius * 3 + 10 + [...star.name].length * 11 > (aside ? cx + r + 30 : geo.value.W - 12),
+    }
+  })
+})
+
+/**
+ * Another pair opened, or the list rearranged: the stars fly to their new places unhurriedly, on a
+ * bow rather than a straight line (two stars trading places pass each other side by side), and
+ * the threads from the person's star bend after them. A resize or reduced motion moves them at once.
+ */
+const FLIGHT = 1.2
+const shown = shallowRef(new Map())
+const flights = new Map()
+let frame = 0
+let sized = ''
+let focusTurn = 0
+let lastFocus = null
+
+const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2)
+
+function placeOf(flight, now) {
+  const t = Math.min(1, (now - flight.start) / (FLIGHT * 1000))
+  const e = ease(t)
+  const { from, to } = flight
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const bow = Math.sin(Math.PI * e) * 0.2
+  return {
+    x: from.x + dx * e - dy * bow,
+    y: from.y + dy * e + dx * bow,
+    s: from.s + (to.s - from.s) * e,
+    done: t >= 1,
+  }
+}
+
+function tick() {
+  const now = performance.now()
+  const next = new Map(shown.value)
+  for (const [id, flight] of flights) {
+    const place = placeOf(flight, now)
+    next.set(id, place)
+    if (place.done) flights.delete(id)
+  }
+  shown.value = next
+  frame = flights.size ? requestAnimationFrame(tick) : 0
+}
+
+/** Seconds until the star lands (0 when it stands). */
+function landingIn(id) {
+  const flight = flights.get(id)
+  return flight ? Math.max(0, FLIGHT - (performance.now() - flight.start) / 1000) : 0
+}
+
+watch(focusId, (id) => {
+  if (id !== lastFocus) focusTurn += 1
+  lastFocus = id
+}, { flush: 'sync', immediate: true })
+
+watch(layout, (stars) => {
+  const now = performance.now()
+  const size = `${geo.value.W}x${geo.value.H}`
+  const jump = reduce.value || size !== sized
+  sized = size
+  const next = new Map()
+  for (const star of stars) {
+    const to = { x: star.x, y: star.y, s: star.s }
+    const flight = flights.get(star.id)
+    const at = flight ? placeOf(flight, now) : shown.value.get(star.id)
+    if (!at || jump) {
+      flights.delete(star.id)
+      next.set(star.id, to)
+      continue
+    }
+    next.set(star.id, at)
+    const same = (a) => Math.abs(a.x - to.x) < 0.5 && Math.abs(a.y - to.y) < 0.5 && Math.abs(a.s - to.s) < 0.01
+    if (flight ? same(flight.to) : same(at)) continue
+    flights.set(star.id, { from: { x: at.x, y: at.y, s: at.s }, to, start: now })
+  }
+  for (const id of flights.keys()) if (!next.has(id)) flights.delete(id)
+  shown.value = next
+  if (flights.size && !frame) frame = requestAnimationFrame(tick)
+}, { immediate: true })
+
+onUnmounted(() => cancelAnimationFrame(frame))
+
+const drawn = computed(() => {
+  const from = origin.value
+  const places = shown.value
+  return layout.value.map((star) => {
+    const { x, y, s } = places.get(star.id) || star
+    // Leaves level, above the fan of sections, and comes down onto the star.
+    const control = [from.x + (x - from.x) * 0.62, Math.min(from.y, y) - clamp(Math.abs(y - from.y) * 0.25, 20, 70)]
+    return {
+      ...star,
+      x,
+      y,
+      s,
+      // A pair opened from the sky draws its sign once its star has landed in the middle.
+      signDelay: star.signKey ? signDelayOf(star.signKey, star.known, star.delay, landingIn(star.id)) : 0,
+      d: `M${fixed(from.x)} ${fixed(from.y)}Q${fixed(control[0])} ${fixed(control[1])} ${fixed(x)} ${fixed(y)}`,
+      mid: [0.25 * from.x + 0.5 * control[0] + 0.25 * x, 0.25 * from.y + 0.5 * control[1] + 0.25 * y],
     }
   })
 })
@@ -189,7 +290,7 @@ const aria = computed(() => {
       <path class="thread-glow" :d="star.d" pathLength="1" />
       <path class="thread" :d="star.d" pathLength="1" />
 
-      <g class="partner" :style="{ transform: `translate(${fixed(star.x)}px, ${fixed(star.y)}px)${star.aside ? ' scale(0.82)' : ''}` }">
+      <g class="partner" :style="{ transform: `translate(${fixed(star.x)}px, ${fixed(star.y)}px)${star.s !== 1 ? ` scale(${star.s.toFixed(3)})` : ''}` }">
         <Transition name="sign">
           <g v-if="star.figure" :key="star.figure.id" class="sign" :style="{ '--sd': `${star.signDelay}s` }">
             <g class="sign-art" filter="url(#pair-sign-glow)">
@@ -297,7 +398,8 @@ const aria = computed(() => {
 .pair.is-hot .thread { opacity: 1; stroke-width: 1.5; }
 .pair.is-hot .thread-glow { opacity: 0.22; }
 
-.partner { transition: transform 0.9s cubic-bezier(0.3, 0.7, 0.2, 1), opacity 0.6s ease; }
+/* The place is flown in script (with the thread after it); only the dimming is left to CSS. */
+.partner { transition: opacity 0.6s ease; }
 /* The pairs the open one has stepped back from: dimmer and smaller, brighter again under the pointer. */
 .pair.is-aside .partner { opacity: 0.5; }
 .pair.is-aside.is-hot .partner { opacity: 0.95; }

@@ -1,4 +1,5 @@
 import hashlib
+import re
 import secrets
 from datetime import date, datetime, time, timezone
 
@@ -13,7 +14,7 @@ from app.security import hash_password, verify_password
 _DUMMY_HASH = hash_password("not-a-real-password")
 _EARLIEST_BIRTH = date(1900, 1, 1)
 _USER_COLUMNS = (
-    "id, email, name, blocked, created_at, birth_date, birth_time, birth_place, birth_lat, birth_lon, birth_tz, sky_until, mail_notes, birth_edits"
+    "id, email, name, blocked, created_at, birth_date, birth_time, birth_place, birth_lat, birth_lon, birth_tz, sky_until, mail_notes, birth_edits, marks"
 )
 
 
@@ -74,6 +75,8 @@ def _public(row: dict) -> dict:
         "mail_notes": row["mail_notes"],
         # One correction of the birth data is the person's own; the next ones go through the support.
         "birth_locked": row["birth_date"] is not None and row["birth_edits"] >= BIRTH_EDITS,
+        # The cabinet's tours and newcomer steps this person has been through, on any device.
+        "marks": sorted(row["marks"] or []),
     }
 
 
@@ -274,6 +277,29 @@ def set_mail_notes(user_id: int, on: bool) -> dict:
     if row is None:
         raise DomainError("unauthorized", 401)
     return _public(row)
+
+
+# The tours and the newcomer steps: short names the page keeps in the account, a bounded few.
+MARK_PATTERN = re.compile(r"^(tour|step):[a-z][a-z-]{0,23}$")
+MARKS_MAX = 40
+
+
+def add_marks(user_id: int, marks: list[str]) -> dict:
+    clean = sorted({mark for mark in marks if MARK_PATTERN.match(mark)})
+    if not clean:
+        raise DomainError("bad_mark", 422)
+    with pool.connection() as conn:
+        row = conn.execute(
+            f"""
+            UPDATE users
+            SET marks = ARRAY(SELECT DISTINCT unnest(marks || %s::text[]) ORDER BY 1)
+            WHERE id = %s AND NOT blocked AND cardinality(marks) < %s
+            RETURNING {_USER_COLUMNS}
+            """,
+            (clean, user_id, MARKS_MAX),
+        ).fetchone()
+    # Full (or blocked): the marks stay as they are, and the person is read as is.
+    return _public(row) if row is not None else get_user(user_id)
 
 
 # ---- A forgotten password ----

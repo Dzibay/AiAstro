@@ -1,9 +1,10 @@
 import { reactive } from 'vue'
+import { addMark, hasMark } from './marks.js'
 
 /**
  * The cabinet's introductions (CabinetTour): `intro` — the whole cabinet, once the birth date has
  * drawn the person's star; `sky` — what «Небосвод» opened, once it is lit. Each is shown once per
- * account in this browser; the «?» by the star and the profile bring it back at will.
+ * account, remembered in the account itself (utils/marks.js); the «?» by the star and the profile bring it back at will.
  *
  * A section's own «?» opens `section` — a short walk through the open section, with no scene and
  * nothing remembered: it is there whenever asked.
@@ -13,29 +14,12 @@ import { reactive } from 'vue'
  * `flare` lists the sections flaring gold on the sky (CabinetSky) while «Небосвод» catches fire.
  */
 
-const KEY = 'astra.tour'
-
-function read() {
-  try {
-    return JSON.parse(localStorage.getItem(KEY) || '{}') || {}
-  } catch {
-    return {}
-  }
-}
-const seenMap = reactive(read())
-
 export const tour = reactive({ kind: '', scene: false, step: 0, pair: false, flare: [] })
 
-export const tourSeen = (userId, kind) => Boolean(seenMap[`${userId}:${kind}`])
+export const tourSeen = (userId, kind) => hasMark(userId, `tour:${kind}`)
 
 export function markTourSeen(userId, kind) {
-  if (!userId || seenMap[`${userId}:${kind}`]) return
-  seenMap[`${userId}:${kind}`] = true
-  try {
-    localStorage.setItem(KEY, JSON.stringify(seenMap))
-  } catch {
-    // Private mode: the tour is not offered again until the tab closes.
-  }
+  addMark(userId, `tour:${kind}`)
 }
 
 /**

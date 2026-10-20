@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from app import notes
 from app.accounts import (
-    authenticate, delete_account, get_user, register, request_reset, reset_password, set_birth, set_email,
+    add_marks, authenticate, delete_account, get_user, register, request_reset, reset_password, set_birth, set_email,
     set_mail_notes, set_name, set_password,
 )
 from app.api.deps import as_http, optional_web_user, require_web_user
@@ -107,6 +107,10 @@ class ResetIn(BaseModel):
 
 class MailNotesIn(BaseModel):
     on: bool
+
+
+class MarksIn(BaseModel):
+    marks: list[str] = Field(min_length=1, max_length=10)
 
 
 @router.post("/register")
@@ -215,6 +219,15 @@ def update_mail_notes(body: MailNotesIn, user_id: int = Depends(require_web_user
     """The letters about «Небосвод» and the partners: on or off."""
     try:
         return set_mail_notes(user_id, body.on)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.post("/me/marks")
+def save_marks(body: MarksIn, user_id: int = Depends(require_web_user)) -> dict:
+    """A tour seen or a newcomer step taken: kept in the account, so another device knows it too."""
+    try:
+        return add_marks(user_id, body.marks)
     except DomainError as exc:
         raise as_http(exc) from exc
 

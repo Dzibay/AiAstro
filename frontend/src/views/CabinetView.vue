@@ -18,6 +18,7 @@ import { linkPendingInvite, pendingInvite, usePartners } from '../composables/us
 import { useChat } from '../composables/useChat.js'
 import { useHead } from '../utils/useHead.js'
 import { startTour, stopTour, tour, tourSeen } from '../utils/tour.js'
+import { takeMarks } from '../utils/marks.js'
 
 /**
  * The cabinet's shell: the sky is the menu (CabinetSky, about the person's star) and one glass
@@ -34,6 +35,9 @@ const { partners, draft, hot, hotAspect, lit, syntheses, load: loadPartners, for
 const { forget: forgetChat } = useChat()
 const user = ref(null)
 const message = ref('')
+// What the person has been through (tours, newcomer steps) comes with them from the account,
+// before anything asks whether a tour was seen.
+watch(user, (current) => current && takeMarks(current), { flush: 'sync' })
 
 useHead({ title: 'Кабинет', noindex: true })
 

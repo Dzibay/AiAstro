@@ -4,6 +4,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import SiteFrame from '../components/SiteFrame.vue'
 import HeroOrbit from '../components/HeroOrbit.vue'
 import StopHead from '../components/home/StopHead.vue'
+import PageSigns from '../components/home/PageSigns.vue'
 import { useSession } from '../composables/useSession.js'
 import { HOUSE_SECTORS, useSkyFocus } from '../composables/useSkyFocus.js'
 import { useSkyJourney } from '../composables/useSkyJourney.js'
@@ -242,9 +243,10 @@ onMounted(async () => {
     <HeroOrbit />
 
     <section id="how" class="stop stop-how" data-sky-stop="how">
+      <PageSigns :signs="['cancer', 'leo']" />
       <div class="wrap stop-grid">
         <div class="stop-body body-how">
-          <StopHead num="II" signs="♌ ♍" label="Как это работает">Небо в <em>минуту</em> вашего рождения</StopHead>
+          <StopHead num="II" phone-signs="♋ ♌" signs="♌ ♍" label="Как это работает">Небо в <em>минуту</em> вашего рождения</StopHead>
           <p class="stop-lead" data-reveal style="--r: 3">
             Звёзды не повторяют своего узора. Мы восстановим тот, что был над вами в первый вдох,
             и прочтём его простыми словами.
@@ -296,9 +298,10 @@ onMounted(async () => {
     </section>
 
     <section id="services" class="stop stop-services" data-sky-stop="services">
+      <PageSigns :signs="['virgo', 'libra']" />
       <div class="wrap stop-grid">
         <div class="stop-body">
-          <StopHead num="III" signs="♎ ♏" label="Натальная карта">Что расскажет <em>ваша</em> карта</StopHead>
+          <StopHead num="III" phone-signs="♍ ♎" signs="♎ ♏" label="Натальная карта">Что расскажет <em>ваша</em> карта</StopHead>
 
           <div class="spheres">
             <svg class="spheres-arc" aria-hidden="true"><path :d="arcPath" /></svg>
@@ -360,10 +363,11 @@ onMounted(async () => {
     </section>
 
     <section id="forecasts" class="stop stop-forecasts" data-sky-stop="forecasts">
+      <PageSigns :signs="['scorpio', 'sagittarius']" />
       <div class="wrap stop-grid">
         <div class="stop-body body-forecasts">
           <div class="forecasts-copy">
-            <StopHead num="IV" signs="♐ ♑" label="Прогнозы и тарифы">Небо меняется <em>каждый день</em></StopHead>
+            <StopHead num="IV" phone-signs="♏ ♐" signs="♐ ♑" label="Прогнозы и тарифы">Небо меняется <em>каждый день</em></StopHead>
             <p class="stop-lead" data-reveal style="--r: 3">
               «Небосвод» каждый день сверяет ваше небо с нынешним и отвечает на вопросы,
               когда звёзды молчат.
@@ -422,9 +426,10 @@ onMounted(async () => {
     </section>
 
     <section id="about" class="stop stop-about" data-sky-stop="about">
+      <PageSigns :signs="['capricorn', 'aquarius']" />
       <div class="wrap stop-grid">
         <div class="stop-body body-about">
-          <StopHead num="V" signs="♒ ♓" label="Вопросы">Вопросы, которые задают <em>звёздам</em></StopHead>
+          <StopHead num="V" phone-signs="♑ ♒" signs="♒ ♓" label="Вопросы">Вопросы, которые задают <em>звёздам</em></StopHead>
 
           <!-- Reviews as bright stars, each opening its quote; waits for real reviews. -->
           <ul v-if="SHOW_VOICES && voices.length" class="voices" data-reveal style="--r: 3">
@@ -478,8 +483,9 @@ onMounted(async () => {
     </section>
 
     <section id="start" class="stop stop-start" data-sky-stop="start">
+      <PageSigns :signs="['pisces', 'aries']" />
       <div class="stop-body start-copy">
-        <StopHead num="VI" signs="♈" label="Круг замкнулся" align="center">Солнце снова <em>в Овне</em></StopHead>
+        <StopHead num="VI" phone-signs="♓ ♈" signs="♈" label="Круг замкнулся" align="center">Солнце снова <em>в Овне</em></StopHead>
         <p data-reveal style="--r: 3">
           Год прошёл за один вдох. Теперь — ваше небо: каким оно было в день, когда вы пришли в мир?
         </p>
@@ -1069,7 +1075,8 @@ onMounted(async () => {
   .plan + .plan { border-left: 0; border-top: 1px solid rgba(240, 205, 138, 0.2); }
   .plan.is-star + .plan, .plan + .plan.is-star { border-top-color: transparent; }
   .plan.is-star { margin-top: 8px; }
-  .stop-start { align-items: flex-start; padding-top: 110px; }
+  /* The phone home is calm: no planet comes back, so the finale reads under its Pisces and Aries. */
+  .stop-start { align-items: flex-start; padding-top: max(34svh, 270px); }
 }
 
 @media (prefers-reduced-motion: reduce) {

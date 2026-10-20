@@ -3,6 +3,8 @@
 defineProps({
   num: { type: String, required: true },
   signs: { type: String, default: '' },
+  /** On phones the signs are laid along the page two per stop, starting one sign earlier. */
+  phoneSigns: { type: String, default: '' },
   label: { type: String, required: true },
   align: { type: String, default: 'start' },
 })
@@ -13,7 +15,8 @@ defineProps({
     <p class="stop-caption" data-reveal style="--r: 0">
       <span class="stop-num">{{ num }}</span>
       <span v-if="signs" class="stop-dot" aria-hidden="true">·</span>
-      <span v-if="signs" class="stop-signs" aria-hidden="true">{{ signs }}</span>
+      <span v-if="signs" class="stop-signs" :class="{ 'has-phone': phoneSigns }" aria-hidden="true">{{ signs }}</span>
+      <span v-if="phoneSigns" class="stop-signs is-phone" aria-hidden="true">{{ phoneSigns }}</span>
       <span class="stop-dot" aria-hidden="true">·</span>
       <span>{{ label }}</span>
     </p>
@@ -74,5 +77,11 @@ h2 :deep(em) {
   color: transparent;
   text-shadow: none;
   filter: drop-shadow(0 0 16px rgba(255, 200, 110, 0.22));
+}
+
+.stop-signs.is-phone { display: none; }
+@media (max-width: 759.98px) {
+  .stop-signs.has-phone { display: none; }
+  .stop-signs.is-phone { display: inline; }
 }
 </style>

@@ -1,30 +1,12 @@
-import { reactive } from 'vue'
+import { addMark, hasMark } from './marks.js'
 
 /**
- * The steps of «Путь новичка» that leave no trace on the server: the Sun read, a question asked.
- * Kept in this browser, per account, so the checklist remembers them between visits.
+ * The steps of «Путь новичка» that leave no other trace on the server: the Sun read, a question
+ * asked. Kept in the account (utils/marks.js), so the checklist remembers them on any device.
  */
 
-const KEY = 'astra.newcomer'
-const done = reactive(read())
-
-function read() {
-  try {
-    return JSON.parse(localStorage.getItem(KEY) || '{}') || {}
-  } catch {
-    return {}
-  }
-}
-
 export function markStep(userId, step) {
-  const key = `${userId}:${step}`
-  if (!userId || done[key]) return
-  done[key] = true
-  try {
-    localStorage.setItem(KEY, JSON.stringify(done))
-  } catch {
-    // Private mode: the step is remembered until the tab closes.
-  }
+  addMark(userId, `step:${step}`)
 }
 
-export const stepDone = (userId, step) => Boolean(done[`${userId}:${step}`])
+export const stepDone = (userId, step) => hasMark(userId, `step:${step}`)

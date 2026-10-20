@@ -68,6 +68,45 @@ body.home-sky {
   overflow-x: clip;
 }
 
+/* The calm home of phones (SkyStage): below the first screen the sky is a still starfield, tiles of
+   faint dots, and a sparser layer of brighter stars that only breathes on opacity. */
+body.home-calm::before,
+body.home-calm::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+body.home-calm::before {
+  background:
+    radial-gradient(1px 1px at 23px 41px, rgba(240, 232, 214, 0.55), transparent 100%),
+    radial-gradient(1px 1px at 131px 97px, rgba(240, 232, 214, 0.4), transparent 100%),
+    radial-gradient(1px 1px at 77px 163px, rgba(214, 224, 255, 0.45), transparent 100%),
+    radial-gradient(1px 1px at 171px 19px, rgba(240, 232, 214, 0.35), transparent 100%),
+    radial-gradient(1.2px 1.2px at 49px 211px, rgba(255, 236, 205, 0.5), transparent 100%),
+    radial-gradient(1px 1px at 203px 139px, rgba(240, 232, 214, 0.3), transparent 100%);
+  background-size: 229px 241px;
+  opacity: 0.8;
+  /* A slower breath out of step with the bright layer, so the stars never dim all at once. */
+  animation: calm-twinkle-faint 9s ease-in-out infinite;
+}
+body.home-calm::after {
+  background:
+    radial-gradient(1.6px 1.6px at 61px 83px, rgba(255, 244, 220, 0.95), transparent 100%),
+    radial-gradient(1.4px 1.4px at 263px 227px, rgba(220, 230, 255, 0.85), transparent 100%),
+    radial-gradient(1.8px 1.8px at 181px 389px, rgba(255, 232, 196, 0.9), transparent 100%),
+    radial-gradient(1.3px 1.3px at 317px 41px, rgba(255, 244, 220, 0.8), transparent 100%);
+  background-size: 353px 467px;
+  animation: calm-twinkle 6s ease-in-out infinite;
+}
+@keyframes calm-twinkle { 50% { opacity: 0.45; } }
+@keyframes calm-twinkle-faint { 50% { opacity: 0.6; } }
+@media (prefers-reduced-motion: reduce) {
+  body.home-calm::before,
+  body.home-calm::after { animation: none; }
+}
+
 /* ---------- Header: a floating glass capsule ---------- */
 .header {
   position: sticky;

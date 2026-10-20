@@ -329,4 +329,9 @@ const phaseLabel = computed(() => {
   .kicker, .ornament, .hero-copy h1, .sub, .cta, .hint, .note { animation: none; }
   .cta::after, .ornament-star { animation: none; }
 }
+
+/* On phones the Sun and Moon stand still (the calm home in SkyStage), so there is nothing to drag. */
+@media (max-width: 759.98px) {
+  .hint { display: none; }
+}
 </style>
