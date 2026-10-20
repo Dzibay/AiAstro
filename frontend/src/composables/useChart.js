@@ -14,6 +14,7 @@ const message = ref('')
 /** The point under the pointer, in the wheel or in the panel's list: its aspects light up. */
 const hot = ref('')
 const readings = new Map()
+let portraitRequest = null
 let pending = null
 
 async function load() {
@@ -44,10 +45,27 @@ async function load() {
 function forget() {
   chart.value = null
   status.value = 'idle'
-  readings.clear()
+  forgetReadings()
 }
 
-/** The reading of one point: { title, text }, fetched once. */
+/** When «Небосвод» is lit or goes out: the texts come again, whole or veiled. */
+function forgetReadings() {
+  readings.clear()
+  portraitRequest = null
+}
+
+/** The chart read as a whole: { reading, total, locked }, fetched once. */
+function portrait() {
+  if (!portraitRequest) {
+    portraitRequest = webApi.portrait()
+    portraitRequest.catch(() => {
+      portraitRequest = null
+    })
+  }
+  return portraitRequest
+}
+
+/** The reading of one point: { title, reading, aspects: [{ a, b, type, text }], locked }, fetched once. */
 function reading(id) {
   if (!readings.has(id)) {
     const request = webApi.chartItem(id)
@@ -59,5 +77,5 @@ function reading(id) {
 }
 
 export function useChart() {
-  return { chart, status, message, hot, load, forget, reading }
+  return { chart, status, message, hot, load, forget, forgetReadings, reading, portrait }
 }

@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.accounts import authenticate, delete_account, get_user, register, set_birth, set_email, set_name, set_password
 from app.api.deps import as_http, require_web_user
-from app.charts import chart_item, chart_of, forecast_of, month_of
+from app.charts import chart_item, chart_of, forecast_of, month_of, portrait_of
 from app.chat import LENGTH, ask, history
 from app.errors import DomainError
 from app.payments import create_payment, payment_of
@@ -174,6 +174,15 @@ def my_chart_item(item: str, user_id: int = Depends(require_web_user)) -> dict:
     """The reading of one planet or angle of the chart: «Венера в Скорпионе, в VIII доме» and its text."""
     try:
         return chart_item(user_id, item)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/me/chart/portrait")
+def my_portrait(user_id: int = Depends(require_web_user)) -> dict:
+    """The chart read as a whole: the core, the temperament, the accents, the way; whole with «Небосвод»."""
+    try:
+        return portrait_of(user_id)
     except DomainError as exc:
         raise as_http(exc) from exc
 

@@ -195,6 +195,13 @@ const aspects = computed(() => (pair.value?.data?.aspects || []).map((aspect) =>
   theirs: POINTS[aspect.b].glyph,
   aspect: ASPECTS[aspect.type],
 })))
+const moreAspects = computed(() => Math.max(0, (pair.value?.data?.aspects_total || 0) - aspects.value.length))
+const moreAspectsWord = computed(() => {
+  const count = moreAspects.value
+  const teen = count % 100 >= 11 && count % 100 <= 14
+  if (count % 10 === 1 && !teen) return 'связь'
+  return count % 10 >= 2 && count % 10 <= 4 && !teen ? 'связи' : 'связей'
+})
 function setAspect(aspect) {
   hotAspect.value = aspect ? { a: aspect.a, b: aspect.b, type: aspect.type } : null
 }
@@ -305,7 +312,7 @@ function status_of(item) {
           </section>
 
           <section class="block" aria-labelledby="aspects-title">
-            <h3 id="aspects-title" class="block-title">Ключевые аспекты</h3>
+            <h3 id="aspects-title" class="block-title">{{ pair.data.locked ? 'Ключевые аспекты' : 'Все связи ваших карт' }}</h3>
             <ul v-if="aspects.length" class="chips">
               <li v-for="aspect in aspects" :key="aspect.key">
                 <button
@@ -324,10 +331,14 @@ function status_of(item) {
                     <span class="glyph-theirs">{{ aspect.theirs }}</span>
                   </span>
                   <span class="chip-text" aria-hidden="true">{{ aspect.title }}</span>
+                  <span v-if="aspect.text" class="chip-desc">{{ aspect.text }}</span>
                 </button>
               </li>
             </ul>
             <p v-else class="quiet-text">Тесных аспектов между картами нет: связь складывается из времени и выбора.</p>
+            <p v-if="pair.data.locked && moreAspects > 0" class="quiet-text">
+              И ещё {{ moreAspects }} {{ moreAspectsWord }} между картами — каждая с толкованием в разборе пары.
+            </p>
           </section>
 
           <template v-if="pair.data.locked">
@@ -339,7 +350,8 @@ function status_of(item) {
             </section>
             <div class="unlock">
               <p class="unlock-note">
-                Дальше — что стоит за каждой сферой: как вы любите, спорите и растёте рядом.
+                Дальше — что стоит за каждой из пяти сфер, все связи ваших карт с толкованием,
+                где планеты партнёра стоят в ваших домах и каким получается ваш союз как целое.
                 Разбор открывается один раз и остаётся с этой парой навсегда.
               </p>
               <dl class="pair-prices">
@@ -560,6 +572,7 @@ function status_of(item) {
 .chip-glyphs .tone-easy, .chip-glyphs .tone-joint { color: #f0cd8a; }
 .chip-glyphs .tone-tense { color: #d98b7a; }
 .chip-text { font-family: var(--book); font-size: 14px; line-height: 1.4; }
+.chip-desc { grid-column: 2 / -1; font-family: var(--book); font-size: 13.5px; line-height: 1.5; color: rgba(226, 220, 210, 0.7); }
 
 .unlock { display: grid; gap: 12px; justify-items: start; margin-top: -8px; }
 /* The reading's opening dissolves into the haze: the rest is the bought part. */

@@ -8,6 +8,7 @@ import SkyNudge from '../../components/sky/SkyNudge.vue'
 import { useChart } from '../../composables/useChart.js'
 import { PERIODS, useForecast } from '../../composables/useForecast.js'
 import { ASPECTS, POINTS } from '../../components/cabinet/astro.js'
+import { PHASES, SPHERES, SPHERE_TONES, eventGlyph, eventLine } from '../../components/sky/forecastWords.js'
 import { usePrices } from '../../utils/prices.js'
 
 /**
@@ -54,6 +55,7 @@ function choose(value) {
 const dayFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', timeZone: 'UTC' })
 const weekdayFormat = new Intl.DateTimeFormat('ru-RU', { weekday: 'long', timeZone: 'UTC' })
 const shortWeekday = new Intl.DateTimeFormat('ru-RU', { weekday: 'short', timeZone: 'UTC' })
+const shortDay = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', timeZone: 'UTC' })
 // The dates are calendar days of the person's zone: read them as such, not as moments.
 const day = (iso) => new Date(`${iso}T00:00:00Z`)
 
@@ -77,7 +79,45 @@ const transits = computed(() => (data.value ? data.value.transits : []).map((tra
   // «Марс: квадрат с Венерой»
   label: `${POINTS[transit.a].name}: ${ASPECTS[transit.type].name.toLowerCase()} с ${POINTS[transit.b].with}`,
   when: transit.date ? shortWeekday.format(day(transit.date)) : '',
+  // A slow transit stands for months: «до 23 февр.».
+  until: transit.span ? `до ${shortDay.format(day(transit.span.to))}` : '',
 })))
+
+/** The four spheres of the day, each with its tone: a calculation, so open to everyone. */
+const spheres = computed(() => (data.value?.spheres
+  ? SPHERES.map((sphere) => ({ ...sphere, tone: data.value.spheres[sphere.id], word: SPHERE_TONES[data.value.spheres[sphere.id]] }))
+  : []))
+
+/** The best day of the week for each sphere, when one stands out. */
+const best = computed(() => SPHERES.filter((sphere) => data.value?.best?.[sphere.id]).map((sphere) => {
+  const date = day(data.value.best[sphere.id])
+  return { ...sphere, when: `${weekdayFormat.format(date)}, ${date.getUTCDate()}` }
+}))
+
+function inDays(count) {
+  if (count === 1) return 'завтра'
+  const last = count % 10
+  const teen = count % 100 >= 11 && count % 100 <= 14
+  const word = last === 1 && !teen ? 'день' : last >= 2 && last <= 4 && !teen ? 'дня' : 'дней'
+  return `через ${count} ${word}`
+}
+
+/** The sky itself: the Moon's phase, what turns and changes sign, who goes backwards. */
+const moonLine = computed(() => {
+  const moon = data.value?.moon
+  if (!moon?.phase) return null
+  const next = moon.next && moon.next.in > 0
+    ? `${moon.next.kind === 'full' ? 'полнолуние' : 'новолуние'} ${inDays(moon.next.in)}, ${dayFormat.format(day(moon.next.date))}`
+    : ''
+  return { glyph: PHASES[moon.phase].glyph, name: PHASES[moon.phase].name, next }
+})
+const events = computed(() => (data.value?.events || []).map((event, index) => ({
+  key: `${event.kind}-${event.planet}-${index}`,
+  glyph: eventGlyph(event),
+  text: eventLine(event),
+  when: event.date ? shortWeekday.format(day(event.date)) : '',
+})))
+const retro = computed(() => (data.value?.retro || []).map((id) => ({ id, glyph: POINTS[id].glyph, name: POINTS[id].name })))
 
 const week = computed(() => (data.value?.days || []).map((entry) => {
   const date = day(entry.date)
@@ -141,6 +181,16 @@ function setHot(key) {
         </RouterLink>
       </div>
 
+      <section v-if="spheres.length" class="block" aria-labelledby="spheres-title">
+        <h3 id="spheres-title" class="block-title">Сферы дня</h3>
+        <ul class="spheres">
+          <li v-for="sphere in spheres" :key="sphere.id" class="sphere" :class="`tone-${sphere.tone}`">
+            <span class="sphere-name">{{ sphere.name }}</span>
+            <span class="sphere-tone"><span class="week-dot" aria-hidden="true" /> {{ sphere.word }}</span>
+          </li>
+        </ul>
+      </section>
+
       <section v-if="week.length" class="block" aria-labelledby="week-title">
         <h3 id="week-title" class="block-title">Семь дней</h3>
         <ol class="week">
@@ -155,6 +205,12 @@ function setHot(key) {
           <span class="legend-item tone-tense"><span class="week-dot" /> бережнее</span>
           <span class="legend-item tone-calm"><span class="week-dot" /> ровно</span>
         </p>
+        <dl v-if="best.length" class="best">
+          <template v-for="entry in best" :key="entry.id">
+            <dt>{{ entry.name }}</dt>
+            <dd>{{ entry.when }}</dd>
+          </template>
+        </dl>
       </section>
 
       <section class="block" aria-labelledby="transits-title">
@@ -165,7 +221,7 @@ function setHot(key) {
               type="button"
               class="chip"
               :class="{ 'is-on': hot === transit.key }"
-              :aria-label="transit.when ? `${transit.label}, ${transit.when}` : transit.label"
+              :aria-label="[transit.label, transit.when, transit.until].filter(Boolean).join(', ')"
               @pointerenter="setHot(transit.key)"
               @pointerleave="setHot('')"
               @focus="setHot(transit.key)"
@@ -177,11 +233,29 @@ function setHot(key) {
                 <span class="glyph-natal">{{ transit.to }}</span>
               </span>
               <span class="chip-text" aria-hidden="true">{{ transit.label }}</span>
-              <span v-if="transit.when" class="chip-when" aria-hidden="true">{{ transit.when }}</span>
+              <span v-if="transit.when || transit.until" class="chip-when" aria-hidden="true">{{ [transit.when, transit.until].filter(Boolean).join(' · ') }}</span>
             </button>
           </li>
         </ul>
         <p v-else class="quiet-text">Тесных транзитов нет: небо оставляет вам свободу.</p>
+      </section>
+
+      <section v-if="moonLine || events.length || retro.length" class="block" aria-labelledby="sky-title">
+        <h3 id="sky-title" class="block-title">{{ period === 'day' ? 'Небо дня' : 'Небо недели' }}</h3>
+        <ul v-if="moonLine || events.length" class="sky-lines">
+          <li v-if="moonLine" class="sky-line">
+            <span class="sky-glyph" aria-hidden="true">{{ moonLine.glyph }}</span>
+            <span>{{ moonLine.name }}<span v-if="moonLine.next" class="sky-aside">, {{ moonLine.next }}</span></span>
+          </li>
+          <li v-for="event in events" :key="event.key" class="sky-line">
+            <span class="sky-glyph" aria-hidden="true">{{ event.glyph }}</span>
+            <span>{{ event.text }}<span v-if="event.when" class="sky-aside"> · {{ event.when }}</span></span>
+          </li>
+        </ul>
+        <p v-if="retro.length" class="retro">
+          <span class="retro-label">Попятно:</span>
+          <span v-for="planet in retro" :key="planet.id" class="retro-chip"><span aria-hidden="true">{{ planet.glyph }}</span> {{ planet.name }}</span>
+        </p>
       </section>
 
       <SkyNudge v-if="period === 'week'" :to="{ query: { period: 'month' } }" action="Открыть календарь">
@@ -273,6 +347,26 @@ function setHot(key) {
 .tone-tense .week-dot { background: #d98b7a; box-shadow: 0 0 8px rgba(230, 130, 110, 0.6); }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0; font-family: var(--serif); font-style: italic; font-size: 15px; color: rgba(226, 220, 210, 0.55); }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+
+.spheres { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.sphere { display: grid; gap: 2px; padding: 8px 12px; border-radius: 14px; border: 1px solid rgba(240, 210, 150, 0.12); }
+.sphere-name { font-family: var(--book); font-size: 13.5px; color: rgba(226, 220, 210, 0.7); }
+.sphere-tone { display: inline-flex; align-items: center; gap: 7px; font-family: var(--serif); font-style: italic; font-size: 17px; color: #dfe6f2; }
+.sphere.tone-easy .sphere-tone { color: #f6dfa6; }
+.sphere.tone-tense .sphere-tone { color: #e8a594; }
+
+.best { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 4px 0 0; font-size: 14px; }
+.best dt { font-family: var(--book); color: rgba(226, 220, 210, 0.62); }
+.best dd { margin: 0; font-family: var(--serif); font-style: italic; font-size: 16px; color: #f6dfa6; }
+
+.sky-lines { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.sky-line { display: grid; grid-template-columns: 22px 1fr; align-items: baseline; gap: 8px; font-family: var(--book); font-size: 14px; line-height: 1.45; color: #efe7d8; }
+.sky-glyph { font-family: 'Segoe UI Symbol', 'Noto Sans Symbols', sans-serif; font-size: 15px; text-align: center; color: #d6e2f4; }
+.sky-aside { color: rgba(226, 220, 210, 0.55); }
+.retro { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 0; font-size: 13.5px; }
+.retro-label { font-family: var(--serif); font-style: italic; font-size: 15px; color: rgba(226, 220, 210, 0.55); }
+.retro-chip { padding: 3px 10px; border-radius: 999px; border: 1px solid rgba(217, 139, 122, 0.35); color: #e8c2b8; }
+.retro-chip span { font-family: 'Segoe UI Symbol', 'Noto Sans Symbols', sans-serif; }
 
 .chips { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .chip {

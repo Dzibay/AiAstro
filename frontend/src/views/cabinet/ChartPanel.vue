@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
 import ReadingText from '../../components/cabinet/ReadingText.vue'
+import LockedReading from '../../components/cabinet/LockedReading.vue'
 import SkyNudge from '../../components/sky/SkyNudge.vue'
 import { markStep } from '../../utils/newcomer.js'
 import { useChart } from '../../composables/useChart.js'
@@ -21,7 +22,7 @@ const props = defineProps({
 })
 
 const route = useRoute()
-const { chart, status, message, hot, load, reading } = useChart()
+const { chart, status, message, hot, load, reading, portrait: loadPortrait, forgetReadings } = useChart()
 
 onMounted(load)
 
@@ -29,6 +30,37 @@ const item = computed(() => (typeof route.params.item === 'string' ? route.param
 const items = computed(() => (chart.value ? chartItems(chart.value) : []))
 const byId = computed(() => Object.fromEntries(items.value.map((point) => [point.id, point])))
 const current = computed(() => byId.value[item.value] || null)
+
+/* ---- The portrait: the chart read as a whole ---- */
+
+const portrait = ref(null)
+const portraitError = ref('')
+async function fetchPortrait() {
+  portraitError.value = ''
+  try {
+    portrait.value = await loadPortrait()
+  } catch (error) {
+    portraitError.value = errorText(error)
+  }
+}
+watch(() => status.value === 'ready' && !item.value, (open) => {
+  if (open && !portrait.value) fetchPortrait()
+}, { immediate: true })
+
+// «Небосвод» lit or gone out: the texts come again, whole or veiled.
+watch(() => props.user.sky, async () => {
+  forgetReadings()
+  portrait.value = null
+  if (status.value === 'ready' && !item.value) fetchPortrait()
+  const id = item.value
+  if (!id || !current.value) return
+  try {
+    const result = await reading(id)
+    if (item.value === id) text.value = { id, ...result }
+  } catch {
+    // The old text stays; the next choice asks again.
+  }
+})
 
 const birthLine = computed(() => {
   const birth = props.user.birth
@@ -82,9 +114,20 @@ const aspects = computed(() => {
     .filter((aspect) => aspect.a === item.value || aspect.b === item.value)
     .map((aspect) => {
       const other = aspect.a === item.value ? aspect.b : aspect.a
-      return { key: `${aspect.a}-${aspect.b}`, other, ...ASPECTS[aspect.type], with: POINTS[other].with, orb: degrees(aspect.orb) }
+      const meaning = text.value?.id === item.value
+        ? text.value.aspects?.find((entry) => entry.a === aspect.a && entry.b === aspect.b && entry.type === aspect.type)
+        : null
+      return {
+        key: `${aspect.a}-${aspect.b}`,
+        other,
+        ...ASPECTS[aspect.type],
+        with: POINTS[other].with,
+        orb: degrees(aspect.orb),
+        text: meaning?.text || '',
+      }
     })
 })
+const aspectsLocked = computed(() => Boolean(text.value?.id === item.value && text.value.locked))
 
 const panel = ref(null)
 let asked = ''
@@ -184,9 +227,14 @@ const nudge = computed(() => {
                 <RouterLink class="inline" :to="linkTo(aspect.other)" @pointerenter="setHot(aspect.other)" @pointerleave="setHot('')">{{ aspect.with }}</RouterLink>
               </span>
               <span class="orb">орбис {{ aspect.orb }}</span>
+              <p v-if="aspect.text" class="aspect-text">{{ aspect.text }}</p>
             </li>
           </ul>
           <p v-else class="quiet-text">Мажорных аспектов нет: эта точка говорит сама за себя.</p>
+          <p v-if="aspects.length && aspectsLocked" class="note">
+            Что значит каждый из этих аспектов для вас, читайте в
+            <RouterLink class="inline" :to="{ name: 'cabinet-sky' }">«Небосводе»</RouterLink>.
+          </p>
         </section>
 
         <SkyNudge v-if="nudge" :to="nudge.to" :action="nudge.action" :tone="nudge.tone">{{ nudge.text }}</SkyNudge>
@@ -234,6 +282,18 @@ const nudge = computed(() => {
             </span>
           </template>
         </div>
+      </section>
+
+      <section class="block" aria-labelledby="portrait-title">
+        <h3 id="portrait-title" class="block-title">Портрет</h3>
+        <p v-if="portraitError" class="error">{{ portraitError }}</p>
+        <LockedReading
+          v-else-if="portrait"
+          :reading="portrait.reading"
+          :locked="portrait.locked"
+          :note="`Открыта первая из ${portrait.total} глав: ядро карты. Восход и управитель, темперамент, акценты, главное напряжение и главный дар, путь роста — в «Небосводе».`"
+        />
+        <p v-else class="loading">Складываем карту в одно целое…</p>
       </section>
 
       <section class="block balance" aria-labelledby="balance-title">
@@ -371,6 +431,14 @@ a.three-item:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 2px; }
 .row-retro { font-family: var(--serif); font-style: italic; font-size: 14px; color: rgba(233, 194, 124, 0.8); }
 
 .aspect-list li { display: grid; grid-template-columns: 22px 1fr auto; align-items: baseline; gap: 8px; padding: 5px 0; font-family: var(--book); font-size: 15px; }
+.aspect-text {
+  grid-column: 2 / -1;
+  margin: 2px 0 6px;
+  font-family: var(--book);
+  font-size: 14px;
+  line-height: 1.65;
+  color: rgba(239, 231, 216, 0.82);
+}
 .aspect-glyph { font-family: 'Segoe UI Symbol', 'Noto Sans Symbols', sans-serif; text-align: center; }
 .tone-easy, .tone-joint { color: #f0cd8a; }
 .tone-tense { color: #d98b7a; }

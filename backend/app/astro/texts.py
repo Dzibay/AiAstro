@@ -9,6 +9,11 @@ import json
 import re
 from datetime import date
 
+from app.astro import forecast_texts as F
+from app.astro import natal_texts as N
+from app.astro import pair_texts as P
+from app.astro.portrait import element_of
+
 # Roman numerals for the houses, as astrologers write them.
 ROMAN = ("I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII")
 
@@ -183,6 +188,46 @@ def forecast_title(forecast: dict) -> str:
     return variants[date.fromisoformat(forecast["start"]).toordinal() % len(variants)]
 
 
+def _day_month(iso: str, year: int | None = None) -> str:
+    """«26 октября», with the year when it is not `year`."""
+    day = date.fromisoformat(iso)
+    text = f"{day.day} {F.MONTHS[day.month - 1]}"
+    return text if year in (None, day.year) else f"{text} {day.year} года"
+
+
+def _in_days(count: int) -> str:
+    if count == 1:
+        return "завтра"
+    if count % 10 == 1 and count % 100 != 11:
+        word = "день"
+    elif count % 10 in (2, 3, 4) and count % 100 not in (12, 13, 14):
+        word = "дня"
+    else:
+        word = "дней"
+    return f"через {count} {word}"
+
+
+def _span_line(span: dict, start: date) -> str:
+    """«Это надолго: с 5 октября по 22 февраля 2027 года» — a slow transit stands for months."""
+    begun, ends = date.fromisoformat(span["from"]), date.fromisoformat(span["to"])
+    if (ends - begun).days < 21:
+        return f"Он продлится примерно до {_day_month(span['to'], start.year)}."
+    head = "Это надолго" if (ends - begun).days >= 60 else "Это на несколько недель"
+    if begun >= start:
+        return f"{head}: с {_day_month(span['from'], start.year)} по {_day_month(span['to'], start.year)}."
+    return f"{head}: транзит идёт с {_day_month(span['from'], start.year)} и продлится до {_day_month(span['to'], start.year)}."
+
+
+def _event_line(event: dict) -> str:
+    """«полнолуние в Тельце: кульминация и ясность»."""
+    sign = SIGNS[event["sign"]][0]
+    name = POINTS[event["planet"]][0]
+    line = F.EVENT[event["kind"]].format(sign=sign, name=name, into=F.SIGN_GENITIVE[event["sign"]])
+    if event["kind"] == "ingress":
+        line += f": {F.INGRESS_THEME[event['planet']]}"
+    return line
+
+
 def transit_phrase(transit: dict) -> str:
     """«Марс в квадрате к вашей Венере»."""
     phrase = _ASPECT_PHRASE[transit["type"]].format(dative=_DATIVE[transit["b"]], instrumental=_INSTRUMENTAL[transit["b"]])
@@ -231,6 +276,24 @@ _ELEMENT_NAMES = {"fire": "огонь", "earth": "земля", "air": "возд�
 _KINDRED = ({"fire", "air"}, {"earth", "water"})
 
 
+def _overlay_text(planets: list[dict], theirs: bool) -> str:
+    """«Солнце и Луна партнёра — в вашем III доме: вам есть о чём говорить… Солнце освещает…»."""
+    by_house: dict[int, list[str]] = {}
+    for planet in planets:
+        by_house.setdefault(planet["house"], []).append(planet["id"])
+    lines = []
+    for house, ids in by_house.items():
+        names = _joined([POINTS[key][0] for key in ids])
+        if theirs:
+            head = f"{names} {_GENITIVE_PARTNER} — в вашем {ROMAN[house - 1]} доме"
+        else:
+            own = "Ваши" if len(ids) > 1 else _OWN[POINTS[ids[0]][1]]
+            head = f"{own} {names} — в {ROMAN[house - 1]} доме {_GENITIVE_PARTNER}"
+        lines.append(f"{head}: {P.OVERLAY_HOUSE[house - 1]}.")
+        lines += [f"{POINTS[key][0]} {P.OVERLAY_PLANET[key]}." for key in ids]
+    return " ".join(lines)
+
+
 def pair_phrase(pair: dict) -> str:
     return PAIR_PHRASES[pair["tone"]]
 
@@ -253,7 +316,7 @@ def _joined(words: list[str]) -> str:
 # What a question is about: the stems that give it away, the points of the chart that answer it,
 # and the advice the answer ends with. The first topic whose stem is found wins.
 _TOPICS = (
-    ("love", ("любов", "любим", "отношен", "партнёр", "партнер", "брак", "свидан", "влюб", "семейн"),
+    ("love", ("любов", "любв", "люблю", "любит", "любим", "отношен", "партнёр", "партнер", "брак", "свидан", "влюб", "семейн"),
      ("venus", "moon", "mars"),
      "В любви ваша карта просит не угадывать, а говорить: то, что названо вслух, становится ближе."),
     ("money", ("деньг", "денег", "доход", "финанс", "заработ", "зарплат", "покупк", "трат"),
@@ -346,6 +409,26 @@ def _aspect_line(chart: dict, point: str) -> str | None:
             "которое становится ростом, если его не прятать.")
 
 
+# The sphere of the day (app.astro.forecast.SPHERES) a topic of the chat belongs to.
+_CHAT_SPHERE = {"love": "love", "feelings": "love", "money": "work", "work": "work", "talk": "talk", "energy": "energy",
+                "luck": "work"}
+
+
+def _now_line(today: dict | None, points: list[str], sphere: str | None) -> str | None:
+    """Today's transit to the asked point, else how the day sounds for the asked sphere."""
+    if not today:
+        return None
+    transit = next((t for t in today["transits"] if t["b"] in points), None)
+    if transit:
+        lines = [f"Сейчас {transit_phrase(transit)}.", _ADVICE[transit["a"]][0 if transit["lean"] > 0 else 1]]
+        if transit.get("span"):
+            lines.append(_span_line(transit["span"], date.fromisoformat(today["start"])))
+        return " ".join(lines)
+    if sphere and today.get("spheres"):
+        return f"Сегодня в сфере «{F.SPHERE_NAMES[sphere]}» {F.SPHERE_TONE[sphere][today['spheres'][sphere]]}."
+    return None
+
+
 def chat_suggestions(chart: dict) -> list[str]:
     """Three or four questions the person might ask first, in their own voice, about their own chart."""
     suggestions = []
@@ -403,23 +486,39 @@ class Interpreter:
     def natal_item(self, point: str, sign: str, house: int | None, retro: bool = False) -> dict:
         raise NotImplementedError
 
+    def portrait(self, facts: dict) -> dict:
+        """The chart read as a whole (app.astro.portrait.facts); without «Небосвод» only its first part is shown."""
+        raise NotImplementedError
+
+    def natal_aspect(self, a: str, b: str, kind: str) -> str:
+        """One aspect inside the person's chart, in a short paragraph."""
+        raise NotImplementedError
+
     def forecast(self, forecast: dict) -> dict:
         """The reading of a day or a week (app.astro.forecast.build); without «Небосвод» only its first part is shown."""
         raise NotImplementedError
 
     def synastry(self, pair: dict) -> dict:
-        """The full reading of a pair (app.astro.synastry.build)."""
+        """The full reading of a pair (app.astro.synastry.build); before the purchase only its first part is shown."""
         raise NotImplementedError
 
-    def chat(self, history: list[dict], chart: dict) -> dict:
-        """The answer to the last message of `history` ({role: user | astrologer, text}, oldest first)."""
+    def pair_aspect(self, a: str, b: str, kind: str) -> str:
+        """One aspect between two charts (`a` is the person's, `b` the partner's), in a short paragraph."""
+        raise NotImplementedError
+
+    def chat(self, history: list[dict], chart: dict, context: dict | None = None) -> dict:
+        """The answer to the last message of `history` ({role: user | astrologer, text}, oldest first).
+
+        `context` is what is known besides the chart: {today: forecast.build of the day, month:
+        forecast.month, partners: [{name, tone, spheres}]}; any of it may be missing.
+        """
         raise NotImplementedError
 
 
 class StubInterpreter(Interpreter):
     """Templates until the AI is connected. The chat answers with facts of the chart, not with wit."""
 
-    version = 2
+    version = 7
 
     def natal_item(self, point: str, sign: str, house: int | None, retro: bool = False) -> dict:
         name, pronoun, theme = POINTS[point]
@@ -439,6 +538,101 @@ class StubInterpreter(Interpreter):
                                              "через пересмотр и возвращение."))
         return {"essence": f"{_cap(head)} — {manner}.", "parts": parts}
 
+    def portrait(self, facts: dict) -> dict:
+        sun, moon = facts["sun"], facts["moon"]
+        core = [f"Солнце {SIGNS[sun][0]} — сердцевина вашей карты. {_SIGN_VOICE[sun]}"]
+        if moon:
+            sun_element, moon_element = element_of(sun), element_of(moon)
+            if sun_element == moon_element:
+                relation = "same"
+            elif {sun_element, moon_element} in _KINDRED:
+                relation = "kindred"
+            else:
+                relation = "foreign"
+            core.append(N.SUN_MOON[relation].format(
+                element=N.ELEMENT_NAMES[sun_element],
+                sun_element=N.ELEMENT_NAMES[sun_element],
+                moon_element=N.ELEMENT_NAMES[moon_element],
+            ))
+        parts = [_part("Ядро", " ".join(core))]
+
+        ruler = facts["ruler"]
+        if facts["asc"] and ruler:
+            name, pronoun, _ = POINTS[ruler["id"]]
+            template = {"он": N.RULER, "она": N.RULER_FEMININE, "оно": N.RULER_NEUTER}[pronoun]
+            rising = [N.RISING[facts["asc"]], template.format(rising=SIGNS[facts["asc"]][0], ruler=name)]
+            where = f"{_cap(pronoun)} стоит {SIGNS[ruler['sign']][0]}"
+            if ruler["house"]:
+                where += f", в {ROMAN[ruler['house'] - 1]} доме — {HOUSES[ruler['house'] - 1]}: туда и тянется ваша жизнь"
+            rising.append(f"{where}.")
+            parts.append(_part("Восход", " ".join(rising)))
+
+        pair = facts.get("element_pair") or []
+        if facts["element"]:
+            temperament = [N.ELEMENT_LEAD[facts["element"]]]
+        elif pair:
+            temperament = [N.ELEMENTS_PAIR.format(a=N.ELEMENT_NAMES[pair[0]], b=N.ELEMENT_NAMES[pair[1]],
+                                                  first=N.ELEMENT_GIFT[pair[0]], second=N.ELEMENT_GIFT[pair[1]])]
+        else:
+            temperament = [N.ELEMENTS_EVEN]
+        temperament += [N.ELEMENT_MISSING[element] for element in facts["missing"]]
+        temperament.append(N.MODE_LEAD[facts["mode"]] if facts["mode"] else N.MODES_EVEN)
+        parts.append(_part("Темперамент", " ".join(temperament)))
+
+        accents = []
+        for group in facts["stellium_signs"]:
+            sign = group["sign"]
+            template = N.STELLIUM_SUN if sign == sun else N.STELLIUM_SIGN
+            accents.append(template.format(
+                names=_joined([POINTS[point][0] for point in group["points"]]), where=SIGNS[sign][0], voice=_SIGN_VOICE[sign],
+            ))
+        for index, group in enumerate(facts["stellium_houses"]):
+            accents.append((N.STELLIUM_HOUSE_MORE if index else N.STELLIUM_HOUSE).format(
+                names=_joined([POINTS[point][0] for point in group["points"]]),
+                house=ROMAN[group["house"] - 1],
+                theme=HOUSES[group["house"] - 1],
+            ))
+        for entry in facts["on_angles"]:
+            name, _, theme = POINTS[entry["id"]]
+            accents.append(N.ON_ANGLE[entry["angle"]].format(name=name, theme=re.split(r"[:,]", theme, maxsplit=1)[0]))
+        for lean in (facts["hemispheres"] or {}).values():
+            if lean:
+                accents.append(N.HEMISPHERE[lean])
+        if accents:
+            parts.append(_part("Акценты", " ".join(accents)))
+
+        if facts["tension"]:
+            aspect = facts["tension"]
+            parts.append(_part("Главное напряжение", self.natal_aspect(aspect["a"], aspect["b"], aspect["type"])))
+        if facts["gift"]:
+            aspect = facts["gift"]
+            parts.append(_part("Главный дар", self.natal_aspect(aspect["a"], aspect["b"], aspect["type"])))
+        if facts["phase"]:
+            parts.append(_part("Луна при рождении", N.PHASE[facts["phase"]]))
+
+        node = facts["node"]
+        path = [N.NODE_SIGN[node["sign"]]]
+        if node["house"]:
+            path.append(f"Узел стоит в {ROMAN[node['house'] - 1]} доме: {HOUSES[node['house'] - 1]} — сфера, где этот рост случается.")
+        parts.append(_part("Путь", " ".join(path)))
+        if not facts["element"] and pair:
+            essence = N.ESSENCE_PAIR.format(a=N.ELEMENT_NAMES[pair[0]], b=N.ELEMENT_NAMES[pair[1]])
+        else:
+            essence = N.ESSENCE[facts["element"]]
+        return {"essence": f"{essence}.", "parts": parts}
+
+    def natal_aspect(self, a: str, b: str, kind: str) -> str:
+        angle = next((point for point in (a, b) if point in ("asc", "mc")), None)
+        if angle:
+            other = b if angle == a else a
+            theme = N.ANGLE_PAIR[angle].format(name=POINTS[other][0])
+        else:
+            theme = N.NATAL_PAIRS.get(frozenset({a, b}))
+            if theme is None:
+                first, second = (re.split(r"[:,]", POINTS[point][2], maxsplit=1)[0] for point in (a, b))
+                theme = f"{POINTS[a][0]} и {POINTS[b][0]}: {first} и {second}."
+        return " ".join([theme, N.ASPECT_DYNAMIC[kind], N.ASPECT_ADVICE[kind]])
+
     def forecast(self, forecast: dict) -> dict:
         period, tone = forecast["period"], forecast["tone"]
         parts = []
@@ -447,7 +641,17 @@ class StubInterpreter(Interpreter):
             line = f"Сегодня Луна {SIGNS[moon['sign']][0]}"
             if moon["house"]:
                 line += f" и проходит ваш {ROMAN[moon['house'] - 1]} дом: {HOUSES[moon['house'] - 1]}"
-            parts.append(_part("Луна", f"{line}. День звучит {SIGNS[moon['sign']][1]}."))
+            text = f"{line}. День звучит {SIGNS[moon['sign']][1]}."
+            if moon.get("phase"):
+                name, meaning = F.PHASE[moon["phase"]]
+                text += f" Фаза — {name}. {meaning}"
+            upcoming = moon.get("next")
+            if upcoming and upcoming["in"] > 0:
+                text += f" {F.LUNATION[upcoming['kind']]} — {_in_days(upcoming['in'])}, {_day_month(upcoming['date'])}."
+            parts.append(_part("Луна", text))
+            if forecast.get("spheres"):
+                parts.append(_part("Сферы дня", " ".join(
+                    f"{F.SPHERE_NAMES[key]}: {F.SPHERE_TONE[key][value]}." for key, value in forecast["spheres"].items())))
         else:
             names: dict[str, list[str]] = {}
             for day in forecast["days"]:
@@ -462,19 +666,51 @@ class StubInterpreter(Interpreter):
                 days.append(f"Больше бережности {verb} {_joined(names['tense'])}.")
             if days:
                 parts.append(_part("Дни недели", " ".join(days)))
+            best = forecast.get("best") or {}
+            if best:
+                parts.append(_part("Лучшие дни", " ".join(
+                    f"{_cap(F.SPHERE_FOR[key])} — {WEEKDAYS[date.fromisoformat(day).weekday()]}."
+                    for key, day in best.items())))
 
-        for index, transit in enumerate(forecast["transits"][:2]):
+        start = date.fromisoformat(forecast["start"])
+        advised = set()
+        for index, transit in enumerate(forecast["transits"][:3]):
             when = ""
             if transit.get("date"):
                 when = f", точнее всего {_ON_WEEKDAY[date.fromisoformat(transit['date']).weekday()]}"
-            parts.append(_part("Главный транзит" if index == 0 else "И ещё", " ".join([
+            lines = [
                 f"{transit_phrase(transit)}{when}.",
                 f"Этот транзит трогает {_TOUCHES[transit['b']]}.",
-                _ADVICE[transit["a"]][0 if transit["lean"] > 0 else 1],
-            ])))
+            ]
+            # One planet gives its advice once, however many points it touches.
+            if transit["a"] not in advised:
+                lines.append(_ADVICE[transit["a"]][0 if transit["lean"] > 0 else 1])
+                advised.add(transit["a"])
+            if transit.get("span"):
+                lines.append(_span_line(transit["span"], start))
+            parts.append(_part(("Главный транзит", "И ещё", "Фоном")[index], " ".join(lines)))
         if not forecast["transits"]:
             parts.append(_part("Транзиты", "Тесных транзитов к вашей карте нет: небо оставляет вам свободу, "
                                            "распорядитесь ею по-своему."))
+
+        events = forecast.get("events") or []
+        if events:
+            lines = []
+            for event in events:
+                line = _event_line(event)
+                if event.get("date") and period == "week":
+                    line = f"{_cap(_ON_WEEKDAY[date.fromisoformat(event['date']).weekday()])} {line}"
+                lines.append(_cap(line) + ".")
+            parts.append(_part("Небо " + ("дня" if period == "day" else "недели"), " ".join(lines)))
+
+        retro = forecast.get("retro") or []
+        if retro:
+            lines = [F.RETRO[key] for key in retro if key in F.RETRO]
+            slow = [POINTS[key][0] for key in retro if key not in F.RETRO]
+            if slow:
+                template = F.RETRO_SLOW_ONE if len(slow) == 1 else F.RETRO_SLOW
+                lines.append(template.format(names=_joined(slow), also=" тоже" if lines else ""))
+            parts.append(_part("Попятные планеты", " ".join(lines)))
 
         parts.append(_part("Совет", _CLOSE[tone]))
         return {"essence": _OPEN[period][tone], "parts": parts}
@@ -491,16 +727,44 @@ class StubInterpreter(Interpreter):
             elements = (f"У вас преобладает {_ELEMENT_NAMES[mine]}, у партнёра — {_ELEMENT_NAMES[theirs]}: "
                         "разный темп, и в этом ваша возможность научиться друг у друга.")
         parts = [_part("Стихии", elements)]
+
+        for sphere in pair["spheres"]:
+            label, variants = P.SPHERES[sphere["id"]]
+            band = 0 if sphere["score"] <= 2 else 1 if sphere["score"] == 3 else 2
+            parts.append(_part(label, variants[band]))
+
         for aspect in pair["key"][:3]:
-            parts.append(_part(pair_aspect_title(aspect), " ".join([
-                f"С вашей стороны здесь {_PAIR_THEMES[aspect['a']]}, со стороны партнёра — {_PAIR_THEMES[aspect['b']]}.",
-                _PAIR_ASPECT[aspect["type"]],
-            ])))
+            parts.append(_part(pair_aspect_title(aspect), self.pair_aspect(aspect["a"], aspect["b"], aspect["type"])))
+
+        overlays = pair["overlays"]
+        if overlays["theirs_in_mine"]:
+            parts.append(_part("Партнёр в ваших домах", _overlay_text(overlays["theirs_in_mine"], theirs=True)))
+        if overlays["mine_in_theirs"]:
+            parts.append(_part("Вы в домах партнёра", _overlay_text(overlays["mine_in_theirs"], theirs=False)))
+
+        composite = pair.get("composite")
+        if composite:
+            sign, manner = SIGNS[composite["sun"]]
+            text = P.COMPOSITE_SUN.format(sign=sign, manner=manner)
+            if composite["moon"]:
+                sign, manner = SIGNS[composite["moon"]]
+                text += " " + P.COMPOSITE_MOON.format(sign=sign, manner=manner)
+            parts.append(_part("Союз как целое", text))
+
         parts.append(_part("Совет", _PAIR_CLOSE[tone]))
         return {"essence": _PAIR_OPEN[tone], "parts": parts}
 
-    def chat(self, history: list[dict], chart: dict) -> dict:
+    def pair_aspect(self, a: str, b: str, kind: str) -> str:
+        meaning = P.PAIRS.get(frozenset({a, b}))
+        if meaning is None:
+            meaning = f"С вашей стороны здесь {_PAIR_THEMES[a]}, со стороны партнёра — {_PAIR_THEMES[b]}."
+        # The same pair of points always gets the same words: the choice rests on their names alone.
+        variants = P.DYNAMIC[kind]
+        return f"{meaning} {variants[sum(map(ord, a + b)) % len(variants)]}"
+
+    def chat(self, history: list[dict], chart: dict, context: dict | None = None) -> dict:
         question = _words(history[-1]["text"])
+        context = context or {}
         topic, points, named = _subject(question, chart)
 
         point = points[0]
@@ -527,12 +791,33 @@ class StubInterpreter(Interpreter):
             other = _find(chart, points[1])
             other_name, other_pronoun, other_theme = POINTS[points[1]]
             parts.append(_part("И ещё", f"{_OWN[other_pronoun]} {other_name} {SIGNS[other['sign']][0]} — {other_theme}."))
+        sphere = _CHAT_SPHERE.get(topic)
+        now = _now_line(context.get("today"), points[:2], sphere)
+        if now:
+            parts.append(_part("Сейчас в небе", now))
+        when = []
+        days = [day for day in context.get("month") or [] if sphere and (day.get("spheres") or {}).get(sphere) == "easy"]
+        if days and (sphere or any(word in question for word in _WHEN)):
+            start = date.fromisoformat(context["month"][0]["date"]).year
+            dates = [_day_month(day["date"], start) for day in days[:3]]
+            when.append(f"Ближайшие дни, когда небо поддержит это: {_joined(dates)}.")
         if any(word in question for word in _WHEN):
             ruler = next((item for item in points if item in _DAY_OF), "sun")
             day = _DAY_OF[ruler]
-            parts.append(_part("Когда", f"Из дней недели вам ближе всего {WEEKDAYS[day]}: "
-                                        f"{_DAY_PRONOUN[day]} хранит {POINTS[ruler][0]}, и {_ON_WEEKDAY[day]} "
-                                        "эта сила звучит в вас громче."))
+            when.append(f"Из дней недели вам ближе всего {WEEKDAYS[day]}: "
+                        f"{_DAY_PRONOUN[day]} хранит {POINTS[ruler][0]}, и {_ON_WEEKDAY[day]} "
+                        "эта сила звучит в вас громче.")
+        if when:
+            parts.append(_part("Когда", " ".join(when)))
+        partners = context.get("partners") or []
+        if topic == "love" and partners:
+            # Pairs of one tone share one phrase: «Мира и Лев — союз двух сил…».
+            tones: dict[str, list[str]] = {}
+            for partner in partners:
+                tones.setdefault(partner["tone"], []).append(partner["name"])
+            lines = [f"{_joined(names)} — {PAIR_PHRASES[tone][0].lower()}{PAIR_PHRASES[tone][1:]}"
+                     for tone, names in tones.items()]
+            parts.append(_part("Ваши пары", " ".join(lines) + " Подробно — в разборе каждой пары."))
         if topic:
             parts.append(_part("Совет", next(entry[3] for entry in _TOPICS if entry[0] == topic)))
 

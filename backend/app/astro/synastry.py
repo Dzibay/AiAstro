@@ -4,7 +4,9 @@ Both charts come in their public shape (app.astro.chart.natal). The first is the
 the second the partner's: an aspect's `a` is always on the person's side, `b` on the partner's.
 """
 
-from app.astro import aspects
+from app.astro import aspects, houses
+from app.astro.chart import SIGNS
+from app.astro.ephemeris import delta, wrap
 from app.astro.forecast import valence
 
 # How much a point says about two people together: the lights, love and desire first.
@@ -16,6 +18,8 @@ WEIGHT = {
 # between them an aspect describes a generation, not a couple.
 SLOW = {"uranus", "neptune", "pluto"}
 ELEMENTS = ("fire", "earth", "air", "water")
+# The planets whose place in the other's houses a pair reading tells.
+OVERLAYS = ("sun", "moon", "venus", "mars")
 KEY = 4
 _TONE_LIMIT = 0.25
 # The spheres of the pair, each read from the aspects that touch its points on either side.
@@ -78,7 +82,34 @@ def build(mine: dict, theirs: dict) -> dict:
         "spheres": spheres(found),
         "key": found[:KEY],
         "elements": {"mine": _element(mine), "theirs": _element(theirs)},
+        "overlays": {"theirs_in_mine": _overlays(theirs, mine), "mine_in_theirs": _overlays(mine, theirs)},
+        "composite": _composite(mine, theirs),
     }
+
+
+def _overlays(guest: dict, host: dict) -> list[dict]:
+    """Where the guest's planets fall in the host's houses: [{id, house}]; empty without the host's birth time."""
+    if not host.get("houses"):
+        return []
+    cusps = [cusp["lon"] for cusp in host["houses"]]
+    points = {point["id"]: point for point in guest["points"]}
+    return [{"id": key, "house": houses.house_of(points[key]["lon"], cusps)}
+            for key in OVERLAYS if not points[key].get("approx")]
+
+
+def _midpoint(a: float, b: float) -> float:
+    """The midpoint on the shorter arc between two longitudes."""
+    return wrap(b + delta(a, b) / 2)
+
+
+def _composite(mine: dict, theirs: dict) -> dict:
+    """The union as a third chart: the signs of the midpoints of two Suns and of two Moons."""
+    a = {point["id"]: point for point in mine["points"]}
+    b = {point["id"]: point for point in theirs["points"]}
+    result = {"sun": SIGNS[int(_midpoint(a["sun"]["lon"], b["sun"]["lon"]) // 30) % 12], "moon": None}
+    if not a["moon"].get("approx") and not b["moon"].get("approx"):
+        result["moon"] = SIGNS[int(_midpoint(a["moon"]["lon"], b["moon"]["lon"]) // 30) % 12]
+    return result
 
 
 def spheres(found: list[dict]) -> list[dict]:

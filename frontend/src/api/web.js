@@ -6,6 +6,7 @@ export const webApi = {
   me: () => request('/api/web/me', { audience: 'web', auth: true }),
   setBirth: (body) => request('/api/web/me/birth', { method: 'PUT', body, audience: 'web', auth: true }),
   chart: () => request('/api/web/me/chart', { audience: 'web', auth: true }),
+  portrait: () => request('/api/web/me/chart/portrait', { audience: 'web', auth: true }),
   chartItem: (id) => request(`/api/web/me/chart/items/${encodeURIComponent(id)}`, { audience: 'web', auth: true }),
   forecast: (period, tz) =>
     request(`/api/web/me/forecast?${new URLSearchParams({ period, tz })}`, { audience: 'web', auth: true }),

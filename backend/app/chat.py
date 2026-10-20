@@ -5,12 +5,16 @@ a reload or a second tab gives no more; the lock on the person's row lets one qu
 """
 
 import json
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from app.accounts import get_user
+from app.astro import forecast
 from app.astro.texts import as_reading, chat_suggestions, interpreter, reading_text
 from app.charts import chart_of
 from app.db import pool
 from app.errors import DomainError
+from app.partners import pairs_of
 
 TRIAL = 2
 LENGTH = 600
@@ -64,6 +68,20 @@ def history(user_id: int) -> dict:
     }
 
 
+def _context(user_id: int, user: dict, chart: dict) -> dict:
+    """What the astrologer knows besides the chart: today's sky over it, the month ahead, the pairs."""
+    zone = user["birth"].get("tz") or "UTC"
+    try:
+        today = datetime.now(ZoneInfo(zone)).date()
+    except (ValueError, KeyError, OSError):
+        zone, today = "UTC", datetime.now(timezone.utc).date()
+    return {
+        "today": forecast.build(chart, today, "day", zone),
+        "month": forecast.month(chart, today, zone),
+        "partners": pairs_of(user_id, chart),
+    }
+
+
 def ask(user_id: int, text: str) -> dict:
     """Writes the question and its answer; returns both and what is left of the trial."""
     question = "\n".join(" ".join(line.split()) for line in text.strip().splitlines()).strip()
@@ -73,6 +91,8 @@ def ask(user_id: int, text: str) -> dict:
         raise DomainError("question_long")
     user = get_user(user_id)
     chart = chart_of(user_id)
+    # Read before the lock: the sky of the month takes a moment, and the row should not wait for it.
+    context = _context(user_id, user, chart)
     with pool.connection() as conn:
         conn.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,))
         asked = _asked(conn, user_id)
@@ -82,7 +102,7 @@ def ask(user_id: int, text: str) -> dict:
             "SELECT role, text FROM chat_messages WHERE user_id = %s ORDER BY id DESC LIMIT %s",
             (user_id, CONTEXT),
         ).fetchall()
-        answer = interpreter.chat([*map(_plain, reversed(recent)), {"role": "user", "text": question}], chart)
+        answer = interpreter.chat([*map(_plain, reversed(recent)), {"role": "user", "text": question}], chart, context)
         rows = [
             conn.execute(
                 "INSERT INTO chat_messages (user_id, role, text) VALUES (%s, %s, %s) RETURNING id, role, text, created_at",

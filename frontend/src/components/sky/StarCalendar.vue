@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { ASPECTS, POINTS } from '../cabinet/astro.js'
+import { SPHERES, SPHERE_TONES, eventGlyph, eventLine } from './forecastWords.js'
 
 /**
  * The star calendar: thirty days from today on a Monday-first grid, each day a star that burns
@@ -40,6 +41,8 @@ const cells = computed(() => {
         index,
         veiled,
         number: date.getUTCDate(),
+        // The sky's own event of the day, marked in the cell's corner: the lunations first.
+        mark: entry.events?.length ? eventGlyph(entry.events[0]) : '',
         // The month's name where it turns, so «1» is not read as the first of this month.
         monthMark: index === 0 || date.getUTCDate() === 1 ? monthFormat.format(date).replace('.', '') : '',
         label: `${dayFormat.format(date)}, ${weekdayFormat.format(date)}${veiled ? ', в тумане' : `: ${TONES[entry.tone].name}`}`,
@@ -54,6 +57,14 @@ const transit = computed(() => {
   const top = current.value?.top
   if (!top) return ''
   return `${POINTS[top.a].name}: ${ASPECTS[top.type].name.toLowerCase()} с ${POINTS[top.b].with}`
+})
+const currentEvents = computed(() => (current.value?.events || []).map(eventLine))
+const currentSpheres = computed(() => {
+  const spheres = current.value?.spheres
+  if (!spheres) return []
+  // Only the spheres the day colours: an even one says nothing.
+  return SPHERES.filter((sphere) => spheres[sphere.id] !== 'calm')
+    .map((sphere) => ({ ...sphere, tone: spheres[sphere.id], word: SPHERE_TONES[spheres[sphere.id]] }))
 })
 const currentDate = computed(() => {
   if (!current.value) return ''
@@ -78,6 +89,7 @@ const currentDate = computed(() => {
           @click="selected = cell.index"
         >
           <span class="cell-month" aria-hidden="true">{{ cell.monthMark }}</span>
+          <span v-if="cell.mark" class="cell-mark" aria-hidden="true">{{ cell.mark }}</span>
           <span class="cell-number" aria-hidden="true">{{ cell.number }}</span>
           <svg class="cell-star" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
         </button>
@@ -94,7 +106,11 @@ const currentDate = computed(() => {
         <p class="detail-tone" :class="`tone-${current.tone}`">{{ TONES[current.tone].name }}</p>
         <p class="detail-text">{{ TONES[current.tone].hint }}.</p>
         <p v-if="transit" class="detail-transit">Главный транзит — {{ transit }}</p>
+        <p v-if="currentSpheres.length" class="detail-spheres">
+          <span v-for="sphere in currentSpheres" :key="sphere.id" :class="`tone-${sphere.tone}`">{{ sphere.name }}: {{ sphere.word }}</span>
+        </p>
       </template>
+      <p v-for="line in currentEvents" :key="line" class="detail-event">{{ line }}</p>
     </div>
 
     <p class="legend" aria-hidden="true">
@@ -155,6 +171,11 @@ const currentDate = computed(() => {
 .detail-text { font-family: var(--book); font-size: 14.5px; line-height: 1.55; color: #efe7d8; }
 .detail-text::first-letter { text-transform: uppercase; }
 .detail-transit { font-family: var(--book); font-size: 13.5px; color: rgba(233, 194, 124, 0.85); }
+.detail-spheres { display: flex; flex-wrap: wrap; gap: 4px 14px; font-family: var(--book); font-size: 13.5px; }
+.detail-spheres .tone-easy { color: #f6dfa6; }
+.detail-spheres .tone-tense { color: #e8a594; }
+.detail-event { font-family: var(--serif); font-style: italic; font-size: 15px; color: #d6e2f4; }
+.cell-mark { position: absolute; top: 2px; right: 4px; font-family: 'Segoe UI Symbol', 'Noto Sans Symbols', sans-serif; font-size: 10px; line-height: 1; color: #d6e2f4; }
 
 .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0; font-family: var(--serif); font-style: italic; font-size: 15px; color: rgba(226, 220, 210, 0.55); }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }

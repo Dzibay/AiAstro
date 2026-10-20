@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from psycopg.types.json import Jsonb
 
 from app.accounts import get_user
-from app.astro import forecast
+from app.astro import forecast, portrait
 from app.astro.chart import VERSION, natal
 from app.astro.texts import forecast_title, interpreter, item_title
 from app.db import pool
@@ -69,7 +69,34 @@ def chart_item(user_id: int, item: str) -> dict:
         [item, found["sign"], house, retro],
         lambda: interpreter.natal_item(item, found["sign"], house, retro),
     )
-    return {"id": item, "title": item_title(item, found["sign"], house), "reading": reading}
+    sky = get_user(user_id)["sky"]
+    # The aspects themselves are a calculation and free; what they mean opens with «Небосвод».
+    aspects = []
+    for aspect in chart["aspects"]:
+        if item not in (aspect["a"], aspect["b"]):
+            continue
+        a, b, kind = aspect["a"], aspect["b"], aspect["type"]
+        text = cached("natal_aspect", [a, b, kind], lambda: {"text": interpreter.natal_aspect(a, b, kind)})["text"] if sky else None
+        aspects.append({"a": a, "b": b, "type": kind, "text": text})
+    return {
+        "id": item,
+        "title": item_title(item, found["sign"], house),
+        "reading": reading,
+        "aspects": aspects,
+        "locked": not sky,
+    }
+
+
+def portrait_of(user_id: int) -> dict:
+    """The chart read as a whole. Without «Небосвод» only its essence and first part leave the server."""
+    user = get_user(user_id)
+    facts = portrait.facts(chart_of(user_id))
+    reading = cached("portrait", [facts], lambda: interpreter.portrait(facts))
+    return {
+        "reading": reading if user["sky"] else {**reading, "parts": reading["parts"][:1]},
+        "total": len(reading["parts"]),
+        "locked": not user["sky"],
+    }
 
 
 def _zone(name: str | None) -> str | None:
@@ -97,8 +124,9 @@ def forecast_of(user_id: int, period: str, tz: str | None = None) -> dict:
     data = forecast.build(chart, today, period, zone)
     inputs = [
         period, data["start"], data["tone"], data["moon"],
-        [[t["a"], t["b"], t["type"], t["lean"] > 0, t.get("date")] for t in data["transits"][:2]],
+        [[t["a"], t["b"], t["type"], t["lean"] > 0, t.get("date"), t.get("span")] for t in data["transits"][:3]],
         [day["tone"] for day in data["days"] or []],
+        data["spheres"], data["retro"], data["events"], data["best"],
     ]
     reading = cached("forecast", inputs, lambda: interpreter.forecast(data))
     return {
@@ -121,6 +149,8 @@ def month_of(user_id: int, tz: str | None = None) -> dict:
     today = datetime.now(ZoneInfo(zone)).date()
     days = forecast.month(chart, today, zone)
     if not user["sky"]:
-        days = [day if index < OPEN_DAYS else {"date": day["date"], "tone": None, "score": None, "top": None}
+        # The sky's own events (lunations, stations) are the same for everyone, so they stay open.
+        days = [day if index < OPEN_DAYS else {"date": day["date"], "tone": None, "score": None, "top": None,
+                                               "spheres": None, "events": day["events"]}
                 for index, day in enumerate(days)]
     return {"start": today.isoformat(), "days": days, "open": len(days) if user["sky"] else OPEN_DAYS, "locked": not user["sky"]}

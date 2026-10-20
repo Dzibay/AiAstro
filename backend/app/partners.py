@@ -21,6 +21,8 @@ from app.errors import DomainError
 from app.readings import cached
 
 PRODUCT = "synastry"
+# The links between two charts a bought pair lists, strongest first.
+MAX_ASPECTS = 16
 LIMIT = 20
 _COLUMNS = (
     "id, user_id, name, birth_date, birth_time, birth_place, birth_lat, birth_lon, birth_tz, "
@@ -226,23 +228,51 @@ def synastry_of(user_id: int, partner_id: int) -> dict:
     mine = chart_of(user_id)
     pair = synastry.build(mine, chart_for(birth))
     bought = partner_id in _bought(user_id)
-    inputs = [pair["tone"], pair["elements"], [[a["a"], a["b"], a["type"]] for a in pair["key"][:3]]]
+    inputs = [pair["tone"], pair["elements"], [[a["a"], a["b"], a["type"]] for a in pair["key"][:3]],
+              pair["spheres"], pair["overlays"], pair["composite"]]
     reading = cached("synastry", inputs, lambda: interpreter.synastry(pair))
+    total = len(reading["parts"])
     # Before the purchase only the essence and the first part leave the server: the page fades them.
     if not bought:
         reading = {**reading, "parts": reading["parts"][:1]}
+    # Bought, the pair shows every link between the charts with its meaning; before, the key ones by name.
+    shown = pair["aspects"][:MAX_ASPECTS] if bought else pair["key"]
     return {
         "partner": _public(row, {partner_id} if bought else set()),
         "tone": pair["tone"],
         "phrase": pair_phrase(pair),
         "aspects": [
-            {key: aspect[key] for key in ("a", "b", "type", "orb")} | {"title": pair_aspect_title(aspect)}
-            for aspect in pair["key"]
+            {key: aspect[key] for key in ("a", "b", "type", "orb")} | {
+                "title": pair_aspect_title(aspect),
+                "text": cached("pair_aspect", [aspect["a"], aspect["b"], aspect["type"]],
+                               lambda aspect=aspect: {"text": interpreter.pair_aspect(aspect["a"], aspect["b"], aspect["type"])})["text"]
+                if bought else None,
+            }
+            for aspect in shown
         ],
+        "aspects_total": min(len(pair["aspects"]), MAX_ASPECTS),
         "spheres": pair["spheres"],
         "reading": reading,
+        "total": total,
         "locked": not bought,
     }
+
+
+def pairs_of(user_id: int, mine: dict, limit: int = 3) -> list[dict]:
+    """The person's pairs in short, for the astrologer: [{name, tone, spheres}] of the partners with a birth date."""
+    with pool.connection() as conn:
+        rows = conn.execute(
+            f"SELECT {_COLUMNS} FROM partners WHERE user_id = %s AND birth_date IS NOT NULL ORDER BY created_at, id LIMIT %s",
+            (user_id, limit),
+        ).fetchall()
+    pairs = []
+    for row in rows:
+        birth = _birth(row)
+        if birth is None:
+            continue
+        pair = synastry.build(mine, chart_for(birth))
+        pairs.append({"name": row["name"], "tone": pair["tone"], "spheres": pair["spheres"]})
+    return pairs
 
 
 # ---- The operator's side ----
