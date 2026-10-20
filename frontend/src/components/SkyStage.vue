@@ -9,6 +9,7 @@ import { useSession } from '../composables/useSession.js'
 import { useSkyFocus } from '../composables/useSkyFocus.js'
 import { useSky } from '../composables/useSky.js'
 import { LITE } from '../utils/device.js'
+import { quality } from '../utils/quality.js'
 import {
   MOON_OFFSET,
   SUN_HOME,
@@ -45,7 +46,8 @@ const openId = ref('')
 const emblemHot = ref(false)
 const webgl = ref(true)
 const reduce = ref(false)
-const high = ref(!LITE)
+/** The full-resolution sky with its finest detail: the first thing a slow machine gives up (utils/quality.js). */
+const high = computed(() => quality.value === 0)
 const shared = useSky()
 const journey = shared.journey
 
@@ -454,7 +456,7 @@ onUnmounted(() => {
     @pointerdown="onSkyDown"
     @pointermove="onSkyMove"
   >
-    <CosmosCanvas v-if="webgl" :state="canvasState" :lite="LITE" @unsupported="webgl = false" />
+    <CosmosCanvas v-if="webgl" :state="canvasState" :lite="quality >= 2" @unsupported="webgl = false" />
 
     <OrbitLayer
       :geo="geo"

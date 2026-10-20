@@ -523,41 +523,54 @@ input:focus {
   .cards { grid-template-columns: 1fr; }
 }
 
-/* ---------- The light sky (utils/device.js) ----------
- * Live glass blurs the moving sky again on every frame, which phones cannot afford. Here the
- * glass keeps its hairline and sheen, but its body is a denser tint instead of a blur.
- * The sky layers stand still: no twinkling, no SVG glow over the canvas. */
-html.lite *,
-html.lite *::before,
-html.lite *::after {
+/* ---------- The light sky (utils/device.js) and the quality steps (utils/quality.js) ----------
+ * Live glass blurs the moving sky again on every frame, which phones and slow machines cannot
+ * afford. With `.no-glass` (phones, and step 3 on a slow desktop) the glass keeps its hairline and
+ * sheen, but its body is a denser tint instead of a blur, and the SVG glow over the canvas rests.
+ * With `.calm-stars` (step 4) only the brightest stars twinkle; phones keep every star still. */
+html.no-glass *,
+html.no-glass *::before,
+html.no-glass *::after {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
-html.lite .capsule {
+html.no-glass .capsule {
   background:
     linear-gradient(180deg, rgba(255, 236, 200, 0.06), rgba(255, 236, 200, 0) 60%),
     rgba(9, 11, 20, 0.86);
 }
-html.lite .cabinet-panel,
-html.lite .login-card,
-html.lite .invite-card {
+html.no-glass .cabinet-panel,
+html.no-glass .login-card,
+html.no-glass .invite-card {
   background:
     radial-gradient(120% 70% at 0% 0%, rgba(255, 196, 120, 0.1), transparent 60%),
     linear-gradient(160deg, rgba(26, 23, 26, 0.9), rgba(8, 10, 18, 0.94));
 }
-html.lite .chart-form,
-html.lite .sky-card {
+html.no-glass .chart-form,
+html.no-glass .sky-card {
   background: linear-gradient(160deg, rgba(26, 23, 26, 0.88), rgba(8, 10, 18, 0.92));
 }
-html.lite .line-cta { background: rgba(20, 18, 22, 0.82); }
+html.no-glass .line-cta { background: rgba(20, 18, 22, 0.82); }
+html.no-glass .sky-stage svg * { filter: none !important; }
+html.no-glass .sky-stage .orbit-layer,
+html.no-glass .sky-stage .band { will-change: auto; }
+/* These glints run on `left`, a layout every frame: without the glass they rest too. */
+html.no-glass .header-line::after,
+html.no-glass .cta::after { animation: none; display: none; }
+
+html.calm-stars .sky-stage .star:not(.is-bright) .star-halo,
+html.calm-stars .sky-stage .star:not(.is-bright) .star-spike { animation: none; }
 html.lite .sky-stage .star-halo,
 html.lite .sky-stage .star-spike,
 html.lite .cabinet-sky .point-star { animation: none; }
 html.lite .sky-stage .lat-runner,
 html.lite .sky-stage .emblem-pulse { animation: none; opacity: 0; }
-html.lite .sky-stage svg * { filter: none !important; }
-html.lite .sky-stage .orbit-layer,
-html.lite .sky-stage .band { will-change: auto; }
-/* These glints run on `left`, a layout every frame: on the light sky they rest. */
-html.lite .header-line::after,
-html.lite .cta::after { animation: none; display: none; }
+
+/* «Reduce motion» in the system: the sky keeps its beauty and loses only its movement. */
+@media (prefers-reduced-motion: reduce) {
+  .sky-stage .star-halo,
+  .sky-stage .star-spike,
+  .cabinet-sky .point-star { animation: none; }
+  .sky-stage .lat-runner,
+  .sky-stage .emblem-pulse { animation: none; opacity: 0; }
+}

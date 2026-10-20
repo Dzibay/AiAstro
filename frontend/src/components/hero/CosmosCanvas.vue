@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { FRAGMENT, VERTEX } from './cosmos.glsl.js'
 
 /** `state()` is read every frame so the parent can animate without re-rendering Vue. */
@@ -19,6 +19,8 @@ let start = 0
 let lastDraw = 0
 let visible = true
 let observer
+/** The still sky («reduce motion») repeats one picture: it is drawn again only when something in it changes. */
+let lastKey = ''
 
 function compile(type, source) {
   const shader = gl.createShader(type)
@@ -31,30 +33,45 @@ function compile(type, source) {
   return shader
 }
 
-function setup() {
-  gl = canvas.value.getContext('webgl', { antialias: false, alpha: false, powerPreference: props.lite ? 'default' : 'high-performance' })
-  if (!gl) return false
+/** The program for the current quality: the light one is rebuilt in place when a slow machine steps down. */
+function build() {
   const vs = compile(gl.VERTEX_SHADER, VERTEX)
   const fs = compile(gl.FRAGMENT_SHADER, props.lite ? `#define LITE
 ${FRAGMENT}` : FRAGMENT)
   if (!vs || !fs) return false
-  program = gl.createProgram()
-  gl.attachShader(program, vs)
-  gl.attachShader(program, fs)
-  gl.linkProgram(program)
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return false
+  const next = gl.createProgram()
+  gl.attachShader(next, vs)
+  gl.attachShader(next, fs)
+  gl.linkProgram(next)
+  gl.deleteShader(vs)
+  gl.deleteShader(fs)
+  if (!gl.getProgramParameter(next, gl.LINK_STATUS)) return false
+  if (program) gl.deleteProgram(program)
+  program = next
   gl.useProgram(program)
-  const buffer = gl.createBuffer()
-  gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW)
   const pos = gl.getAttribLocation(program, 'aPos')
   gl.enableVertexAttribArray(pos)
   gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0)
+  uniforms = {}
   for (const name of ['uRes', 'uDpr', 'uTime', 'uU', 'uBodyU', 'uPan', 'uBand2', 'uSun', 'uMoon', 'uPlanet', 'uWarm', 'uSunHover', 'uMoonHover', 'uIntro', 'uHigh']) {
     uniforms[name] = gl.getUniformLocation(program, name)
   }
+  lastKey = ''
   return true
 }
+
+function setup() {
+  gl = canvas.value.getContext('webgl', { antialias: false, alpha: false, powerPreference: props.lite ? 'default' : 'high-performance' })
+  if (!gl) return false
+  const buffer = gl.createBuffer()
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW)
+  return build()
+}
+
+watch(() => props.lite, () => {
+  if (gl && !gl.isContextLost()) build()
+})
 
 function draw(now) {
   frame = requestAnimationFrame(draw)
@@ -66,6 +83,11 @@ function draw(now) {
   const dpr = Math.min(window.devicePixelRatio || 1, s.high ? 1.5 : 1) * (s.high ? 1 : 0.8)
   const w = Math.round(s.width * dpr)
   const h = Math.round(s.height * dpr)
+  if (s.still && !s.busy) {
+    const key = [w, h, s.u, s.bodyU, s.pan, s.sun.x, s.sun.y, s.moon.x, s.moon.y, s.planet.cx, s.planet.cy, s.planet.r, s.warm, s.sunHover, s.moonHover, s.high].join()
+    if (key === lastKey) return
+    lastKey = key
+  } else lastKey = ''
   const el = canvas.value
   if (el.width !== w || el.height !== h) {
     el.width = w

@@ -186,7 +186,7 @@ function onKey(event, id) {
         <path v-for="line in figure.lines" :key="line.index" :d="line.d" pathLength="1" :style="{ '--i': line.index }" />
       </g>
 
-      <g v-for="(star, index) in figure.stars" :key="star.name" class="star" :style="{ '--d': `${(index * 0.73) % 4}s` }">
+      <g v-for="(star, index) in figure.stars" :key="star.name" class="star" :class="{ 'is-bright': star.mag < 2.1 }" :style="{ '--d': `${(index * 0.73) % 4}s` }">
         <title>{{ star.name }}</title>
         <circle class="star-halo" :cx="star.x" :cy="star.y" :r="star.r * 5.5" fill="url(#star-halo)" />
         <template v-if="star.mag < 2.1">
