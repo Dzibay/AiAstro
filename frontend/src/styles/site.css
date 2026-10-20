@@ -522,3 +522,42 @@ input:focus {
 @media (max-width: 800px) {
   .cards { grid-template-columns: 1fr; }
 }
+
+/* ---------- The light sky (utils/device.js) ----------
+ * Live glass blurs the moving sky again on every frame, which phones cannot afford. Here the
+ * glass keeps its hairline and sheen, but its body is a denser tint instead of a blur.
+ * The sky layers stand still: no twinkling, no SVG glow over the canvas. */
+html.lite *,
+html.lite *::before,
+html.lite *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html.lite .capsule {
+  background:
+    linear-gradient(180deg, rgba(255, 236, 200, 0.06), rgba(255, 236, 200, 0) 60%),
+    rgba(9, 11, 20, 0.86);
+}
+html.lite .cabinet-panel,
+html.lite .login-card,
+html.lite .invite-card {
+  background:
+    radial-gradient(120% 70% at 0% 0%, rgba(255, 196, 120, 0.1), transparent 60%),
+    linear-gradient(160deg, rgba(26, 23, 26, 0.9), rgba(8, 10, 18, 0.94));
+}
+html.lite .chart-form,
+html.lite .sky-card {
+  background: linear-gradient(160deg, rgba(26, 23, 26, 0.88), rgba(8, 10, 18, 0.92));
+}
+html.lite .line-cta { background: rgba(20, 18, 22, 0.82); }
+html.lite .sky-stage .star-halo,
+html.lite .sky-stage .star-spike,
+html.lite .cabinet-sky .point-star { animation: none; }
+html.lite .sky-stage .lat-runner,
+html.lite .sky-stage .emblem-pulse { animation: none; opacity: 0; }
+html.lite .sky-stage svg * { filter: none !important; }
+html.lite .sky-stage .orbit-layer,
+html.lite .sky-stage .band { will-change: auto; }
+/* These glints run on `left`, a layout every frame: on the light sky they rest. */
+html.lite .header-line::after,
+html.lite .cta::after { animation: none; display: none; }

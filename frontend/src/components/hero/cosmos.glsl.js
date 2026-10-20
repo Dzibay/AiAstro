@@ -7,6 +7,7 @@ void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
  * One pass for the whole backdrop: sky, nebulae, stars, planet, Sun and Moon.
  * Coordinates are CSS pixels with y down, sizes are reference pixels times uU.
  * The planet, Sun and Moon may be scaled down (uBodyU); the starry band pans by uPan.
+ * With LITE defined (phones, modest machines) the clouds take about half the noise.
  */
 export const FRAGMENT = `
 precision highp float;
@@ -58,7 +59,11 @@ float fbm(vec2 p) {
   float sum = 0.0;
   float amp = 0.5;
   mat2 m = mat2(1.6, 1.2, -1.2, 1.6);
+#ifdef LITE
+  for (int i = 0; i < 4; i++) {
+#else
   for (int i = 0; i < 6; i++) {
+#endif
     sum += amp * vnoise(p);
     p = m * p;
     amp *= 0.5;
@@ -70,7 +75,11 @@ float fbm4(vec2 p) {
   float sum = 0.0;
   float amp = 0.5;
   mat2 m = mat2(1.6, 1.2, -1.2, 1.6);
+#ifdef LITE
+  for (int i = 0; i < 3; i++) {
+#else
   for (int i = 0; i < 4; i++) {
+#endif
     sum += amp * vnoise(p);
     p = m * p;
     amp *= 0.5;
@@ -187,7 +196,12 @@ void main() {
 
   // --- Warm cloud bank (left), lit from the Sun
   vec2 w = s * 0.0042 + vec2(t * 0.0035, -t * 0.002);
+#ifdef LITE
+  float warp1 = fbm4(w * 1.4 + 7.3);
+  vec2 warp = vec2(warp1, 1.0 - warp1);
+#else
   vec2 warp = vec2(fbm4(w * 1.4 + 7.3), fbm4(w * 1.4 + 2.1));
+#endif
   float n = fbm(w + 1.6 * warp);
   float horizonBank = exp(-max(planetEdge / uBodyU - 40.0, 0.0) / 230.0) * (1.0 - inPlanet);
   float warmMask = smoothstep(0.5, 0.0, uv.x) * smoothstep(0.12, 0.85, uv.y) * 0.85;
@@ -195,7 +209,11 @@ void main() {
   warmMask = clamp(warmMask, 0.0, 1.0);
   float cloud = smoothstep(0.4, 0.82, n) * warmMask;
   float toSun = exp(-length(p - uSun) / (720.0 * uBodyU));
+#ifdef LITE
+  float billow = smoothstep(0.55, 0.95, n);
+#else
   float billow = smoothstep(0.45, 0.95, fbm4(w * 3.1 - warp * 1.2));
+#endif
   vec3 cloudCol = mix(vec3(0.16, 0.06, 0.015), vec3(1.0, 0.56, 0.2), clamp(cloud * 1.25 + billow * 0.4, 0.0, 1.0));
   cloudCol = mix(cloudCol, vec3(1.0, 0.84, 0.58), billow * cloud * 0.7);
   float warmGain = (0.45 + 1.0 * warm) * (0.7 + 0.9 * toSun * sunVis) * (0.8 + horizonBank * 0.6);
@@ -204,7 +222,12 @@ void main() {
 
   // --- Cool nebula and Milky Way (right)
   vec2 wc = s * 0.0036 + vec2(-t * 0.0028, t * 0.0015) + 19.0;
+#ifdef LITE
+  float warpC = fbm4(wc * 1.7);
+  float nc = fbm(wc + 1.2 * vec2(warpC, 1.0 - warpC));
+#else
   float nc = fbm(wc + 1.2 * vec2(fbm4(wc * 1.7), fbm4(wc * 1.7 + 4.0)));
+#endif
   float coolMask = smoothstep(0.55, 1.0, uv.x) * smoothstep(1.05, 0.1, uv.y) * 0.8;
   coolMask += horizonBank * smoothstep(0.55, 0.9, uv.x) * 0.9;
   coolMask = clamp(coolMask, 0.0, 1.0);
@@ -329,7 +352,11 @@ void main() {
     if (rs < R0 + 2.0) {
       vec2 sp = ds / R0;
       float mu = sqrt(max(1.0 - dot(sp, sp), 0.0));
+#ifdef LITE
+      float gran = fbm4(sp * 6.0 / max(mu, 0.25) * 0.5 + t * 0.12);
+#else
       float gran = fbm4(sp * 6.0 / max(mu, 0.25) * 0.5 + t * 0.12) * 0.6 + fbm4(sp * 14.0 - t * 0.2) * 0.4;
+#endif
       vec3 surface = mix(vec3(0.92, 0.36, 0.05), vec3(1.0, 0.78, 0.4), pow(mu, 0.7));
       surface = mix(surface, vec3(1.0, 0.93, 0.72), smoothstep(0.75, 1.0, mu) * 0.4);
       surface *= 0.78 + gran * 0.45;

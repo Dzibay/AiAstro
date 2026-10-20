@@ -1,21 +1,23 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomeView from '../views/HomeView.vue'
-import LegalView from '../views/LegalView.vue'
-import LoginView from '../views/LoginView.vue'
-import CabinetView from '../views/CabinetView.vue'
-import AdminView from '../views/AdminView.vue'
-import OverviewPanel from '../views/cabinet/OverviewPanel.vue'
-import BirthPanel from '../views/cabinet/BirthPanel.vue'
-import SectionSoon from '../views/cabinet/SectionSoon.vue'
-import ChartPanel from '../views/cabinet/ChartPanel.vue'
-import ForecastPanel from '../views/cabinet/ForecastPanel.vue'
-import InviteView from '../views/InviteView.vue'
-import PairPanel from '../views/cabinet/PairPanel.vue'
-import ChatPanel from '../views/cabinet/ChatPanel.vue'
-import ProfilePanel from '../views/cabinet/ProfilePanel.vue'
-import SkyPanel from '../views/cabinet/SkyPanel.vue'
 import { SECTIONS } from '../components/cabinet/layout.js'
 import { readSession } from '../composables/useSession.js'
+
+// The home page comes with the first load; every other page is fetched when first opened.
+import HomeView from '../views/HomeView.vue'
+const LegalView = () => import('../views/LegalView.vue')
+const LoginView = () => import('../views/LoginView.vue')
+const CabinetView = () => import('../views/CabinetView.vue')
+const AdminView = () => import('../views/AdminView.vue')
+const OverviewPanel = () => import('../views/cabinet/OverviewPanel.vue')
+const BirthPanel = () => import('../views/cabinet/BirthPanel.vue')
+const SectionSoon = () => import('../views/cabinet/SectionSoon.vue')
+const ChartPanel = () => import('../views/cabinet/ChartPanel.vue')
+const ForecastPanel = () => import('../views/cabinet/ForecastPanel.vue')
+const InviteView = () => import('../views/InviteView.vue')
+const PairPanel = () => import('../views/cabinet/PairPanel.vue')
+const ChatPanel = () => import('../views/cabinet/ChatPanel.vue')
+const ProfilePanel = () => import('../views/cabinet/ProfilePanel.vue')
+const SkyPanel = () => import('../views/cabinet/SkyPanel.vue')
 
 const PANELS = { chart: ChartPanel, forecast: ForecastPanel, pair: PairPanel, chat: ChatPanel, sky: SkyPanel }
 

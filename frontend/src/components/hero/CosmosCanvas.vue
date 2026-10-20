@@ -5,6 +5,8 @@ import { FRAGMENT, VERTEX } from './cosmos.glsl.js'
 /** `state()` is read every frame so the parent can animate without re-rendering Vue. */
 const props = defineProps({
   state: { type: Function, required: true },
+  /** The cheaper shader and a slower idle drift, see utils/device.js. */
+  lite: { type: Boolean, default: false },
 })
 const emit = defineEmits(['unsupported'])
 
@@ -30,10 +32,11 @@ function compile(type, source) {
 }
 
 function setup() {
-  gl = canvas.value.getContext('webgl', { antialias: false, alpha: false, powerPreference: 'high-performance' })
+  gl = canvas.value.getContext('webgl', { antialias: false, alpha: false, powerPreference: props.lite ? 'default' : 'high-performance' })
   if (!gl) return false
   const vs = compile(gl.VERTEX_SHADER, VERTEX)
-  const fs = compile(gl.FRAGMENT_SHADER, FRAGMENT)
+  const fs = compile(gl.FRAGMENT_SHADER, props.lite ? `#define LITE
+${FRAGMENT}` : FRAGMENT)
   if (!vs || !fs) return false
   program = gl.createProgram()
   gl.attachShader(program, vs)
@@ -57,8 +60,8 @@ function draw(now) {
   frame = requestAnimationFrame(draw)
   const s = props.state()
   if (!visible || document.hidden) return
-  // Idle scenes only drift, so 30 fps is enough; interaction gets every frame.
-  if (!s.busy && now - lastDraw < 32) return
+  // Idle scenes only drift, so 30 fps is enough (20 on the light sky); interaction gets every frame.
+  if (!s.busy && now - lastDraw < (props.lite ? 48 : 32)) return
   lastDraw = now
   const dpr = Math.min(window.devicePixelRatio || 1, s.high ? 1.5 : 1) * (s.high ? 1 : 0.8)
   const w = Math.round(s.width * dpr)

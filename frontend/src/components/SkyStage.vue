@@ -8,6 +8,7 @@ import NameMark from './hero/NameMark.vue'
 import { useSession } from '../composables/useSession.js'
 import { useSkyFocus } from '../composables/useSkyFocus.js'
 import { useSky } from '../composables/useSky.js'
+import { LITE } from '../utils/device.js'
 import {
   MOON_OFFSET,
   SUN_HOME,
@@ -44,7 +45,7 @@ const openId = ref('')
 const emblemHot = ref(false)
 const webgl = ref(true)
 const reduce = ref(false)
-const high = ref(true)
+const high = ref(!LITE)
 const shared = useSky()
 const journey = shared.journey
 
@@ -190,13 +191,36 @@ const emblemStyle = computed(() => {
 })
 
 function scrollNext() {
-  shared.source.value?.next(journey.value, atEnd.value)
+  const source = shared.source.value
+  source?.next(source.at(), atEnd.value)
+}
+
+/**
+ * The light sky does not follow the scroll: it knows three places only, the hero, the reading
+ * pose shared by every middle section and the finale, and flies once between them.
+ */
+function liteStop(exact) {
+  if (exact < 0.5) return 0
+  return exact > LAST_STOP - 0.5 ? LAST_STOP : 1
 }
 
 /** Eases towards the page's scroll; a light lag gives the sky some weight against it. */
 function follow() {
   const source = shared.source.value
   const exact = source ? source.at() : 0
+  if (LITE) {
+    const stop = liteStop(exact)
+    travelling = false
+    if (source?.fresh) source.fresh = false
+    else if (stop !== journey.value && lastScene) {
+      flightFrom = lastScene
+      flightStart = performance.now()
+      flight.value = reduce.value ? 1 : 0
+    }
+    journey.value = stop
+    if (openId.value && journey.value !== openedAt) openId.value = ''
+    return
+  }
   const goal = reduce.value ? Math.round(exact) : exact
   const gap = goal - journey.value
   travelling = Math.abs(gap) > 1e-4
@@ -401,9 +425,6 @@ onBeforeMount(() => {
 
 onMounted(() => {
   reduce.value = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const cores = navigator.hardwareConcurrency || 8
-  const memory = navigator.deviceMemory || 8
-  high.value = !(cores <= 4 || memory <= 4 || navigator.connection?.saveData || window.innerWidth < 760)
   measure()
   introFrom = target - 0.55
   theta.value = reduce.value ? target : introFrom
@@ -433,7 +454,7 @@ onUnmounted(() => {
     @pointerdown="onSkyDown"
     @pointermove="onSkyMove"
   >
-    <CosmosCanvas v-if="webgl" :state="canvasState" @unsupported="webgl = false" />
+    <CosmosCanvas v-if="webgl" :state="canvasState" :lite="LITE" @unsupported="webgl = false" />
 
     <OrbitLayer
       :geo="geo"
