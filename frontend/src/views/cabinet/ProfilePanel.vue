@@ -5,6 +5,7 @@ import PanelHead from '../../components/cabinet/PanelHead.vue'
 import { webApi } from '../../api/web.js'
 import { errorText } from '../../api/http.js'
 import { formatDate } from '../../utils/format.js'
+import { startTour } from '../../utils/tour.js'
 
 /**
  * The profile: the name, the email, the password, «Небосвод» and, at the very end, the way to
@@ -183,6 +184,15 @@ const showPassword = ref(false)
       <p class="hint">Напоминание о конце «Небосвода» и весть, когда партнёр ответил на приглашение. Ссылка для нового пароля приходит всегда.</p>
       <p v-if="letters.error" class="error" role="alert">{{ letters.error }}</p>
       <p v-else-if="letters.done" class="done" role="status">✦ {{ letters.done }}</p>
+    </section>
+
+    <section class="block" aria-labelledby="tour-title">
+      <h3 id="tour-title" class="block-title">Знакомство</h3>
+      <div class="row">
+        <span class="value">Как устроен кабинет</span>
+        <button type="button" class="link" @click="startTour('intro')">Пройти заново</button>
+      </div>
+      <p class="hint">Звезда, пять разделов и что из них бесплатно — по шагам. То же открывает «?» у вашей звезды.</p>
     </section>
 
     <p class="since">С нами с {{ formatDate(user.created_at) }}</p>

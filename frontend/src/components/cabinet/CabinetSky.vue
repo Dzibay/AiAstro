@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useSky } from '../../composables/useSky.js'
+import { startTour, tour } from '../../utils/tour.js'
 import { SECTION_BY_ID, cabinetLayout, mixLayout, starScale } from './layout.js'
 
 /**
@@ -16,6 +17,10 @@ const props = defineProps({
   section: { type: String, default: '' },
   /** The birth form is open: the star leads back instead of to it. */
   birthOpen: { type: Boolean, default: false },
+  /** «Небосвод» is lit: the crowns of the sections it opens in full turn gold. */
+  lit: { type: Boolean, default: false },
+  /** The sections flaring gold while «Небосвод» catches fire (CabinetTour). */
+  flare: { type: Array, default: () => [] },
 })
 
 const { geo } = useSky()
@@ -47,6 +52,8 @@ watch(target, (next, prev) => {
 })
 
 const hot = ref('')
+/** The overview on a desktop has room to say what each section holds. */
+const notes = computed(() => !props.section && !props.birthOpen && !geo.value.narrow)
 
 const points = computed(() => view.value.points.map((point) => {
   const section = SECTION_BY_ID[point.id]
@@ -90,6 +97,16 @@ const home = computed(() => {
   const size = 64 * starScale(star.k)
   return { left: `${star.x - size / 2}px`, top: `${star.y - size / 2}px`, width: `${size}px`, height: `${size}px` }
 })
+/** The round «?» at the star's upper left (the name is written to its right): the introduction, again. */
+const help = computed(() => {
+  const { star } = view.value
+  const reach = 32 * starScale(star.k) + 6
+  const above = star.y - reach * 0.75 - 14
+  // Under the header there may be no room above (a phone, a section open): then lower left.
+  const top = above < 84 ? star.y + reach * 0.75 - 14 : above
+  return { left: `${Math.max(6, star.x - reach * 0.75 - 14)}px`, top: `${top}px` }
+})
+
 const homeTo = computed(() => (props.section || props.birthOpen ? { name: 'cabinet' } : { name: 'cabinet-birth' }))
 const homeLabel = computed(() => (props.section || props.birthOpen ? 'Ваша звезда: к обзору кабинета' : 'Ваша звезда: данные рождения'))
 
@@ -104,7 +121,7 @@ onUnmounted(() => cancelAnimationFrame(raf))
 </script>
 
 <template>
-  <nav class="cabinet-sky" :class="{ 'motion-off': reduce }" :style="{ height: `${view.H}px` }" aria-label="Разделы кабинета">
+  <nav class="cabinet-sky" :class="{ 'motion-off': reduce, 'with-notes': notes }" :style="{ height: `${view.H}px` }" aria-label="Разделы кабинета">
     <svg class="threads" :viewBox="`0 0 ${view.W} ${view.H}`" aria-hidden="true">
       <defs>
         <linearGradient id="thread-gold" x1="0" y1="0" x2="1" y2="1">
@@ -123,6 +140,15 @@ onUnmounted(() => cancelAnimationFrame(raf))
     </svg>
 
     <RouterLink class="home-star" :to="homeTo" :aria-label="homeLabel" :style="home" />
+    <button
+      type="button"
+      class="tour-help"
+      :class="{ 'is-on': tour.kind }"
+      :style="help"
+      aria-label="Знакомство с кабинетом"
+      title="Знакомство с кабинетом"
+      @click="startTour('intro')"
+    >?</button>
 
     <!-- Re-keyed by section under reduced motion: the points fade in at their new places instead of flying. -->
     <div :key="reduce ? section : 'points'" class="points">
@@ -130,10 +156,11 @@ onUnmounted(() => cancelAnimationFrame(raf))
         v-for="point in points"
         :key="point.id"
         class="point"
-        :class="{ 'is-active': point.active, 'is-hot': point.id === hot }"
+        :class="{ 'is-active': point.active, 'is-hot': point.id === hot, 'is-flare': flare.includes(point.id) }"
         :style="pointStyle(point)"
+        :data-section="point.id"
         :to="{ name: point.section.route }"
-        :aria-label="`${point.section.label}: ${point.section.title}`"
+        :aria-label="`${point.section.label}: ${point.section.title}${point.section.paid ? (lit ? ', открыт целиком с «Небосводом»' : ', часть открывает «Небосвод»') : ''}`"
         :aria-current="point.active ? 'page' : undefined"
         @pointerenter="hot = point.id"
         @pointerleave="hot = ''"
@@ -160,7 +187,13 @@ onUnmounted(() => cancelAnimationFrame(raf))
             :style="{ '--d': `${(index * 0.7 + point.x * 0.003) % 3}s` }"
           />
         </svg>
-        <span class="point-label">{{ point.section.label }}</span>
+        <span class="point-label">
+          {{ point.section.label }}
+          <svg v-if="point.section.paid" class="point-crown" :class="{ 'is-lit': lit }" viewBox="0 0 16 12" aria-hidden="true">
+            <path d="M1.5 10.5L1 3l4 3.2L8 1l3 5.2L15 3l-.5 7.5z" />
+          </svg>
+        </span>
+        <span class="point-note" aria-hidden="true">{{ point.section.note }}</span>
       </RouterLink>
     </div>
   </nav>
@@ -205,22 +238,46 @@ onUnmounted(() => cancelAnimationFrame(raf))
 }
 .home-star:focus-visible { box-shadow: 0 0 0 1px rgba(255, 226, 168, 0.7), 0 0 22px rgba(255, 200, 110, 0.35); }
 
+.tour-help {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(240, 205, 138, 0.5);
+  background: rgba(10, 12, 20, 0.55);
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1;
+  color: #f3dcae;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 0 14px rgba(255, 200, 110, 0.2);
+  transition: border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease, left 0.3s ease, top 0.3s ease;
+}
+.tour-help:hover, .tour-help.is-on { border-color: #f0cd8a; background: rgba(240, 205, 138, 0.16); box-shadow: 0 0 18px rgba(255, 200, 110, 0.45); }
+.tour-help:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 3px; }
+/* A finger needs a larger target than the eye: the hit area reaches past the circle. */
+.tour-help::after { content: ''; position: absolute; inset: -8px; border-radius: 50%; }
+
 .points { position: absolute; inset: 0; }
-/* The figure's centre sits on the point: the link is 96px wide and the figure 52px tall. */
+/* The figure's centre sits on the point: the link is 150px wide and the figure 52px tall. */
 .point {
   position: absolute;
-  left: -48px;
+  left: -75px;
   top: -26px;
   display: grid;
   justify-items: center;
   gap: 2px;
-  width: 96px;
+  width: 150px;
   padding-bottom: 4px;
   border-radius: 18px;
   color: rgba(242, 228, 200, 0.72);
   text-decoration: none;
   pointer-events: auto;
-  transform-origin: 48px 26px;
+  transform-origin: 75px 26px;
   outline: none;
   -webkit-tap-highlight-color: transparent;
 }
@@ -256,6 +313,30 @@ onUnmounted(() => cancelAnimationFrame(raf))
   text-shadow: 0 0 10px rgba(4, 6, 12, 0.9), 0 0 2px rgba(4, 6, 12, 0.9);
   transition: color 0.3s ease, text-shadow 0.3s ease;
 }
+/* A small crown: a part of the section is «Небосвод»'s; gold once it burns. */
+.point-crown {
+  width: 11px;
+  height: 9px;
+  margin-left: 2px;
+  vertical-align: 0.45em;
+  fill: none;
+  stroke: rgba(240, 205, 138, 0.6);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+.point-crown.is-lit { fill: #f0cd8a; stroke: #f0cd8a; filter: drop-shadow(0 0 3px rgba(255, 205, 120, 0.8)); }
+.point-note {
+  display: none;
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: rgba(226, 214, 192, 0.6);
+  text-shadow: 0 0 8px rgba(4, 6, 12, 0.95), 0 0 2px rgba(4, 6, 12, 0.9);
+  transition: color 0.3s ease;
+}
+.with-notes .point-note { display: block; }
+.point:hover .point-note, .point.is-hot .point-note { color: rgba(240, 220, 180, 0.9); }
 
 .point:hover .point-halo, .point.is-hot .point-halo, .point.is-active .point-halo { opacity: 1; transform: scale(1); }
 .point:hover line, .point.is-hot line, .point.is-active line { opacity: 0.7; }
@@ -266,19 +347,27 @@ onUnmounted(() => cancelAnimationFrame(raf))
 }
 .point:focus-visible .point-halo { opacity: 1; transform: scale(1); fill: rgba(255, 210, 140, 0.1); stroke: rgba(255, 226, 168, 0.6); stroke-width: 0.8; }
 
+/* «Небосвод» catches fire: each section in turn flashes gold and stays lit a little brighter. */
+.point.is-flare .point-label { color: #f6d99c; text-shadow: 0 0 14px rgba(255, 196, 110, 0.6), 0 0 2px rgba(4, 6, 12, 0.9); }
+.point.is-flare line { opacity: 0.8; stroke: #f0cd8a; }
+.point.is-flare .point-star { fill: #fff8e8; }
+.point.is-flare .point-halo { opacity: 1; transform: scale(1); fill: rgba(255, 210, 140, 0.16); animation: flare-burst 1.4s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+@keyframes flare-burst { 0% { transform: scale(0.4); fill: rgba(255, 236, 196, 0.6); } 100% { transform: scale(1); } }
 @keyframes thread-draw { to { stroke-dashoffset: 0; } }
 @keyframes point-twinkle { 50% { opacity: 0.6; transform: scale(0.82); } }
 @keyframes points-fade { from { opacity: 0; } }
 
 @media (max-width: 760px) {
   .point-label { font-size: 15px; }
-  /* A finger needs more than the figure: the link keeps its full 96px box. */
-  .point { min-height: 76px; }
+  /* A finger needs more than the figure: the link keeps a box as wide as its share of the row. */
+  .point { min-height: 76px; left: -40px; width: 80px; transform-origin: 40px 26px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .thread { animation: none; stroke-dashoffset: 0; }
   .point-star { animation: none; }
   .points { animation: points-fade 0.5s ease both; }
+  .point.is-flare .point-halo { animation: none; }
 }
 </style>

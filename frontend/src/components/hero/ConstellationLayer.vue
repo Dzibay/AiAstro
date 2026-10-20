@@ -11,6 +11,8 @@ const props = defineProps({
   pan: { type: Number, default: 0 },
   hot: { type: String, default: '' },
   open: { type: String, default: '' },
+  /** The figure that glimmers to say it can be opened (the home hint). */
+  glimmer: { type: String, default: '' },
   /**
    * What stands in front of the band, in screen px: { sun, moon: { x, y, r }, planet, orbit: { cx, cy, r } }.
    * The Sun, the Moon and the planet are drawn on the canvas below this layer, so the figures
@@ -151,7 +153,7 @@ function onKey(event, id) {
       v-show="shown.has(figure.key)"
       :key="figure.key"
       class="figure"
-      :class="{ 'is-hot': hot === figure.key, 'is-open': open === figure.key }"
+      :class="{ 'is-hot': hot === figure.key, 'is-open': open === figure.key, 'is-glimmer': glimmer === figure.key }"
       :style="styleOf(figure.key)"
       role="button"
       :tabindex="shown.has(figure.key) ? 0 : -1"
@@ -248,6 +250,12 @@ function onKey(event, id) {
   stroke-dashoffset: 0;
   opacity: 0.95;
 }
+.figure.is-glimmer:not(.is-hot):not(.is-open) .lines-lit path {
+  stroke-dashoffset: 0;
+  animation: glimmer 3.2s ease-in-out infinite;
+}
+.figure.is-glimmer:not(.is-hot):not(.is-open) .label { fill: #ffe2a8; opacity: 0.9; }
+@keyframes glimmer { 0%, 100% { opacity: 0.12; } 50% { opacity: 0.85; } }
 .figure.is-hot .lines line,
 .figure.is-open .lines line { opacity: 0.15; }
 
@@ -322,6 +330,7 @@ function onKey(event, id) {
 
 @media (prefers-reduced-motion: reduce) {
   .star-halo, .star-spike { animation: none; }
+  .figure.is-glimmer:not(.is-hot):not(.is-open) .lines-lit path { animation: none; opacity: 0.6; }
   .lines-lit path, .art path, .figure.is-open .art path { transition: opacity 0.2s ease; }
 }
 </style>

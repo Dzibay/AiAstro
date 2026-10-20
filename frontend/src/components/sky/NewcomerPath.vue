@@ -55,6 +55,7 @@ const visible = computed(
         <span v-for="step in steps" :key="step.id" class="progress-star" :class="{ 'is-on': step.done }" aria-hidden="true">✦</span>
       </p>
     </div>
+    <p class="count">Пройдено {{ count }} из {{ steps.length }} — следующий шаг светится</p>
     <ol class="steps">
       <li v-for="step in steps" :key="step.id" :class="{ 'is-done': step.done, 'is-next': step === next }">
         <RouterLink v-if="!step.done" class="step" :to="step.to">
@@ -72,7 +73,17 @@ const visible = computed(
 </template>
 
 <style scoped>
-.newcomer { display: grid; gap: 8px; }
+/* Raised under the greeting and framed, so a newcomer sees where to begin. */
+.newcomer {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(240, 205, 138, 0.38);
+  background: radial-gradient(120% 90% at 0% 0%, rgba(240, 205, 138, 0.1), transparent 65%), rgba(255, 240, 210, 0.02);
+  box-shadow: 0 0 24px rgba(255, 200, 110, 0.06);
+}
+.count { margin: -4px 0 2px; font-size: 12.5px; color: rgba(226, 220, 210, 0.6); }
 .head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .title { margin: 0; font-family: var(--caps); font-weight: 600; font-size: 16px; letter-spacing: 0.1em; color: rgba(240, 205, 138, 0.85); }
 .progress { margin: 0; letter-spacing: 0.2em; font-size: 13px; }

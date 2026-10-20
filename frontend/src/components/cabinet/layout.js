@@ -10,6 +10,7 @@ import { clamp } from '../hero/sky.js'
 /**
  * `stars`: [x, y, size] in a unit box around the point; `edges` join them.
  * Each figure hints at its section: a wheel, a sunrise arc, two stars, a line of speech, a crown.
+ * `note` says what is inside, under the label on the overview; `paid`: part of it is lit by «Небосвод».
  */
 export const SECTIONS = [
   {
@@ -17,6 +18,8 @@ export const SECTIONS = [
     route: 'cabinet-chart',
     label: 'Карта',
     title: 'Натальная карта',
+    note: 'ваша карта и портрет',
+    paid: true,
     stars: [[0, -0.95, 1.2], [0.9, -0.3, 0.8], [0.56, 0.8, 0.9], [-0.56, 0.8, 0.7], [-0.9, -0.3, 0.9]],
     edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 0]],
   },
@@ -25,6 +28,8 @@ export const SECTIONS = [
     route: 'cabinet-forecast',
     label: 'Прогноз',
     title: 'Прогноз на день и неделю',
+    note: 'день, неделя, календарь',
+    paid: true,
     stars: [[-1, 0.55, 0.7], [-0.45, -0.25, 0.9], [0.3, -0.6, 1.2], [0.95, -0.15, 0.8]],
     edges: [[0, 1], [1, 2], [2, 3]],
   },
@@ -33,6 +38,7 @@ export const SECTIONS = [
     route: 'cabinet-pair',
     label: 'Пара',
     title: 'Совместимость',
+    note: 'совместимость двоих',
     stars: [[-0.75, 0.15, 1.2], [0.75, -0.15, 1.15], [0.05, 0.85, 0.55]],
     edges: [[0, 1]],
   },
@@ -41,6 +47,8 @@ export const SECTIONS = [
     route: 'cabinet-chat',
     label: 'Астролог',
     title: 'Разговор с астрологом',
+    note: 'вопросы о вашей карте',
+    paid: true,
     stars: [[-0.95, -0.35, 0.8], [-0.1, -0.85, 1.15], [0.9, -0.2, 0.9], [0.2, 0.55, 0.7], [-0.35, 0.95, 0.55]],
     edges: [[0, 1], [1, 2], [2, 3], [3, 4]],
   },
@@ -50,6 +58,7 @@ export const SECTIONS = [
     route: 'cabinet-sky',
     label: 'Небосвод',
     title: 'Подписка «Небосвод»',
+    note: 'подписка: всё целиком',
     stars: [[-0.95, 0.55, 0.7], [-0.6, -0.3, 0.85], [0, -0.95, 1.3], [0.6, -0.3, 0.85], [0.95, 0.55, 0.7], [0, 0.2, 0.6]],
     edges: [[0, 1], [1, 2], [2, 3], [3, 4], [1, 5], [5, 3]],
   },
@@ -130,6 +139,9 @@ const NAME_ROOM = 56
 
 const rad = (deg) => (deg * Math.PI) / 180
 
+/** The sections on the desktop overview: the menu at its largest, easy to see and to hit. */
+const OVERVIEW_SCALE = 1.3
+
 /** The star ({ x, y, k, span }) and the section points ({ id, x, y, s }) for a section, '' for the overview. */
 export function cabinetLayout(geo, section) {
   const { W, H, narrow } = geo
@@ -166,16 +178,17 @@ export function cabinetLayout(geo, section) {
     const half = (span * k) / 2
     const right = panelLeft(W) - 40
     star = { x: clamp(W * 0.3, half + 24, right - half), y: clamp(H * 0.42, 100 + half, H - half - 60), k }
-    // Past the corners of the engraving's box, so even a wide, detailed sign (Pisces) leaves the menu clear.
-    const reach = half * 1.16 + 54
+    // Past the corners of the engraving's box, so even a wide, detailed sign (Pisces) leaves the menu clear;
+    // the overview's points are drawn larger, with a line under the label, so they stand a little further.
+    const reach = half * 1.16 + 70
     points = SECTIONS.map((item, index) => {
       // The four sections at the corners, «Небосвод» under the star (above it the header is too close).
       const angle = rad([-150, -30, 30, 150, 90][index])
       return {
         id: item.id,
-        x: clamp(star.x + reach * Math.cos(angle), 70, right - 20),
-        y: clamp(star.y + reach * Math.sin(angle), 120, H - 80),
-        s: 1,
+        x: clamp(star.x + reach * Math.cos(angle), 100, right - 40),
+        y: clamp(star.y + reach * Math.sin(angle), 120, H - 110),
+        s: OVERVIEW_SCALE,
       }
     })
   }

@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import SiteHeader from '../components/SiteHeader.vue'
 import CabinetSky from '../components/cabinet/CabinetSky.vue'
+import CabinetTour from '../components/cabinet/CabinetTour.vue'
 import NatalWheel from '../components/cabinet/NatalWheel.vue'
 import PairSky from '../components/cabinet/PairSky.vue'
 import SkyDome from '../components/sky/SkyDome.vue'
@@ -16,6 +17,7 @@ import { useForecast } from '../composables/useForecast.js'
 import { linkPendingInvite, pendingInvite, usePartners } from '../composables/usePartners.js'
 import { useChat } from '../composables/useChat.js'
 import { useHead } from '../utils/useHead.js'
+import { startTour, stopTour, tour, tourSeen } from '../utils/tour.js'
 
 /**
  * The cabinet's shell: the sky is the menu (CabinetSky, about the person's star) and one glass
@@ -115,7 +117,34 @@ onMounted(async () => {
   }
 })
 
-onUnmounted(clearMark)
+onUnmounted(() => {
+  clearMark()
+  clearTimeout(tourTimer)
+  stopTour()
+})
+
+/**
+ * The introductions offer themselves once: the cabinet's, as soon as the birth date has drawn the
+ * star (an invited partner's opens with the pair); «Небосвод»'s, once it is lit — after the dome
+ * has had its moment. Never over the birth form, never over another tour.
+ */
+let tourTimer = 0
+function offerTour() {
+  clearTimeout(tourTimer)
+  const current = user.value
+  if (!current?.birth || tour.kind) return
+  const kind = !tourSeen(current.id, 'intro') ? 'intro' : current.sky && !tourSeen(current.id, 'sky') ? 'sky' : ''
+  if (!kind) return
+  tourTimer = setTimeout(() => {
+    if (tour.kind || route.name === 'cabinet-birth' || !user.value?.birth) return
+    startTour(kind, { pair: kind === 'intro' && route.query.joined !== undefined })
+  }, kind === 'sky' ? 2600 : 1800)
+}
+watch(() => [user.value?.id, Boolean(user.value?.birth), Boolean(user.value?.sky)], offerTour)
+// Leaving the birth form for the overview is the moment the star is drawn.
+watch(() => route.name, (name, from) => {
+  if (from === 'cabinet-birth') offerTour()
+})
 
 /**
  * An invitation answered on this device before the cabinet was opened (or signed in to):
@@ -287,7 +316,8 @@ const sheetStyle = computed(() => {
     <Transition name="wheel">
       <NatalWheel v-if="showWheel" :key="section" :chart="chart" :selected="selected" :forecast="transitSky" @select="selectPoint" />
     </Transition>
-    <CabinetSky v-if="user" :section="section" :birth-open="birthOpen" />
+    <CabinetSky v-if="user" :section="section" :birth-open="birthOpen" :lit="Boolean(user.sky)" :flare="tour.flare" />
+    <CabinetTour v-if="user" :user="user" />
 
     <main class="cabinet">
       <section

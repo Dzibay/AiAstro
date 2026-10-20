@@ -7,6 +7,7 @@ import NewcomerPath from '../../components/sky/NewcomerPath.vue'
 import { useSky } from '../../composables/useSky.js'
 import { useForecast } from '../../composables/useForecast.js'
 import { ROMAN } from '../../components/cabinet/astro.js'
+import { FEATURES } from '../../components/sky/features.js'
 import { SIGNS } from '../../utils/skyToday.js'
 import { skyEnding, skyLine } from '../../utils/skyTerm.js'
 
@@ -42,10 +43,19 @@ const moonLine = computed(() => {
   return moon.house ? `Сегодня Луна ${sign.in} и проходит ваш ${ROMAN[moon.house - 1]} дом` : `Сегодня Луна ${sign.in}`
 })
 
+/* ---- What is open ---- */
+
+/** Each feature in a word: its free part, or what «Небосвод» adds once it burns. */
+const opened = computed(() => FEATURES.map((feature) => ({
+  id: feature.id,
+  name: feature.name,
+  what: !props.user.sky ? feature.free : feature.always ? `${feature.free} и портрет` : feature.sky,
+})))
+
 /* ---- «Небосвод» ---- */
 
 /** One line about the subscription; its own section on the sky says the rest. */
-const skyState = computed(() => (props.user.sky ? `Небосвод ${skyLine(props.user)}` : 'Небосвод пока не зажжён — горит одна ваша карта'))
+const skyState = computed(() => (props.user.sky ? `Небосвод ${skyLine(props.user)}` : 'Небосвод зажжёт всё это целиком'))
 const skyMore = computed(() => {
   if (!props.user.sky) return 'Что он зажжёт'
   return skyEnding(props.user) ? 'Продлить' : 'Что входит'
@@ -60,6 +70,8 @@ const unplaced = computed(() => Boolean(props.user.birth?.place && props.user.bi
     <PanelHead :level="1" :lead="signLine || 'Добавьте дату рождения — и небо нарисует ваш знак.'">
       Здравствуйте, <em>{{ user.name }}</em>
     </PanelHead>
+
+    <NewcomerPath :user="user" />
 
     <RouterLink v-if="!user.birth" class="add-birth" :to="{ name: 'cabinet-birth' }">
       <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
@@ -78,7 +90,20 @@ const unplaced = computed(() => Boolean(props.user.birth?.place && props.user.bi
       <span class="today-more">Прогноз дня</span>
     </RouterLink>
 
-    <NewcomerPath :user="user" />
+    <section class="opened" :class="{ 'is-lit': user.sky }" aria-labelledby="opened-title">
+      <h2 id="opened-title" class="opened-title">{{ user.sky ? 'Вам открыто всё' : 'Вам открыто' }}</h2>
+      <ul class="opened-list">
+        <li v-for="item in opened" :key="item.id">
+          <span class="opened-name">{{ item.name }}</span>
+          <span class="opened-what">
+            <svg v-if="user.sky" class="opened-crown" viewBox="0 0 16 12" aria-hidden="true">
+              <path d="M1.5 10.5L1 3l4 3.2L8 1l3 5.2L15 3l-.5 7.5z" />
+            </svg>
+            {{ item.what }}
+          </span>
+        </li>
+      </ul>
+    </section>
 
     <RouterLink class="today sky-line" :class="{ 'is-lit': user.sky, 'is-ending': user.sky && skyMore === 'Продлить' }" :to="{ name: 'cabinet-sky' }">
       <svg class="sky-crown" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
@@ -136,6 +161,25 @@ const unplaced = computed(() => Boolean(props.user.birth?.place && props.user.bi
 .inline:hover { text-decoration-color: currentColor; }
 .inline:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 2px; border-radius: 4px; }
 .hint { margin: -8px 0 0; font-size: 12.5px; line-height: 1.5; color: rgba(233, 194, 124, 0.75); }
+
+/* What is open now: free parts in silver, under a crown that turns gold with «Небосвод». */
+.opened { display: grid; gap: 8px; }
+.opened-title { margin: 0; font-family: var(--caps); font-weight: 600; font-size: 16px; letter-spacing: 0.1em; color: rgba(240, 205, 138, 0.85); }
+.opened-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.opened-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(240, 210, 150, 0.08);
+}
+.opened-list li:first-child { border-top: 0; }
+.opened-name { font-family: var(--serif); font-size: 16px; color: #f6efe2; }
+.opened-what { text-align: right; font-size: 12.5px; line-height: 1.35; color: rgba(214, 222, 238, 0.7); }
+.opened-crown { width: 10px; height: 8px; margin-right: 4px; fill: none; stroke: rgba(214, 222, 238, 0.45); stroke-width: 1.2; stroke-linejoin: round; }
+.opened.is-lit .opened-what { color: rgba(240, 205, 138, 0.9); }
+.opened.is-lit .opened-crown { fill: #f0cd8a; stroke: #f0cd8a; }
 
 /* «Небосвод» in one line, the same as the day's: gold once it burns. */
 .sky-crown { grid-row: span 2; width: 18px; height: 18px; fill: rgba(214, 222, 238, 0.45); transition: fill 0.4s ease; }

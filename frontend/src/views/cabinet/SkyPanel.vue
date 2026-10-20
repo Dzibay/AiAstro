@@ -157,6 +157,29 @@ onUnmounted(() => {
       </button>
     </section>
 
+    <section aria-labelledby="sky-compare">
+      <h3 id="sky-compare" class="part-title">Без подписки и с ней</h3>
+      <table class="compare" :class="{ 'is-lit': user.sky }">
+        <thead>
+          <tr>
+            <th scope="col"><span class="visually-hidden">Что</span></th>
+            <th scope="col">Бесплатно</th>
+            <th scope="col" class="compare-sky">
+              <svg viewBox="0 0 16 12" aria-hidden="true"><path d="M1.5 10.5L1 3l4 3.2L8 1l3 5.2L15 3l-.5 7.5z" /></svg>
+              С «Небосводом»
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="feature in FEATURES" :key="feature.id">
+            <th scope="row">{{ feature.name }}</th>
+            <td>{{ feature.free }}</td>
+            <td class="compare-sky">{{ feature.sky }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
     <section aria-labelledby="sky-plans">
       <h3 id="sky-plans" class="part-title">{{ user.sky ? 'Продлить' : 'Срок' }}</h3>
       <div class="plans" role="radiogroup" aria-labelledby="sky-plans">
@@ -340,6 +363,16 @@ onUnmounted(() => {
 .inline { color: #f0cd8a; text-decoration: underline; text-decoration-color: rgba(240, 205, 138, 0.35); text-underline-offset: 3px; }
 .inline:hover { text-decoration-color: currentColor; }
 
+/* Free and lit side by side: one row per feature, the subscription's column in gold. */
+.compare { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.35; }
+.compare th, .compare td { padding: 7px 6px; text-align: left; vertical-align: top; border-top: 1px solid rgba(240, 210, 150, 0.1); }
+.compare thead th { border-top: 0; padding-top: 0; font-size: 11px; font-weight: 400; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(226, 220, 210, 0.55); }
+.compare tbody th { font-family: var(--serif); font-weight: 400; font-size: 15px; color: #f6efe2; }
+.compare td { color: rgba(226, 220, 210, 0.7); }
+.compare .compare-sky { color: rgba(240, 205, 138, 0.9); }
+.compare thead .compare-sky { color: rgba(240, 205, 138, 0.85); white-space: nowrap; }
+.compare-sky svg { width: 11px; height: 9px; margin-right: 3px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linejoin: round; }
+.compare.is-lit .compare-sky svg { fill: currentColor; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 @media (max-width: 760px) {

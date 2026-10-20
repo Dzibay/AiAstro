@@ -5,6 +5,8 @@ import CosmosCanvas from './hero/CosmosCanvas.vue'
 import OrbitLayer from './hero/OrbitLayer.vue'
 import ConstellationLayer from './hero/ConstellationLayer.vue'
 import NameMark from './hero/NameMark.vue'
+import SkyHints from './hero/SkyHints.vue'
+import { markTried, tried } from '../utils/skyHints.js'
 import { useSession } from '../composables/useSession.js'
 import { useSkyFocus } from '../composables/useSkyFocus.js'
 import { useSky } from '../composables/useSky.js'
@@ -95,12 +97,15 @@ watch(pose, () => {
   flight.value = reduce.value ? 1 : 0
 })
 const frame = computed(() => scene.value.frame)
+/** The hint's demo: the Sun turns a little on its own and back, so the visitor sees it moves. */
+const nudge = ref(0)
+const settled = ref(false)
 // The forecast preview can turn the Sun and Moon a little, but only while the sky rests there.
 const { skyTurn, skyTurning } = useSkyFocus()
 const FORECASTS = STOPS.findIndex((stop) => stop.id === 'forecasts')
 const bodyTheta = computed(() => {
   const near = Math.max(0, 1 - Math.abs(journey.value - FORECASTS) * 2)
-  return scene.value.theta + skyTurn.value * near
+  return scene.value.theta + skyTurn.value * near + nudge.value
 })
 const sun = computed(() => framed(frame.value, onOrbit(geo.value.orbit, bodyTheta.value)))
 const moon = computed(() => framed(frame.value, onOrbit(geo.value.orbit, bodyTheta.value + MOON_OFFSET)))
@@ -118,6 +123,54 @@ const interactive = computed(() => {
   return journey.value < 0.12 || journey.value > LAST_STOP - 0.12
 })
 const atEnd = computed(() => journey.value > LAST_STOP - 0.5)
+
+/* ---- Hints: until the visitor has tried, the sky shows what it can do ---- */
+
+const atHero = computed(() => onJourney.value && journey.value < 0.12 && flight.value >= 1)
+const sunHint = computed(() => {
+  if (!atHero.value || !settled.value || tried.sun || dragging.value || !sunUp.value) return null
+  // The words go on the outer side of the orbit, away from the page's own copy in its middle.
+  const centre = framed(frame.value, { x: geo.value.orbit.cx, y: geo.value.orbit.cy })
+  return { x: sun.value.x, y: sun.value.y, r: 35 * geo.value.u * frame.value.s, side: sun.value.x < centre.x ? 'left' : 'right' }
+})
+/** The constellation to glimmer: on screen, clear of the Sun and the Moon, the nearest to the middle. */
+const hintFigure = computed(() => {
+  if (!atHero.value || !settled.value || tried.figure || openId.value) return null
+  const { W, H } = geo.value
+  const pan = scene.value.pan
+  let best = null
+  for (const figure of figures.value) {
+    const x = figure.cx + pan
+    if (x - figure.span / 2 < 16 || x + figure.span / 2 > W - 16 || figure.labelY > H - 60) continue
+    const clear = [sun.value, moon.value].every((body) => Math.hypot(body.x - x, body.y - figure.cy) > figure.span * 0.6 + 60 * geo.value.u)
+    if (!clear) continue
+    const score = Math.abs(x - W * 0.55)
+    if (!best || score < best.score) best = { score, figure }
+  }
+  return best?.figure || null
+})
+const figureHint = computed(() => {
+  const figure = hintFigure.value
+  if (!figure) return null
+  const x = clamp(figure.labelX + scene.value.pan, 96, geo.value.W - 96)
+  return { x, y: figure.labelY + 14 * Math.max(geo.value.u, 0.6) }
+})
+let demoAt = 0
+let demos = 0
+function demo(now) {
+  if (!sunHint.value || reduce.value || demos >= 3) {
+    if (nudge.value) nudge.value = 0
+    demoAt = 0
+    return
+  }
+  if (!demoAt) demoAt = now + (demos ? 7000 : 1200)
+  const p = (now - demoAt) / 2200
+  if (p >= 1) {
+    nudge.value = 0
+    demoAt = 0
+    demos += 1
+  } else if (p >= 0) nudge.value = 0.07 * Math.sin(Math.PI * p) ** 2
+}
 
 function altitude(point) {
   const p = planet.value
@@ -254,7 +307,7 @@ function canvasState() {
     moonHover: hover.value.moon,
     intro,
     high: high.value,
-    busy: Boolean(dragging.value) || Math.abs(velocity) > 1e-5 || intro < 1 || travelling || skyTurning.value || flight.value < 1,
+    busy: Boolean(dragging.value) || Boolean(nudge.value) || Math.abs(velocity) > 1e-5 || intro < 1 || travelling || skyTurning.value || flight.value < 1,
     still: reduce.value,
   }
 }
@@ -281,7 +334,8 @@ function tick(now) {
       const e = 1 - (1 - intro) ** 3
       theta.value = introFrom + (target - introFrom) * e
     }
-  } else if (dragging.value) {
+  } else if (!settled.value) settled.value = true
+  else if (dragging.value) {
     // Critically damped follow keeps the body heavy but responsive.
     const next = theta.value + (target - theta.value) * 0.32
     velocity = next - theta.value
@@ -304,6 +358,7 @@ function tick(now) {
     const goal = dragging.value === key ? 1 : hoverTarget[key]
     if (Math.abs(goal - current) > 0.002) hover.value = { ...hover.value, [key]: current + (goal - current) * 0.16 }
   }
+  demo(now)
 }
 
 function pointerAngle(event) {
@@ -315,6 +370,7 @@ function startDrag(kind, event, jump = false) {
   if (event.button != null && event.button !== 0) return
   event.preventDefault()
   intro = 1
+  markTried('sun')
   const body = kind === 'sun' ? theta.value : theta.value + MOON_OFFSET
   const angle = pointerAngle(event)
   grabOffset = jump ? 0 : signedAngle(body - angle)
@@ -399,6 +455,7 @@ function onBodyKey(event) {
   if (!delta) return
   event.preventDefault()
   intro = 1
+  markTried('sun')
   velocity = 0
   theta.value = clamp(theta.value + delta, SUN_MIN, SUN_MAX)
   target = theta.value
@@ -407,6 +464,7 @@ function onBodyKey(event) {
 function toggleFigure(key) {
   // The cards lead to the chart, which only makes sense on the home page.
   if (!onJourney.value) return
+  markTried('figure')
   openId.value = openId.value === key ? '' : key
   openedAt = journey.value
 }
@@ -474,10 +532,12 @@ onUnmounted(() => {
       :pan="scene.pan"
       :hot="hotId"
       :open="openId"
+      :glimmer="hintFigure?.key || ''"
       :cut="cut"
       @hover="hotId = $event"
       @toggle="toggleFigure"
     />
+    <SkyHints :sun="sunHint" :pressing="nudge > 0.01" :figure="figureHint" />
     <NameMark v-if="markPose === 'login' || markPose === 'cabinet'" :geo="geo" :pose="markPose" :section="route.meta.section || ''" />
 
     <button
