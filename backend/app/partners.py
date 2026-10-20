@@ -609,7 +609,7 @@ ADMIN_PAGE = 100
 STATES = ("", "bought", "linked", "waiting")
 
 
-def admin_pairs(query: str = "", state: str = "") -> list[dict]:
+def admin_pairs(query: str = "", state: str = "", offset: int = 0) -> dict:
     """Every pair with its sides, newest first: by the email or name of either person, or the partner's name.
 
     state: bought — the reading is open; linked — both have a cabinet; waiting — an invitation not yet answered.
@@ -641,11 +641,11 @@ def admin_pairs(query: str = "", state: str = "") -> list[dict]:
             GROUP BY pa.id, pu.id, bu.id
             HAVING {having} AND bool_or(lower(u.email) LIKE %s OR lower(u.name) LIKE %s OR lower(p.name) LIKE %s)
             ORDER BY pa.id DESC
-            LIMIT %s
+            LIMIT %s OFFSET %s
             """,
-            (PRODUCT, pattern, pattern, pattern, ADMIN_PAGE),
+            (PRODUCT, pattern, pattern, pattern, ADMIN_PAGE + 1, offset),
         ).fetchall()
-    return [
+    items = [
         {
             "id": row["id"],
             "created_at": row["created_at"].isoformat(),
@@ -655,8 +655,9 @@ def admin_pairs(query: str = "", state: str = "") -> list[dict]:
             "payer": row["payer_email"],
             "sides": row["sides"],
         }
-        for row in rows
+        for row in rows[:ADMIN_PAGE]
     ]
+    return {"items": items, "more": len(rows) > ADMIN_PAGE}
 
 
 def set_pair_bought(pair_id: int, bought: bool) -> list[dict]:

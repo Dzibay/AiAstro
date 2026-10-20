@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel, Field
 
 from app import notes
-from app.accounts import SKY_DAYS, list_users, set_birth, set_sky
+from app.accounts import SKY_MAX_DAYS, admin_delete, list_users, operator_user, set_birth, set_sky, set_sky_until
 from app.api.deps import as_http, require_admin
 from app.config import settings
 from app.errors import DomainError
@@ -13,6 +13,7 @@ from app.partners import admin_pairs, admin_partners, mine_changed, set_bought, 
 from app.payments import list_payments
 from app.security import check_admin_password, make_admin_session
 from app.settings_store import list_editable, set_setting
+from app.stats import stats
 
 router = APIRouter(prefix="/admin")
 
@@ -22,8 +23,14 @@ class LoginIn(BaseModel):
 
 
 class SkyIn(BaseModel):
-    # 30 opens «Небосвод» for a month more, 0 closes it.
-    days: int = Field(ge=0, le=SKY_DAYS)
+    # days: 30 opens «Небосвод» for a month more, 0 closes it; until: open till the end of that day instead.
+    days: int | None = Field(default=None, ge=0, le=SKY_MAX_DAYS)
+    until: dt.date | None = None
+
+
+class DeleteIn(BaseModel):
+    # The person's email typed again: the page asks for it so a click alone never deletes.
+    email: str = Field(max_length=254)
 
 
 class BoughtIn(BaseModel):
@@ -91,20 +98,71 @@ def mail_test(body: TestMailIn) -> dict:
     return {"ok": True}
 
 
+@router.get("/stats", dependencies=[Depends(require_admin)])
+def stats_view(days: int = Query(default=30)) -> dict:
+    """Money and new accounts by day for the period, the products and the totals."""
+    try:
+        return stats(days)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
 @router.get("/payments", dependencies=[Depends(require_admin)])
-def payments_list() -> dict:
+def payments_list(
+    q: str = Query(default="", max_length=100),
+    status: str = Query(default="", max_length=16),
+    offset: int = Query(default=0, ge=0),
+    user: int | None = Query(default=None),
+) -> dict:
     """The latest payments and the address to give ЮKassa for its notifications."""
-    return {"items": list_payments(), "notify_url": f"{settings.public_base_url.rstrip('/')}/api/pay/yookassa"}
+    try:
+        page = list_payments(q, status, offset, user)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    return {**page, "notify_url": f"{settings.public_base_url.rstrip('/')}/api/pay/yookassa"}
 
 
 @router.get("/users", dependencies=[Depends(require_admin)])
-def users_list(q: str = Query(default="", max_length=100)) -> dict:
-    return {"items": list_users(q)}
+def users_list(
+    q: str = Query(default="", max_length=100),
+    state: str = Query(default="", max_length=16),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    try:
+        return list_users(q, state, offset)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/users/{user_id}", dependencies=[Depends(require_admin)])
+def users_one(user_id: int) -> dict:
+    try:
+        return operator_user(user_id)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.post("/users/{user_id}/delete", dependencies=[Depends(require_admin)])
+def users_delete(user_id: int, body: DeleteIn, background: BackgroundTasks) -> dict:
+    """Deletes the account for good, as the person's own deletion does: payments stay for the books."""
+    try:
+        user = operator_user(user_id)
+        if body.email.strip().lower() != user["email"].lower():
+            raise DomainError("confirm")
+        told = admin_delete(user_id)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    background.add_task(notes.pair_left, told)
+    return {"ok": True}
 
 
 @router.put("/users/{user_id}/sky", dependencies=[Depends(require_admin)])
 def users_sky(user_id: int, body: SkyIn) -> dict:
     try:
+        if body.until is not None:
+            return set_sky_until(user_id, body.until)
+        if body.days is None:
+            raise DomainError("state")
         return set_sky(user_id, body.days)
     except DomainError as exc:
         raise as_http(exc) from exc
@@ -138,10 +196,14 @@ def users_birth(user_id: int, body: BirthIn) -> dict:
 
 
 @router.get("/pairs", dependencies=[Depends(require_admin)])
-def pairs(q: str = Query(default="", max_length=100), state: str = Query(default="", max_length=16)) -> dict:
+def pairs(
+    q: str = Query(default="", max_length=100),
+    state: str = Query(default="", max_length=16),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
     """Every pair with both its sides: bought, linked or waiting for the partner."""
     try:
-        return {"items": admin_pairs(q, state)}
+        return admin_pairs(q, state, offset)
     except DomainError as exc:
         raise as_http(exc) from exc
 

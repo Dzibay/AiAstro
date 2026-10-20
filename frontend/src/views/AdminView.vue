@@ -1,111 +1,50 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import SiteFrame from '../components/SiteFrame.vue'
 import Field from '../components/ui/Field.vue'
 import { adminApi } from '../api/admin.js'
 import { errorText } from '../api/http.js'
-import { clearSession, readSession, writeSession } from '../composables/useSession.js'
-import { useToast } from '../composables/useToast.js'
+import { clearSession, writeSession } from '../composables/useSession.js'
 import { useHead } from '../utils/useHead.js'
-
-const SKY_DAYS = 30
-
-const { push } = useToast()
-const authed = ref(Boolean(readSession('admin')))
-const password = ref('')
-const items = ref([])
-const message = ref('')
-const pending = ref(false)
-const query = ref('')
-const users = ref([])
-const usersMessage = ref('')
-const busy = ref(null)
-let searchTimer = 0
+import { authed } from './admin/shared.js'
+import './admin/admin.css'
 
 useHead({ title: 'Админка', noindex: true })
 
-const untilFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
-
-function skyStatus(user) {
-  return user.sky ? `Небосвод до ${untilFormat.format(new Date(user.sky_until))}` : 'без подписки'
-}
-
-/** The settings under their headings, in the order of FIELDS on the server. */
-const GROUPS = [
-  { id: 'site', title: 'Сайт', note: 'Название, подзаголовок и почта поддержки.' },
-  { id: 'prices', title: 'Цены', note: 'Целые рубли. Пока цена пуста, сайт пишет «от … ₽», а этот тариф не продаётся.' },
-  { id: 'mail', title: 'Почта', note: 'SMTP почтового сервиса (Яндекс 360, Mail.ru для бизнеса, Unisender Go и подобные). С неё уходят ссылки для нового пароля, напоминание за три дня до конца «Небосвода» и весть об ответе партнёра.' },
-  { id: 'pay', title: 'ЮKassa', note: 'shopId и секретный ключ — в личном кабинете ЮKassa, «Интеграция → Ключи API». Ключ test_… — для проверки без настоящих денег. Коды чека — из справочника ЮKassa (54-ФЗ).' },
+/** The menu: a column on a wide screen, a row of tabs on a phone. */
+const PAGES = [
+  { to: { name: 'admin' }, label: 'Обзор', icon: 'M4 19V11M10 19V5M16 19v-6M22 19H2' },
+  { to: { name: 'admin-users' }, label: 'Пользователи', icon: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM2 21a7 7 0 0 1 14 0M17 3.5a4 4 0 0 1 0 7.5M22 21a7 7 0 0 0-4-6.3' },
+  { to: { name: 'admin-payments' }, label: 'Платежи', icon: 'M2 6h20v12H2zM2 10h20M6 15h4' },
+  { to: { name: 'admin-pairs' }, label: 'Пары', icon: 'M8.5 15a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11ZM15.5 20a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11Z' },
+  { to: { name: 'admin-settings' }, label: 'Настройки', icon: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M16 4v4M10 10v4M18 16v4' },
 ]
-const groups = computed(() => GROUPS.map((group) => ({ ...group, items: items.value.filter((item) => item.group === group.id) })))
-const payOn = computed(() => {
-  const shop = items.value.find((item) => item.key === 'yookassa_shop_id')
-  const secret = items.value.find((item) => item.key === 'yookassa_secret_key')
-  return Boolean(shop?.value && secret?.filled)
-})
 
-const value = (key) => items.value.find((item) => item.key === key)?.value || ''
-const mailOn = computed(() => Boolean(value('smtp_host') && (value('mail_from') || value('smtp_user')).includes('@')))
-const testMail = reactive({ email: '', busy: false, result: '', ok: false })
-async function sendTestMail() {
-  testMail.busy = true
-  testMail.result = ''
-  try {
-    const answer = await adminApi.testMail(testMail.email.trim())
-    testMail.ok = answer.ok
-    testMail.result = answer.ok ? 'Письмо ушло — проверьте ящик (и папку «Спам»).' : `Сервер не принял письмо: ${answer.error}`
-  } catch (error) {
-    testMail.ok = false
-    testMail.result = errorText(error)
-  } finally {
-    testMail.busy = false
-  }
-}
-
-async function loadSettings() {
-  const data = await adminApi.settings()
-  items.value = data.items
-}
-
-/* ---- Payments ---- */
-
-const payments = ref([])
-const notifyUrl = ref('')
-const STATUS = { new: 'создан', pending: 'ждёт оплаты', succeeded: 'оплачен', canceled: 'отменён', failed: 'не создан' }
-const paidFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-async function loadPayments() {
-  const data = await adminApi.payments()
-  payments.value = data.items
-  notifyUrl.value = data.notify_url
-}
-
-async function loadUsers() {
-  usersMessage.value = ''
-  const asked = query.value
-  try {
-    const data = await adminApi.users(asked)
-    // An older answer must not overwrite the list of a newer query.
-    if (asked === query.value) users.value = data.items
-  } catch (error) {
-    usersMessage.value = errorText(error)
-  }
-}
-
-watch(query, () => {
-  clearTimeout(searchTimer)
-  searchTimer = setTimeout(loadUsers, 300)
-})
-onBeforeUnmount(() => clearTimeout(searchTimer))
+const password = ref('')
+const message = ref('')
+const pending = ref(false)
+const checked = ref(false)
+let leaving = false
 
 onMounted(async () => {
-  if (!authed.value) return
+  if (!authed.value) {
+    checked.value = true
+    return
+  }
   try {
     await adminApi.me()
-    await Promise.all([loadSettings(), loadUsers(), loadPayments(), loadAllPairs()])
   } catch (error) {
     authed.value = false
     message.value = errorText(error)
+  } finally {
+    checked.value = true
   }
+})
+
+// A session that ran out on some page: the password form, with a word why.
+watch(authed, (on) => {
+  if (!on && checked.value && !leaving) message.value = 'Сессия истекла, войдите снова'
+  leaving = false
 })
 
 async function login() {
@@ -114,9 +53,9 @@ async function login() {
   try {
     const result = await adminApi.login({ password: password.value })
     writeSession('admin', result.token)
-    authed.value = true
     password.value = ''
-    await Promise.all([loadSettings(), loadUsers(), loadPayments(), loadAllPairs()])
+    message.value = ''
+    authed.value = true
   } catch (error) {
     message.value = errorText(error)
   } finally {
@@ -124,395 +63,41 @@ async function login() {
   }
 }
 
-async function save(item, value = item.value) {
-  message.value = ''
-  try {
-    const saved = await adminApi.saveSetting({ key: item.key, value })
-    Object.assign(item, saved)
-    push(item.secret && !value ? 'Ключ стёрт' : 'Сохранено')
-  } catch (error) {
-    message.value = errorText(error)
-  }
-}
-
-async function setSky(user, days) {
-  usersMessage.value = ''
-  busy.value = user.id
-  try {
-    const saved = await adminApi.setSky(user.id, days)
-    Object.assign(user, saved)
-    push(days ? `Небосвод открыт: ${user.email}` : `Небосвод снят: ${user.email}`)
-  } catch (error) {
-    usersMessage.value = errorText(error)
-  } finally {
-    busy.value = null
-  }
-}
-
-/** The pairs of one person, opened on demand: until payment, a pair's reading is opened here. */
-const pairs = ref({})
-async function togglePairs(user) {
-  if (pairs.value[user.id]) {
-    const { [user.id]: _, ...rest } = pairs.value
-    pairs.value = rest
-    return
-  }
-  usersMessage.value = ''
-  try {
-    const data = await adminApi.partners(user.id)
-    pairs.value = { ...pairs.value, [user.id]: data.items }
-  } catch (error) {
-    usersMessage.value = errorText(error)
-  }
-}
-async function setBought(user, partner, bought) {
-  usersMessage.value = ''
-  busy.value = user.id
-  try {
-    const saved = await adminApi.setBought(user.id, partner.id, bought)
-    Object.assign(partner, saved)
-    push(bought ? `Разбор пары открыт: ${user.email} и ${partner.name}` : `Разбор пары закрыт: ${user.email} и ${partner.name}`)
-  } catch (error) {
-    usersMessage.value = errorText(error)
-  } finally {
-    busy.value = null
-  }
-}
-
-/* ---- Every pair, both sides at once ---- */
-
-const PAIR_STATES = [
-  { id: '', label: 'Все' },
-  { id: 'bought', label: 'Разбор открыт' },
-  { id: 'linked', label: 'Общие' },
-  { id: 'waiting', label: 'Ждут ответа' },
-]
-const SOURCE = { pay: 'оплата', admin: 'подарок' }
-const dayFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
-const pairQuery = ref('')
-const pairState = ref('')
-const allPairs = ref([])
-const pairsMessage = ref('')
-const pairBusy = ref(null)
-let pairTimer = 0
-async function loadAllPairs() {
-  pairsMessage.value = ''
-  const asked = `${pairQuery.value}|${pairState.value}`
-  try {
-    const data = await adminApi.pairs(pairQuery.value, pairState.value)
-    // An older answer must not overwrite the list of a newer filter.
-    if (asked === `${pairQuery.value}|${pairState.value}`) allPairs.value = data.items
-  } catch (error) {
-    pairsMessage.value = errorText(error)
-  }
-}
-watch(pairQuery, () => {
-  clearTimeout(pairTimer)
-  pairTimer = setTimeout(loadAllPairs, 300)
-})
-watch(pairState, loadAllPairs)
-onBeforeUnmount(() => clearTimeout(pairTimer))
-function sideState(side) {
-  if (side.linked) return 'свой кабинет'
-  if (side.filled) return side.invite ? 'ответ по ссылке' : 'введён вручную'
-  return side.invite ? 'ждём ответа' : 'без данных'
-}
-async function setPairBought(pair, bought) {
-  pairsMessage.value = ''
-  pairBusy.value = pair.id
-  try {
-    await adminApi.setPairBought(pair.id, bought)
-    push(bought ? `Разбор пары № ${pair.id} открыт` : `Разбор пары № ${pair.id} закрыт`)
-    await loadAllPairs()
-  } catch (error) {
-    pairsMessage.value = errorText(error)
-  } finally {
-    pairBusy.value = null
-  }
-}
-
-/* ---- The birth data, corrected by the support past the person's own correction ---- */
-
-const birthEdit = reactive({ id: null, date: '', time: '', busy: false })
-function editBirth(user) {
-  if (birthEdit.id === user.id) {
-    birthEdit.id = null
-    return
-  }
-  Object.assign(birthEdit, { id: user.id, date: user.birth?.date || '', time: user.birth?.time || '', busy: false })
-}
-async function saveBirth(user) {
-  usersMessage.value = ''
-  birthEdit.busy = true
-  try {
-    const birth = user.birth || {}
-    const saved = await adminApi.setBirth(user.id, {
-      date: birthEdit.date,
-      time: birthEdit.time || null,
-      place: birth.place || null,
-      lat: birth.lat ?? null,
-      lon: birth.lon ?? null,
-    })
-    Object.assign(user, saved)
-    birthEdit.id = null
-    push(`Данные рождения исправлены: ${user.email}`)
-  } catch (error) {
-    usersMessage.value = errorText(error)
-  } finally {
-    birthEdit.busy = false
-  }
-}
-
 function logout() {
   clearSession('admin')
+  leaving = true
+  message.value = ''
   authed.value = false
-  items.value = []
-  users.value = []
-  payments.value = []
-  allPairs.value = []
 }
 </script>
 
 <template>
   <SiteFrame>
-    <section class="section">
-      <div class="wrap narrow">
+    <section class="section adm-section">
+      <div v-if="!authed" class="wrap narrow">
         <h1>Админка</h1>
-        <form v-if="!authed" class="form" @submit.prevent="login">
+        <form class="form" @submit.prevent="login">
           <Field v-model="password" label="Пароль оператора" type="password" autocomplete="current-password" />
           <p v-if="message" class="error">{{ message }}</p>
           <button class="button" type="submit" :disabled="pending">Войти</button>
         </form>
-        <template v-else>
-          <p v-if="message" class="error">{{ message }}</p>
-          <template v-for="group in groups" :key="group.id">
-            <h2 class="admin-heading">{{ group.title }}</h2>
-            <p class="meta">{{ group.note }}</p>
-            <p v-if="group.id === 'mail'" class="pay-state" :class="{ 'is-on': mailOn }">
-              {{ mailOn ? 'Почта включена: письма уходят.' : 'Почта выключена: заполните сервер и адрес отправителя. Восстановить пароль пока нельзя.' }}
-            </p>
-            <p v-if="group.id === 'pay'" class="pay-state" :class="{ 'is-on': payOn }">
-              {{ payOn ? 'Оплата включена: кнопки оплаты на сайте работают.' : 'Оплата выключена: заполните shopId и секретный ключ.' }}
-            </p>
-            <form v-for="item in group.items" :key="item.key" class="form setting" @submit.prevent="save(item)">
-              <Field
-                v-model="item.value"
-                :label="item.label"
-                :type="item.secret ? 'password' : 'text'"
-                :placeholder="item.secret && item.filled ? `${item.key === 'smtp_password' ? 'Пароль сохранён' : 'Ключ сохранён'} — введите новый, чтобы заменить` : ''"
-                autocomplete="off"
-              />
-              <div class="setting-actions">
-                <button class="button" type="submit" :disabled="item.secret && !item.value">Сохранить</button>
-                <button v-if="item.secret && item.filled" class="text-button" type="button" @click="save(item, '')">{{ item.key === 'smtp_password' ? 'Стереть пароль' : 'Стереть ключ' }}</button>
-              </div>
-            </form>
-            <form v-if="group.id === 'mail' && mailOn" class="form setting" @submit.prevent="sendTestMail">
-              <Field v-model="testMail.email" label="Пробное письмо на адрес" type="email" autocomplete="off" />
-              <div class="setting-actions">
-                <button class="button" type="submit" :disabled="!testMail.email.includes('@') || testMail.busy">
-                  {{ testMail.busy ? 'Отправляем…' : 'Отправить' }}
-                </button>
-              </div>
-              <p v-if="testMail.result" class="meta" :class="testMail.ok ? 'mail-ok' : 'error'">{{ testMail.result }}</p>
-            </form>
-            <div v-if="group.id === 'pay' && notifyUrl" class="notify">
-              <p class="meta">
-                В личном кабинете ЮKassa, «Интеграция → HTTP-уведомления», укажите этот адрес и события
-                <code>payment.succeeded</code> и <code>payment.canceled</code>:
-              </p>
-              <code class="notify-url">{{ notifyUrl }}</code>
-            </div>
-          </template>
+      </div>
 
-          <h2 class="admin-heading">Платежи</h2>
-          <p class="meta">Последние пятьдесят. Возврат делается в личном кабинете ЮKassa; подписку после него можно снять ниже.</p>
-          <ul v-if="payments.length" class="payments">
-            <li v-for="payment in payments" :key="payment.id" class="payment-row" :class="`is-${payment.status}`">
-              <span class="payment-when">{{ paidFormat.format(new Date(payment.paid_at || payment.created_at)) }}</span>
-              <span class="payment-what">
-                {{ payment.title }}
-                <span class="meta"> · {{ payment.email }}</span>
-              </span>
-              <span class="payment-sum">{{ payment.amount.toLocaleString('ru-RU') }} ₽</span>
-              <span class="payment-status">{{ STATUS[payment.status] || payment.status }}</span>
-            </li>
-          </ul>
-          <p v-else class="meta">Платежей пока не было.</p>
-
-          <h2 class="admin-heading">Пары</h2>
-          <p class="meta">
-            Все пары, новые сверху. Общая — у обоих свой кабинет: разбор, открытый здесь, откроется у обоих, и им уйдёт письмо.
-            Пара, удалённая одним, остаётся у второго.
-          </p>
-          <div class="form pair-filters">
-            <Field v-model="pairQuery" label="Поиск по почте или имени" type="search" autocomplete="off" />
-            <div class="chips" role="group" aria-label="Какие пары">
-              <button
-                v-for="item in PAIR_STATES"
-                :key="item.id"
-                type="button"
-                class="text-button chip"
-                :class="{ 'is-on': pairState === item.id }"
-                :aria-pressed="pairState === item.id"
-                @click="pairState = item.id"
-              >
-                {{ item.label }}
-              </button>
-            </div>
-          </div>
-          <p v-if="pairsMessage" class="error">{{ pairsMessage }}</p>
-          <ul v-if="allPairs.length" class="users">
-            <li v-for="pair in allPairs" :key="pair.id" class="user-row">
-              <div class="user-who">
-                <strong>Пара № {{ pair.id }}<span v-if="pair.sides.length > 1" class="tag">общая</span></strong>
-                <span v-for="side in pair.sides" :key="side.partner_id" class="meta">
-                  {{ side.email }}<template v-if="side.user_name"> ({{ side.user_name }})</template> → {{ side.name }} · {{ sideState(side) }}
-                </span>
-                <span class="meta">
-                  создана {{ dayFormat.format(new Date(pair.created_at)) }}<template v-if="pair.bought">
-                    · разбор открыт {{ dayFormat.format(new Date(pair.bought_at)) }},
-                    {{ SOURCE[pair.source] || 'оплата' }}<template v-if="pair.payer">: {{ pair.payer }}</template></template>
-                </span>
-              </div>
-              <div class="user-actions">
-                <button
-                  class="text-button"
-                  type="button"
-                  :disabled="pairBusy === pair.id || (!pair.bought && !pair.sides.some((side) => side.filled))"
-                  @click="setPairBought(pair, !pair.bought)"
-                >
-                  {{ pair.bought ? 'Закрыть разбор' : 'Открыть разбор' }}
-                </button>
-              </div>
-            </li>
-          </ul>
-          <p v-else-if="!pairsMessage" class="meta">Пар не нашлось.</p>
-
-          <h2 class="admin-heading">Пользователи</h2>
-          <p class="meta">Оплаченное через ЮKassa открывается само. Здесь — вручную: «Небосвод» на {{ SKY_DAYS }} дней от конца текущего срока (подарок, возврат), разбор пары — в списке пар человека.</p>
-          <div class="form">
-            <Field v-model="query" label="Поиск по почте или имени" type="search" autocomplete="off" />
-          </div>
-          <p v-if="usersMessage" class="error">{{ usersMessage }}</p>
-          <ul v-if="users.length" class="users">
-            <li v-for="user in users" :key="user.id" class="user-row">
-              <div class="user-who">
-                <strong>{{ user.email }}</strong>
-                <span class="meta">
-                  {{ user.name }}<template v-if="user.blocked"> · заблокирован</template> · {{ skyStatus(user) }}
-                </span>
-              </div>
-              <div class="user-actions">
-                <button class="button button-small" type="button" :disabled="busy === user.id" @click="setSky(user, SKY_DAYS)">
-                  Небосвод на {{ SKY_DAYS }} дней
-                </button>
-                <button
-                  v-if="user.sky"
-                  class="text-button"
-                  type="button"
-                  :disabled="busy === user.id"
-                  @click="setSky(user, 0)"
-                >
-                  Снять
-                </button>
-                <button class="text-button" type="button" :aria-expanded="birthEdit.id === user.id" @click="editBirth(user)">
-                  {{ birthEdit.id === user.id ? 'Скрыть данные' : user.birth_locked ? 'Данные рождения · правка исчерпана' : 'Данные рождения' }}
-                </button>
-                <button class="text-button" type="button" :aria-expanded="Boolean(pairs[user.id])" @click="togglePairs(user)">
-                  {{ pairs[user.id] ? 'Скрыть пары' : 'Пары' }}
-                </button>
-              </div>
-              <form v-if="birthEdit.id === user.id" class="form birth-edit" @submit.prevent="saveBirth(user)">
-                <Field v-model="birthEdit.date" label="Дата рождения" type="date" />
-                <Field v-model="birthEdit.time" label="Время (пусто — неизвестно)" type="time" />
-                <p class="meta">
-                  Город остаётся прежним: {{ user.birth?.place || 'не указан' }}. Правка поддержки не тратит правку человека;
-                  пары, где разбор ещё не открыт, получат новые данные.
-                </p>
-                <div class="setting-actions">
-                  <button class="button button-small" type="submit" :disabled="!birthEdit.date || birthEdit.busy">Сохранить</button>
-                </div>
-              </form>
-              <template v-if="pairs[user.id]">
-                <ul v-if="pairs[user.id].length" class="pairs">
-                  <li v-for="partner in pairs[user.id]" :key="partner.id" class="pair-row">
-                    <span>
-                      {{ partner.name }}
-                      <span class="meta"> · {{ partner.birth ? 'данные есть' : 'ждём ответа' }}<template v-if="partner.bought"> · разбор оплачен</template></span>
-                    </span>
-                    <button
-                      class="text-button"
-                      type="button"
-                      :disabled="busy === user.id || !partner.birth"
-                      @click="setBought(user, partner, !partner.bought)"
-                    >
-                      {{ partner.bought ? 'Закрыть разбор' : 'Отметить оплату' }}
-                    </button>
-                  </li>
-                </ul>
-                <p v-else class="meta">Пар пока нет.</p>
-              </template>
-            </li>
-          </ul>
-          <p v-else-if="!usersMessage" class="meta">Никого не нашлось.</p>
-
-          <button type="button" class="text-button logout" @click="logout">Выйти</button>
-        </template>
+      <div v-else-if="checked" class="adm">
+        <aside class="adm-side">
+          <p class="adm-title">Админка</p>
+          <nav class="adm-nav" aria-label="Разделы админки">
+            <RouterLink v-for="page in PAGES" :key="page.label" :to="page.to" class="adm-nav-link" :exact-active-class="page.to.name === 'admin' ? 'is-on' : ''" :active-class="page.to.name === 'admin' ? '' : 'is-on'">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path :d="page.icon" /></svg>
+              <span>{{ page.label }}</span>
+            </RouterLink>
+          </nav>
+          <button type="button" class="text-button adm-logout" @click="logout">Выйти</button>
+        </aside>
+        <div class="adm-main">
+          <RouterView />
+        </div>
       </div>
     </section>
   </SiteFrame>
 </template>
-
-<style scoped>
-.admin-heading { margin: 40px 0 6px; font-size: 32px; }
-
-.users {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border-top: 1px solid var(--line);
-}
-
-.user-row {
-  display: grid;
-  gap: 10px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.user-who { display: grid; gap: 2px; min-width: 0; }
-.user-who strong { overflow-wrap: anywhere; font-weight: 600; }
-
-.user-actions { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
-.pairs { display: grid; gap: 6px; margin: 0; padding: 0 0 0 14px; list-style: none; border-left: 1px solid var(--line); }
-.pair-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; }
-.button-small { padding: 8px 16px; font-size: 15px; }
-
-.logout { margin-top: 28px; }
-.pair-filters { gap: 10px; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px 18px; }
-.chip { opacity: 0.6; }
-.chip.is-on { opacity: 1; text-decoration: underline; text-underline-offset: 4px; }
-.tag { margin-left: 8px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; font-weight: 500; opacity: 0.8; }
-.birth-edit { padding-left: 14px; border-left: 1px solid var(--line); }
-
-.setting-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
-.pay-state { margin: 4px 0 14px; font-weight: 600; color: #f2a48c; }
-.pay-state.is-on { color: #9fd3a8; }
-.mail-ok { color: #9fd3a8; }
-.notify { display: grid; gap: 6px; margin-top: 4px; }
-.notify-url { overflow-wrap: anywhere; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255, 240, 210, 0.04); font-size: 14px; user-select: all; }
-
-.payments { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
-.payment-row { display: grid; grid-template-columns: 7.5em 1fr auto auto; align-items: baseline; gap: 4px 16px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
-.payment-what { min-width: 0; overflow-wrap: anywhere; }
-.payment-when, .payment-status { font-size: 13px; opacity: 0.7; }
-.payment-sum { font-variant-numeric: tabular-nums; font-weight: 600; }
-.is-succeeded .payment-status { color: #9fd3a8; opacity: 1; }
-.is-canceled .payment-status, .is-failed .payment-status { color: #f2a48c; opacity: 1; }
-@media (max-width: 640px) {
-  .payment-row { grid-template-columns: 1fr auto auto; }
-  .payment-what { grid-column: 1 / -1; grid-row: 1; }
-}
-</style>

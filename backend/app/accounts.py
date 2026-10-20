@@ -344,6 +344,10 @@ def delete_account(user_id: int, password: str) -> list[dict]:
     Gives the partners to write to: [{user_id, partner_id}].
     """
     _checked(user_id, password)
+    return _remove(user_id)
+
+
+def _remove(user_id: int) -> list[dict]:
     with pool.connection() as conn:
         others = conn.execute(
             """
@@ -354,7 +358,9 @@ def delete_account(user_id: int, password: str) -> list[dict]:
             """,
             (user_id,),
         ).fetchall()
-        conn.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        gone = conn.execute("DELETE FROM users WHERE id = %s RETURNING id", (user_id,)).fetchone()
+    if gone is None:
+        raise DomainError("missing", 404)
     return others
 
 
@@ -362,25 +368,63 @@ def delete_account(user_id: int, password: str) -> list[dict]:
 
 ADMIN_PAGE = 50
 SKY_DAYS = 30
+# The operator's longest single extension: a year, as the longest plan.
+SKY_MAX_DAYS = 366
+
+# The users' list filters: everyone, «Небосвод» on, no birth date yet, paid at least once.
+USER_FILTERS = {
+    "": "TRUE",
+    "sky": "u.sky_until > now()",
+    "nobirth": "u.birth_date IS NULL",
+    "paid": "EXISTS (SELECT 1 FROM payments pa WHERE pa.user_id = u.id AND pa.status = 'succeeded')",
+}
 
 
-def list_users(query: str = "") -> list[dict]:
-    """The newest accounts, or those whose email or name contains `query`."""
+def _like(query: str) -> str:
     # LIKE's own wildcards in the query are taken literally.
     cleaned = " ".join(query.split()).lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    pattern = f"%{cleaned}%"
+    return f"%{cleaned}%"
+
+
+def _operator_view(row: dict) -> dict:
+    return {
+        **_public(row),
+        "blocked": row["blocked"],
+        "pairs": row.get("pairs", 0),
+        "paid": row.get("paid", 0),
+    }
+
+
+_OPERATOR_COLUMNS = ", ".join(f"u.{column.strip()}" for column in _USER_COLUMNS.split(",")) + """,
+    (SELECT count(*) FROM partners p WHERE p.user_id = u.id) AS pairs,
+    (SELECT COALESCE(sum(pa.amount), 0) FROM payments pa WHERE pa.user_id = u.id AND pa.status = 'succeeded') AS paid"""
+
+
+def list_users(query: str = "", state: str = "", offset: int = 0) -> dict:
+    """The newest accounts, or those whose email or name contains `query`, a page at a time."""
+    if state not in USER_FILTERS:
+        raise DomainError("state")
+    pattern = _like(query)
     with pool.connection() as conn:
         rows = conn.execute(
             f"""
-            SELECT {_USER_COLUMNS}
-            FROM users
-            WHERE lower(email) LIKE %s OR lower(name) LIKE %s
-            ORDER BY created_at DESC, id DESC
-            LIMIT %s
+            SELECT {_OPERATOR_COLUMNS}
+            FROM users u
+            WHERE (lower(u.email) LIKE %s OR lower(u.name) LIKE %s) AND {USER_FILTERS[state]}
+            ORDER BY u.created_at DESC, u.id DESC
+            LIMIT %s OFFSET %s
             """,
-            (pattern, pattern, ADMIN_PAGE),
+            (pattern, pattern, ADMIN_PAGE + 1, offset),
         ).fetchall()
-    return [{**_public(row), "blocked": row["blocked"]} for row in rows]
+    return {"items": [_operator_view(row) for row in rows[:ADMIN_PAGE]], "more": len(rows) > ADMIN_PAGE}
+
+
+def operator_user(user_id: int) -> dict:
+    with pool.connection() as conn:
+        row = conn.execute(f"SELECT {_OPERATOR_COLUMNS} FROM users u WHERE u.id = %s", (user_id,)).fetchone()
+    if row is None:
+        raise DomainError("missing", 404)
+    return _operator_view(row)
 
 
 def set_sky(user_id: int, days: int) -> dict:
@@ -390,11 +434,28 @@ def set_sky(user_id: int, days: int) -> dict:
         params: tuple = (days, user_id)
     else:
         until, params = "NULL", (user_id,)
+    return _write_sky(until, params)
+
+
+def set_sky_until(user_id: int, day: date) -> dict:
+    """«Небосвод» till the end of this day, Moscow time; a day in the past closes it.
+
+    The last second of the day, not the next midnight: the cabinet shows the date of sky_until.
+    """
+    return _write_sky("((%s::date + interval '23:59:59') AT TIME ZONE 'Europe/Moscow')", (day, user_id))
+
+
+def _write_sky(until: str, params: tuple) -> dict:
     with pool.connection() as conn:
         row = conn.execute(
-            f"UPDATE users SET sky_until = {until} WHERE id = %s RETURNING {_USER_COLUMNS}",
+            f"UPDATE users SET sky_until = {until} WHERE id = %s RETURNING id",
             params,
         ).fetchone()
     if row is None:
         raise DomainError("missing", 404)
-    return {**_public(row), "blocked": row["blocked"]}
+    return operator_user(params[-1])
+
+
+def admin_delete(user_id: int) -> list[dict]:
+    """The operator deletes an account the same way the person would, without the password."""
+    return _remove(user_id)

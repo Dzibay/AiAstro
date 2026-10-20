@@ -8,6 +8,12 @@ const LegalView = () => import('../views/LegalView.vue')
 const LoginView = () => import('../views/LoginView.vue')
 const CabinetView = () => import('../views/CabinetView.vue')
 const AdminView = () => import('../views/AdminView.vue')
+const AdminOverview = () => import('../views/admin/OverviewPage.vue')
+const AdminUsers = () => import('../views/admin/UsersPage.vue')
+const AdminUser = () => import('../views/admin/UserPanel.vue')
+const AdminPayments = () => import('../views/admin/PaymentsPage.vue')
+const AdminPairs = () => import('../views/admin/PairsPage.vue')
+const AdminSettings = () => import('../views/admin/SettingsPage.vue')
 const OverviewPanel = () => import('../views/cabinet/OverviewPanel.vue')
 const BirthPanel = () => import('../views/cabinet/BirthPanel.vue')
 const SectionSoon = () => import('../views/cabinet/SectionSoon.vue')
@@ -65,7 +71,24 @@ const router = createRouter({
     },
     // The partner's side of an invitation: no account, the inviter's star on the login sky.
     { path: '/invite/:token', name: 'invite', component: InviteView, meta: { sky: 'login' } },
-    { path: '/admin', name: 'admin', component: AdminView },
+    {
+      // The operator's pages; the shell asks for the password and keeps the menu.
+      path: '/admin',
+      component: AdminView,
+      children: [
+        { path: '', name: 'admin', component: AdminOverview },
+        {
+          path: 'users',
+          name: 'admin-users',
+          component: AdminUsers,
+          // The person's card slides over the list, so the search and the scroll stay.
+          children: [{ path: ':id(\\d+)', name: 'admin-user', component: AdminUser }],
+        },
+        { path: 'payments', name: 'admin-payments', component: AdminPayments },
+        { path: 'pairs', name: 'admin-pairs', component: AdminPairs },
+        { path: 'settings', name: 'admin-settings', component: AdminSettings },
+      ],
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })

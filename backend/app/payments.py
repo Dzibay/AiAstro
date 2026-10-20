@@ -15,7 +15,7 @@ import threading
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from app.accounts import get_user
+from app.accounts import _like, get_user
 from app.config import settings
 from app.db import pool
 from app.errors import DomainError
@@ -271,8 +271,26 @@ def notify(event: dict) -> None:
     _settle(row)
 
 
-def list_payments(limit: int = 50) -> list[dict]:
-    """The latest payments for the operator, with the email the receipt went to."""
+ADMIN_PAGE = 50
+STATUSES = ("", "succeeded", "pending", "canceled", "failed", "new")
+
+
+def list_payments(query: str = "", status: str = "", offset: int = 0, user_id: int | None = None) -> dict:
+    """The latest payments for the operator, with the email the receipt went to, a page at a time."""
+    if status not in STATUSES:
+        raise DomainError("state")
+    where = ["lower(email) LIKE %s"]
+    params: list = [_like(query)]
+    if status:
+        where.append("status = %s")
+        params.append(status)
+    if user_id is not None:
+        where.append("user_id = %s")
+        params.append(user_id)
     with pool.connection() as conn:
-        rows = conn.execute(f"SELECT {_COLUMNS} FROM payments ORDER BY id DESC LIMIT %s", (limit,)).fetchall()
-    return [{**_public(row), "email": row["email"]} for row in rows]
+        rows = conn.execute(
+            f"SELECT {_COLUMNS} FROM payments WHERE {' AND '.join(where)} ORDER BY COALESCE(paid_at, created_at) DESC, id DESC LIMIT %s OFFSET %s",
+            (*params, ADMIN_PAGE + 1, offset),
+        ).fetchall()
+    items = [{**_public(row), "email": row["email"], "user_id": row["user_id"]} for row in rows[:ADMIN_PAGE]]
+    return {"items": items, "more": len(rows) > ADMIN_PAGE}
