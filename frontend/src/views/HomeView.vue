@@ -125,7 +125,7 @@ const plans = computed(() => [
   { title: 'Совместимость', price: prices.synastry.value, term: 'разово', text: 'Две карты рядом: пять сфер жизни, сильные и спорные места' },
   {
     title: 'Небосвод',
-    price: prices.sky.value,
+    price: prices.skyMonthly.value,
     term: 'в месяц',
     text: 'Портрет карты целиком, полные прогнозы на день и неделю, звёздный календарь на месяц, ИИ-астролог без ограничений и разбор пары дешевле',
     star: true,

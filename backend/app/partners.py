@@ -105,7 +105,7 @@ def _public(row: dict, bought: dict[int, dict] | None = None, user_id: int | Non
         "invite": row["invite_token"] if birth is None and not linked else None,
         # A linked partner still waiting for the other's consent to show their data.
         "waiting_share": linked and birth is None and row.get("mutual", True),
-        # The person's own consent to show the partner their data; asked once the partner has joined.
+        # The person's own consent to show the partner their data: given by sending the invitation.
         "shared": row["share_at"] is not None,
         # The partner has deleted the pair on their end: what was opened stays here.
         "left": linked and not row.get("mutual", True),
@@ -174,11 +174,10 @@ def create_partner(
     place: str | None = None,
     lat: float | None = None,
     lon: float | None = None,
-    share: bool = False,
 ) -> dict:
     """With the birth data the partner is entered by hand; without them, it waits for an invitation.
 
-    `share` is the consent to show the partner one's own data once they join (the invitation's tick).
+    Sending the invitation is itself the consent to show the partner one's own data once they join.
     """
     get_user(user_id)
     cleaned = _clean_name(name)
@@ -197,7 +196,7 @@ def create_partner(
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CASE WHEN %s THEN now() END, CASE WHEN %s THEN now() END)
             RETURNING {_cols()}
             """,
-            (user_id, pair, cleaned, *birth, birth_date is not None, share and birth_date is None),
+            (user_id, pair, cleaned, *birth, birth_date is not None, birth_date is None),
         ).fetchone()
     return _public(row)
 

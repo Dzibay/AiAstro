@@ -164,8 +164,6 @@ function onEdited(changed) {
 }
 
 const inviteName = ref('')
-/** The consent to show the partner one's own data once they open a cabinet: asked here, or later in the pair. */
-const inviteShare = ref(false)
 const inviting = ref(false)
 const inviteMessage = ref('')
 watch(inviteName, (name) => {
@@ -180,10 +178,9 @@ async function sendInvite() {
   inviteMessage.value = ''
   inviting.value = true
   try {
-    const created = await add({ name, share: inviteShare.value })
+    const created = await add({ name })
     await invite(created.id)
     inviteName.value = ''
-    inviteShare.value = false
     clearDraft()
     router.replace({ name: 'cabinet-pair', query: { partner: created.id } })
   } catch (error) {
@@ -317,7 +314,7 @@ async function confirmRemove() {
 }
 
 function status_of(item) {
-  if (item.waiting_share) return 'общая пара · ждём согласия партнёра'
+  if (item.waiting_share) return 'общая пара · ждём данных партнёра'
   if (!item.birth) return item.invite ? 'ждём ответа' : 'без данных'
   const parts = [item.left ? 'партнёр удалил пару' : item.kind === 'linked' ? 'общая пара' : 'звезда горит']
   if (item.bought) parts.push('разбор открыт')
@@ -374,16 +371,12 @@ function status_of(item) {
         <span class="field-label">Как зовут партнёра</span>
         <input v-model="inviteName" type="text" maxlength="80" autocomplete="off" />
       </label>
-      <label class="check">
-        <input v-model="inviteShare" type="checkbox" />
-        <span class="check-box" aria-hidden="true" />
-        <span>Показать партнёру мои данные рождения, когда партнёр откроет свой кабинет</span>
-      </label>
       <p v-if="inviteMessage" class="error" role="alert">{{ inviteMessage }}</p>
       <div class="actions">
         <button class="gold-cta" type="submit" :disabled="inviting">{{ inviting ? 'Минуту…' : 'Отправить приглашение' }}</button>
         <button type="button" class="quiet" :disabled="inviting" @click="go({})">Отмена</button>
       </div>
+      <p class="invite-consent">Отправляя приглашение, вы соглашаетесь показать партнёру свои данные рождения: они нужны, чтобы построить разбор вашей пары.</p>
     </form>
 
     <p v-else-if="status === 'error'" class="error">{{ message }}</p>
@@ -397,8 +390,8 @@ function status_of(item) {
       </p>
 
       <template v-if="partner.waiting_share">
-        <PanelHead :lead="`Пара уже общая. Когда ${partner.name} согласится показать вам свои данные рождения, на небе зажжётся вторая звезда.`">
-          Ждём <em>согласия</em>
+        <PanelHead :lead="`Пара уже общая. Как только ${partner.name} укажет в своём кабинете данные рождения, на небе зажжётся вторая звезда — ничего делать не нужно.`">
+          Ждём <em>звезду</em>
         </PanelHead>
       </template>
 
@@ -678,6 +671,7 @@ function status_of(item) {
 }
 .news svg { flex: none; width: 10px; height: 10px; margin-top: 6px; fill: #f0cd8a; filter: drop-shadow(0 0 5px rgba(255, 200, 110, 0.8)); }
 .shared-note { margin: -10px 0 0; text-align: center; font-size: 12.5px; letter-spacing: 0.04em; color: rgba(233, 194, 124, 0.75); }
+.invite-consent { margin: 0; font-size: 13px; line-height: 1.5; color: rgba(226, 220, 210, 0.6); }
 .share-box { display: grid; gap: 10px; padding: 12px 14px; border-radius: 14px; border: 1px dashed rgba(240, 205, 138, 0.35); }
 .share-box p { margin: 0; font-size: 14px; line-height: 1.5; color: rgba(226, 220, 210, 0.75); }
 .bought-line { margin: 0 0 6px; font-size: 13px; color: rgba(233, 194, 124, 0.8); }
@@ -696,34 +690,6 @@ function status_of(item) {
 .week-tone { font-family: var(--serif); font-style: italic; font-size: 12.5px; color: rgba(226, 220, 210, 0.6); }
 
 /* ---- Forms and buttons (as the birth form's) ---- */
-.check { position: relative; display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 18px; color: rgba(226, 220, 210, 0.78); cursor: pointer; }
-.check input { position: absolute; opacity: 0; pointer-events: none; }
-.check-box {
-  flex: none;
-  position: relative;
-  width: 13px;
-  height: 13px;
-  margin-top: 2px;
-  border-radius: 4px;
-  border: 1px solid rgba(240, 210, 150, 0.4);
-  background: rgba(255, 240, 210, 0.04);
-  transition: background 0.2s ease, border-color 0.2s ease;
-}
-.check-box::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 1.5px;
-  width: 3px;
-  height: 6px;
-  border: solid #2b1d0b;
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg) scale(0);
-  transition: transform 0.2s ease;
-}
-.check input:checked + .check-box { background: #e9c47e; border-color: #e9c47e; }
-.check input:checked + .check-box::after { transform: rotate(45deg) scale(1); }
-.check input:focus-visible + .check-box { box-shadow: 0 0 0 3px rgba(240, 205, 138, 0.25); }
 .invite-form { display: grid; gap: 14px; }
 .field { display: grid; gap: 7px; }
 .field-label { line-height: 16px; font-size: 10.5px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(226, 214, 192, 0.66); }

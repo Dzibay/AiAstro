@@ -117,6 +117,11 @@ DO $$ DECLARE r RECORD; pid BIGINT; BEGIN FOR r IN SELECT id, created_at FROM pa
 CREATE INDEX IF NOT EXISTS partners_pair_idx ON partners (pair_id);
 CREATE INDEX IF NOT EXISTS partners_linked_idx ON partners (linked_user_id);
 
+-- Отправленное приглашение — уже согласие показать партнёру свои данные; так считаются и прежние приглашения.
+UPDATE partners SET share_at = created_at WHERE invite_token IS NOT NULL AND share_at IS NULL;
+-- Партнёр, уже открывший свой кабинет, получает эти данные на свою сторону пары.
+UPDATE partners o SET birth_date = u.birth_date, birth_time = u.birth_time, birth_place = u.birth_place, birth_lat = u.birth_lat, birth_lon = u.birth_lon, birth_tz = u.birth_tz, filled_at = now(), news = 'filled', news_at = now() FROM users u, partners m WHERE o.linked_user_id = u.id AND m.user_id = u.id AND m.pair_id = o.pair_id AND m.invite_token IS NOT NULL AND m.share_at IS NOT NULL AND u.birth_date IS NOT NULL AND o.birth_date IS NULL;
+
 -- Разовые покупки: их записывает оплата или оператор в админке. Сумм здесь нет, они в payments.
 -- Разбор пары принадлежит паре (pair_id); user_id — кто заплатил, source — pay или admin.
 -- Удалённая сторона или кабинет не стирают покупку: она остаётся у второй стороны.

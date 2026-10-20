@@ -44,8 +44,6 @@ class PartnerIn(BaseModel):
     name: str = Field(max_length=80)
     # Without the birth data the partner waits for an invitation.
     birth: BirthIn | None = None
-    # The invitation's tick: the partner, once joined, sees the person's own birth data.
-    share: bool = False
 
 
 class InviteIn(BaseModel):
@@ -300,7 +298,6 @@ def add_partner(body: PartnerIn, user_id: int = Depends(require_web_user)) -> di
             birth.place if birth else None,
             birth.lat if birth else None,
             birth.lon if birth else None,
-            body.share,
         )
     except DomainError as exc:
         raise as_http(exc) from exc
