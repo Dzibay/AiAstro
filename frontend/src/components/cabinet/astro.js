@@ -18,6 +18,8 @@ export const POINTS = {
   neptune: { glyph: text('♆'), name: 'Нептун', with: 'Нептуном' },
   pluto: { glyph: text('♇'), name: 'Плутон', with: 'Плутоном' },
   node: { glyph: text('☊'), name: 'Лунный узел', with: 'Лунным узлом' },
+  chiron: { glyph: text('⚷'), name: 'Хирон', with: 'Хироном' },
+  lilith: { glyph: text('⚸'), name: 'Лилит', with: 'Лилит' },
   asc: { glyph: 'Asc', name: 'Асцендент', with: 'Асцендентом' },
   mc: { glyph: 'MC', name: 'Середина неба', with: 'Серединой неба' },
 }
@@ -59,7 +61,7 @@ export function degrees(deg) {
   return `${whole}°${String(minutes).padStart(2, '0')}′`
 }
 
-/** The planets, the node and, when the time is known, the two angles: everything a reading exists for. */
+/** The planets, the node, Chiron, Lilith and, when the time is known, the two angles: everything a reading exists for. */
 export function chartItems(chart) {
   const items = chart.points.map((point) => ({ ...point }))
   if (chart.angles) {

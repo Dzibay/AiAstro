@@ -2,7 +2,7 @@
 
 from app.astro.ephemeris import delta
 
-# (name, angle, orb). The Sun and the Moon get two degrees more; the node and the angles, half.
+# (name, angle, orb). The Sun and the Moon get two degrees more; the points and the angles, half.
 ASPECTS = (
     ("conjunction", 0.0, 8.0),
     ("sextile", 60.0, 4.0),
@@ -11,7 +11,8 @@ ASPECTS = (
     ("opposition", 180.0, 8.0),
 )
 LUMINARIES = {"sun", "moon"}
-POINTS = {"node", "asc", "mc"}
+# Not bodies but points (and Chiron, a small one): they speak only when close.
+POINTS = {"node", "chiron", "lilith", "asc", "mc"}
 
 
 def _orb(base: float, a: str, b: str) -> float:
@@ -50,7 +51,7 @@ def find(points: list[dict], others: list[dict] | None = None, scale: float = 1.
         pairs = [(a, b) for a in points for b in others]
     found = []
     for a, b in pairs:
-        # The node and the angles touch the planets, not each other.
+        # The points and the angles touch the planets, not each other.
         if a["id"] in POINTS and b["id"] in POINTS:
             continue
         aspect = _match(a, b, scale)

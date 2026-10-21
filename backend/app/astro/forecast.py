@@ -63,7 +63,8 @@ def _sky_at_noon(day: date, tz: str) -> dict:
 
 def _targets(chart: dict) -> list[dict]:
     """The natal points a transit can touch; a Moon guessed without the time cannot be one."""
-    found = [{"id": point["id"], "lon": point["lon"], "speed": 0.0} for point in chart["points"] if not point.get("approx")]
+    found = [{"id": point["id"], "lon": point["lon"], "speed": 0.0} for point in chart["points"]
+             if not point.get("approx")]
     if chart["angles"]:
         found += [{"id": key, "lon": angle["lon"], "speed": 0.0} for key, angle in chart["angles"].items()]
     return found

@@ -23,6 +23,8 @@ ANGLE_ORB = 8.0
 HARD = ("square", "opposition")
 # Between two of these an aspect belongs to a whole generation, not to one person.
 SLOW = {"uranus", "neptune", "pluto"}
+# The points beside the planets: the tightest aspects of the portrait are between planets.
+MINOR = {"node", "chiron", "lilith"}
 SOFT = ("trine", "sextile")
 
 
@@ -56,7 +58,7 @@ def _tightest(chart: dict, kinds: tuple) -> dict | None:
     """The tightest aspect of these kinds between planets (not the node), the angles allowed on one side."""
     for aspect in chart["aspects"]:
         ids = {aspect["a"], aspect["b"]}
-        if aspect["type"] in kinds and "node" not in ids and ids & set(PLANETS) and not ids <= SLOW:
+        if aspect["type"] in kinds and not ids & MINOR and ids & set(PLANETS) and not ids <= SLOW:
             return {key: aspect[key] for key in ("a", "b", "type", "orb")}
     return None
 

@@ -10,8 +10,18 @@ import re
 from datetime import date
 
 from app.astro import forecast_texts as F
+from app.astro import natal_aspects as NA
+from app.astro import natal_houses as H
+from app.astro import natal_point_aspects as NPA
+from app.astro import natal_points as NP
+from app.astro import natal_signs as S
 from app.astro import natal_texts as N
+from app.astro import pair_aspects as PA
+from app.astro import pair_overlays as PO
 from app.astro import pair_texts as P
+from app.astro import synastry
+from app.astro import transit_fast as TF
+from app.astro import transit_slow as TS
 from app.astro.portrait import element_of
 
 # Roman numerals for the houses, as astrologers write them.
@@ -30,6 +40,8 @@ POINTS = {
     "neptune": ("Нептун", "он", "ваши мечты и чуткость: где граница между вами и миром тоньше"),
     "pluto": ("Плутон", "он", "ваша глубинная сила: где вы проходите перемены и выходите другим"),
     "node": ("Лунный узел", "он", "направление роста: то, к чему вы учитесь идти в этой жизни"),
+    "chiron": ("Хирон", "он", "ваша давняя рана и дар целителя: где болит и где вы умеете помогать другим"),
+    "lilith": ("Лилит", "она", "ваша Чёрная Луна: непокорное желание и то, в чём вы не согласны подчиняться"),
     "asc": ("Асцендент", "он", "ваш восход: каким вас видят прежде слов и как вы входите в новое"),
     "mc": ("Середина неба", "она", "вершина карты: призвание и то, к чему вы идёте на виду у всех"),
 }
@@ -101,13 +113,13 @@ def item_title(point: str, sign: str, house: int | None) -> str:
 _DATIVE = {
     "sun": "вашему Солнцу", "moon": "вашей Луне", "mercury": "вашему Меркурию", "venus": "вашей Венере",
     "mars": "вашему Марсу", "jupiter": "вашему Юпитеру", "saturn": "вашему Сатурну", "uranus": "вашему Урану",
-    "neptune": "вашему Нептуну", "pluto": "вашему Плутону", "node": "вашему Лунному узлу",
+    "neptune": "вашему Нептуну", "pluto": "вашему Плутону", "node": "вашему Лунному узлу", "chiron": "вашему Хирону", "lilith": "вашей Лилит",
     "asc": "вашему Асценденту", "mc": "вашей Середине неба",
 }
 _INSTRUMENTAL = {
     "sun": "вашим Солнцем", "moon": "вашей Луной", "mercury": "вашим Меркурием", "venus": "вашей Венерой",
     "mars": "вашим Марсом", "jupiter": "вашим Юпитером", "saturn": "вашим Сатурном", "uranus": "вашим Ураном",
-    "neptune": "вашим Нептуном", "pluto": "вашим Плутоном", "node": "вашим Лунным узлом",
+    "neptune": "вашим Нептуном", "pluto": "вашим Плутоном", "node": "вашим Лунным узлом", "chiron": "вашим Хироном", "lilith": "вашей Лилит",
     "asc": "вашим Асцендентом", "mc": "вашей Серединой неба",
 }
 _ASPECT_PHRASE = {
@@ -117,54 +129,77 @@ _ASPECT_PHRASE = {
     "trine": "в трине к {dative}",
     "opposition": "в оппозиции к {dative}",
 }
-# What a transit to this natal point stirs, in the accusative: «трогает любовь, вкус и деньги».
-_TOUCHES = {
-    "sun": "вашу волю и жизненную силу", "moon": "чувства и ощущение дома", "mercury": "мысли, слова и переписку",
-    "venus": "любовь, вкус и деньги", "mars": "энергию и решимость", "jupiter": "веру и планы на рост",
-    "saturn": "обязательства и границы", "uranus": "тягу к свободе и переменам", "neptune": "мечты и интуицию",
-    "pluto": "глубинные перемены", "node": "ваш путь роста", "asc": "то, каким вас видят",
-    "mc": "работу и репутацию",
-}
-# The advice of a transiting planet: (when it comes easy, when it comes hard).
-_ADVICE = {
-    "moon": ("Доверьтесь настроению: сегодня оно подсказывает верно.",
-             "Настроение может качнуться, не принимайте его за окончательный ответ."),
-    "sun": ("Хороший час, чтобы показаться и заявить о своём.",
-            "Не тратьте силы на доказательства, сохраните их для главного."),
-    "mercury": ("Слова найдутся сами: пишите, договаривайтесь, спрашивайте.",
-                "Перечитайте написанное дважды и переспросите, если что-то неясно."),
-    "venus": ("Позвольте себе красоту и тепло, они сейчас к месту.",
-              "Не покупайте утешение: желание может оказаться сильнее нужды."),
-    "mars": ("Сил хватит на то, что давно откладывалось.",
-             "Спешка обернётся спором: сосчитайте до десяти, прежде чем ответить."),
-    "jupiter": ("Дверь приоткрыта: смело просите и предлагайте.",
-                "Обещания опережают силы, берите ровно столько, сколько унесёте."),
-    "saturn": ("Труд, вложенный сейчас, останется надолго.",
-               "Медленно не значит плохо: проверка временем только укрепляет."),
-    "uranus": ("Неожиданный поворот окажется к лучшему.",
-               "Перемены торопят, оставьте себе запасной выход."),
-    "neptune": ("Слушайте интуицию: она сейчас тоньше логики.",
-                "В тумане не подписывают: сначала проверьте факты."),
-    "pluto": ("Глубокий разговор может многое расставить по местам.",
-              "Не держитесь за то, что отжило: отпустить тоже сила."),
-}
+# A transit read by its pair: the fast planets in app.astro.transit_fast, the slow ones in transit_slow.
+_TRANSIT = {**TF.FAST, **TS.SLOW}
+# conjunction, trine and sextile, square and opposition.
+_TRANSIT_GROUP = {"conjunction": 0, "trine": 1, "sextile": 1, "square": 2, "opposition": 2}
+
+
+def transit_reading(transit: dict) -> str:
+    """What this planet does to this point of the chart in this aspect."""
+    return _TRANSIT[(transit["a"], transit["b"])][_TRANSIT_GROUP[transit["type"]]]
+
+
 _OPEN = {
     "day": {
-        "easy": "Небо к вам расположено: многое сложится без нажима.",
-        "tense": "Небо сегодня проверяет на прочность. Двигайтесь бережно, и напряжение станет опорой.",
-        "calm": "Крупных событий небо не обещает: хороший день, чтобы делать своё в своём ритме.",
+        "easy": (
+            "Небо к вам расположено: многое сложится без нажима.",
+            "Сегодня небо на вашей стороне: просьбы слышат, двери открываются, начатое идёт легко.",
+            "Мягкий день: связи с вашей картой лёгкие, и то, что вы сделаете от души, получится.",
+        ),
+        "tense": (
+            "Небо сегодня проверяет на прочность. Двигайтесь бережно, и напряжение станет опорой.",
+            "День с характером: что-то пойдёт наперекор. Это не наказание, а подсказка, где нужна сила.",
+            "Сегодня небо задаёт трудные вопросы. Не спешите с ответами — к вечеру многое прояснится.",
+        ),
+        "calm": (
+            "Крупных событий небо не обещает: хороший день, чтобы делать своё в своём ритме.",
+            "Тихий день: небо не вмешивается, и всё зависит от вашего выбора.",
+            "Ровный фон без сильных влияний: удобно разобрать дела и отдохнуть.",
+        ),
     },
     "week": {
-        "easy": "Неделя идёт с попутным ветром: начатое в эти дни легко набирает ход.",
-        "tense": "Неделя просит собранности: не всё пойдёт по плану, зато станет ясно, что действительно важно.",
-        "calm": "Неделя ровная, без резких поворотов: удобное время довести начатое до конца.",
+        "easy": (
+            "Неделя идёт с попутным ветром: начатое в эти дни легко набирает ход.",
+            "Удачная неделя: небо поддерживает ваши планы, смело предлагайте и просите.",
+            "Светлая неделя: связи с вашей картой лёгкие, хорошо для встреч, начинаний и радости.",
+        ),
+        "tense": (
+            "Неделя просит собранности: не всё пойдёт по плану, зато станет ясно, что действительно важно.",
+            "Неделя на прочность: будут споры и задержки. Держитесь главного, и неделя закалит, а не измотает.",
+            "Непростая неделя: небо давит на чувствительные точки. Берегите силы и не решайте сгоряча.",
+        ),
+        "calm": (
+            "Неделя ровная, без резких поворотов: удобное время довести начатое до конца.",
+            "Спокойная неделя: небо не торопит, и можно идти своим темпом.",
+            "Тихая неделя: хорошее время навести порядок в делах и в мыслях.",
+        ),
     },
 }
 _CLOSE = {
-    "easy": "Вечером оглянитесь: то, что далось легко, стоит запомнить, это ваша сильная сторона.",
-    "tense": "Оставьте себе тихий час: после напряжения небо всегда возвращает равновесие.",
-    "calm": "Сделайте что-нибудь для себя: в ровные дни это особенно ценно.",
+    "easy": (
+        "Вечером оглянитесь: то, что далось легко, стоит запомнить, это ваша сильная сторона.",
+        "Поделитесь удачей: доброе слово или помощь сегодня вернутся вдвойне.",
+        "Не растратьте лёгкость на мелочи: вложите её в то, что для вас по-настоящему важно.",
+    ),
+    "tense": (
+        "Оставьте себе тихий час: после напряжения небо всегда возвращает равновесие.",
+        "Будьте к себе мягче, чем обычно: трудный день не говорит о вас ничего плохого.",
+        "Перед важным ответом сделайте паузу: то, что кажется срочным, часто может подождать.",
+    ),
+    "calm": (
+        "Сделайте что-нибудь для себя: в ровные дни это особенно ценно.",
+        "Используйте тишину: запишите планы или просто отдохните без чувства вины.",
+        "Хороший момент для маленького доброго дела — себе или близким.",
+    ),
 }
+
+
+def _varied(variants: tuple, start: str, shift: int = 0) -> str:
+    """One of the variants, changing from day to day; a shift keeps the week from repeating the day."""
+    return variants[(date.fromisoformat(start).toordinal() + shift) % len(variants)]
+
+
 _TITLES = {
     "day": {
         "easy": ("Попутный ветер", "День открытых дверей", "Мягкий свет"),
@@ -236,23 +271,9 @@ def transit_phrase(transit: dict) -> str:
 
 # ---- Synastry ----
 
-# What a point brings into a pair: «с вашей стороны здесь нежность и вкус, со стороны партнёра — желание».
-_PAIR_THEMES = {
-    "sun": "воля и самоощущение", "moon": "чувства и быт", "mercury": "разговоры и понимание",
-    "venus": "нежность и вкус", "mars": "желание и решимость", "jupiter": "щедрость и вера",
-    "saturn": "верность и границы", "uranus": "свобода и перемены", "neptune": "мечты и чуткость",
-    "pluto": "глубина и сила", "asc": "первое впечатление", "mc": "цели и призвание",
-}
 # «Марс партнёра».
 _GENITIVE_PARTNER = "партнёра"
 _OWN = {"он": "Ваш", "она": "Ваша", "оно": "Ваше"}
-_PAIR_ASPECT = {
-    "conjunction": "Соединение сплавляет их в одно: в этой точке вы чувствуете друг друга сильнее всего.",
-    "trine": "Трин даёт им течь легко: здесь вам не нужно стараться, чтобы понимать друг друга.",
-    "sextile": "Секстиль приоткрывает дверь: стоит сделать шаг навстречу, и всё сложится.",
-    "square": "Квадрат сталкивает их: отсюда искры и споры, но и рост, если вы готовы слушать.",
-    "opposition": "Оппозиция ставит их друг напротив друга: вы притягиваетесь, как противоположности, и учитесь равновесию.",
-}
 # The tone of the pair in one phrase: the free part of the reading.
 PAIR_PHRASES = {
     "easy": "Вам легко рядом: ваши небеса говорят на одном языке.",
@@ -274,23 +295,26 @@ _PAIR_CLOSE = {
 }
 _ELEMENT_NAMES = {"fire": "огонь", "earth": "земля", "air": "воздух", "water": "вода"}
 _KINDRED = ({"fire", "air"}, {"earth", "water"})
+# The Sun and the Moon of the union by element: whether what the pair strives for and what it needs agree.
+_UNION_ELEMENTS = {
+    "same": "Солнце и Луна союза в одной стихии: то, к чему ваша пара стремится, и то, что ей нужно, совпадают.",
+    "kindred": "Солнце и Луна союза в родственных стихиях: цели пары и её потребности поддерживают друг друга.",
+    "apart": ("Солнце и Луна союза в разных стихиях: то, к чему пара стремится, и то, что ей нужно для покоя, "
+              "порой спорят. Выход — не жертвовать одним ради другого, а давать место обоим."),
+}
 
 
 def _overlay_text(planets: list[dict], theirs: bool) -> str:
-    """«Солнце и Луна партнёра — в вашем III доме: вам есть о чём говорить… Солнце освещает…»."""
-    by_house: dict[int, list[str]] = {}
-    for planet in planets:
-        by_house.setdefault(planet["house"], []).append(planet["id"])
+    """«Венера партнёра — в вашем V доме: одна из самых романтических связей…» for each planet."""
     lines = []
-    for house, ids in by_house.items():
-        names = _joined([POINTS[key][0] for key in ids])
+    for planet in planets:
+        key, house = planet["id"], planet["house"]
+        name = POINTS[key][0]
         if theirs:
-            head = f"{names} {_GENITIVE_PARTNER} — в вашем {ROMAN[house - 1]} доме"
+            head = f"{name} {_GENITIVE_PARTNER} — в вашем {ROMAN[house - 1]} доме"
         else:
-            own = "Ваши" if len(ids) > 1 else _OWN[POINTS[ids[0]][1]]
-            head = f"{own} {names} — в {ROMAN[house - 1]} доме {_GENITIVE_PARTNER}"
-        lines.append(f"{head}: {P.OVERLAY_HOUSE[house - 1]}.")
-        lines += [f"{POINTS[key][0]} {P.OVERLAY_PLANET[key]}." for key in ids]
+            head = f"{_OWN[POINTS[key][1]]} {name} — в {ROMAN[house - 1]} доме {_GENITIVE_PARTNER}"
+        lines.append(f"{head}: {PO.OVERLAY[key][house - 1]}.")
     return " ".join(lines)
 
 
@@ -350,7 +374,7 @@ _NAMED = (
     ("node", ("узел", "узл")), ("sun", ("солнц",)), ("moon", ("лун",)), ("mercury", ("меркури",)),
     ("venus", ("венер",)), ("mars", ("марс",)), ("jupiter", ("юпитер",)), ("saturn", ("сатурн",)),
     ("uranus", ("уран ", "урана", "урану", "ураном", "уране")), ("neptune", ("нептун",)),
-    ("pluto", ("плутон",)), ("asc", ("асцендент", "восходящ")),
+    ("pluto", ("плутон",)), ("chiron", ("хирон",)), ("lilith", ("лилит", "чёрная луна", "черная луна", "чёрной лун", "черной лун")), ("asc", ("асцендент", "восходящ")),
 )
 _WHEN = ("когда", "какой день", "в какой день", "день недели", "дни недели", "в какие дни")
 _GREETING = ("привет", "здравств", "добрый день", "добрый вечер", "доброе утро")
@@ -395,7 +419,7 @@ def _aspect_line(chart: dict, point: str) -> str | None:
     """The tightest aspect of the point inside the chart, in one sentence."""
     _, pronoun, _ = POINTS[point]
     aspect = next((item for item in chart.get("aspects", []) if point in (item["a"], item["b"])
-                   and "node" not in (item["a"], item["b"])), None)
+                   and not {item["a"], item["b"]} & {"node", "chiron", "lilith"}), None)
     if aspect is None:
         return None
     other = aspect["b"] if aspect["a"] == point else aspect["a"]
@@ -420,7 +444,7 @@ def _now_line(today: dict | None, points: list[str], sphere: str | None) -> str 
         return None
     transit = next((t for t in today["transits"] if t["b"] in points), None)
     if transit:
-        lines = [f"Сейчас {transit_phrase(transit)}.", _ADVICE[transit["a"]][0 if transit["lean"] > 0 else 1]]
+        lines = [f"Сейчас {transit_phrase(transit)}.", transit_reading(transit)]
         if transit.get("span"):
             lines.append(_span_line(transit["span"], date.fromisoformat(today["start"])))
         return " ".join(lines)
@@ -518,25 +542,30 @@ class Interpreter:
 class StubInterpreter(Interpreter):
     """Templates until the AI is connected. The chat answers with facts of the chart, not with wit."""
 
-    version = 7
+    version = 18
 
     def natal_item(self, point: str, sign: str, house: int | None, retro: bool = False) -> dict:
         name, pronoun, theme = POINTS[point]
         where, manner = SIGNS[sign]
-        # «ваша любовь и вкус: что вы находите красивым…» gives «Ваша любовь и вкус — глубоко и сосредоточенно».
-        head = re.split(r"[:,]", theme, maxsplit=1)[0]
-        parts = [
-            _part("Тема", f"{name} — {theme}."),
-            _part("Как звучит", f"{_cap(where)} {pronoun} звучит {manner}. {_SIGN_VOICE[sign]}"),
-        ]
+        own = S.PLANET_SIGN.get(point, NP.POINT_SIGN.get(point, {})).get(sign)
+        if own:
+            essence, reading = own
+        else:
+            # The angles: their own words live in the portrait; here the sign's manner speaks.
+            # «ваш восход: каким вас видят…» gives «Ваш восход — смело и прямо, с первого шага».
+            essence = f"{_cap(re.split(r'[:,]', theme, maxsplit=1)[0])} — {manner}"
+            reading = N.RISING[sign] if point == "asc" else f"{_cap(where)} {pronoun} звучит {manner}."
+            reading += f" {_SIGN_VOICE[sign]}"
+        parts = [_part("Тема", f"{name} — {theme}."), _part(f"{name} {where}", reading)]
         if house:
-            parts.append(_part(f"Где проявляется · {ROMAN[house - 1]} дом",
-                               f"{_cap(HOUSES[house - 1])}: здесь эта сила проявляется ярче всего."))
+            own = H.PLANET_HOUSE.get(point)
+            text = own[house - 1] if own else f"{_cap(HOUSES[house - 1])}: здесь эта сила проявляется ярче всего."
+            parts.append(_part(f"Где проявляется · {ROMAN[house - 1]} дом", text))
         # The mean node always moves backwards: for it this says nothing.
         if retro and point != "node":
             parts.append(_part("Попятность", f"{_RETRO[pronoun]}: эта сила обращена внутрь и раскрывается не сразу, "
                                              "через пересмотр и возвращение."))
-        return {"essence": f"{_cap(head)} — {manner}.", "parts": parts}
+        return {"essence": f"{essence}.", "parts": parts}
 
     def portrait(self, facts: dict) -> dict:
         sun, moon = facts["sun"], facts["moon"]
@@ -622,16 +651,13 @@ class StubInterpreter(Interpreter):
         return {"essence": f"{essence}.", "parts": parts}
 
     def natal_aspect(self, a: str, b: str, kind: str) -> str:
-        angle = next((point for point in (a, b) if point in ("asc", "mc")), None)
-        if angle:
-            other = b if angle == a else a
-            theme = N.ANGLE_PAIR[angle].format(name=POINTS[other][0])
-        else:
-            theme = N.NATAL_PAIRS.get(frozenset({a, b}))
-            if theme is None:
-                first, second = (re.split(r"[:,]", POINTS[point][2], maxsplit=1)[0] for point in (a, b))
-                theme = f"{POINTS[a][0]} и {POINTS[b][0]}: {first} и {second}."
-        return " ".join([theme, N.ASPECT_DYNAMIC[kind], N.ASPECT_ADVICE[kind]])
+        pair = frozenset({a, b})
+        if own := NPA.POINT_ASPECT.get(pair):
+            text = own[NPA.INDEX[len(own)][kind]]
+            # The opposite end (the south node, the Descendant, the IC) is already named.
+            return text if kind == "opposition" and len(own) == 4 else f"{text} {NA.KIND_NOTE[kind]}"
+        own = NA.PAIR_ASPECT[pair]
+        return f"{own[NA.GROUP[kind]]} {NA.KIND_NOTE[kind]}"
 
     def forecast(self, forecast: dict) -> dict:
         period, tone = forecast["period"], forecast["tone"]
@@ -673,19 +699,11 @@ class StubInterpreter(Interpreter):
                     for key, day in best.items())))
 
         start = date.fromisoformat(forecast["start"])
-        advised = set()
         for index, transit in enumerate(forecast["transits"][:3]):
             when = ""
             if transit.get("date"):
                 when = f", точнее всего {_ON_WEEKDAY[date.fromisoformat(transit['date']).weekday()]}"
-            lines = [
-                f"{transit_phrase(transit)}{when}.",
-                f"Этот транзит трогает {_TOUCHES[transit['b']]}.",
-            ]
-            # One planet gives its advice once, however many points it touches.
-            if transit["a"] not in advised:
-                lines.append(_ADVICE[transit["a"]][0 if transit["lean"] > 0 else 1])
-                advised.add(transit["a"])
+            lines = [f"{transit_phrase(transit)}{when}.", transit_reading(transit)]
             if transit.get("span"):
                 lines.append(_span_line(transit["span"], start))
             parts.append(_part(("Главный транзит", "И ещё", "Фоном")[index], " ".join(lines)))
@@ -712,8 +730,8 @@ class StubInterpreter(Interpreter):
                 lines.append(template.format(names=_joined(slow), also=" тоже" if lines else ""))
             parts.append(_part("Попятные планеты", " ".join(lines)))
 
-        parts.append(_part("Совет", _CLOSE[tone]))
-        return {"essence": _OPEN[period][tone], "parts": parts}
+        parts.append(_part("Совет", _varied(_CLOSE[tone], forecast["start"], period == "week")))
+        return {"essence": _varied(_OPEN[period][tone], forecast["start"]), "parts": parts}
 
     def synastry(self, pair: dict) -> dict:
         tone = pair["tone"]
@@ -728,10 +746,21 @@ class StubInterpreter(Interpreter):
                         "разный темп, и в этом ваша возможность научиться друг у друга.")
         parts = [_part("Стихии", elements)]
 
+        points, named = dict(synastry.SPHERES), set()
         for sphere in pair["spheres"]:
-            label, variants = P.SPHERES[sphere["id"]]
-            band = 0 if sphere["score"] <= 2 else 1 if sphere["score"] == 3 else 2
-            parts.append(_part(label, variants[band]))
+            label, readings = P.SPHERES[sphere["id"]]
+            text = readings[sphere["score"] - 1]
+            # The strongest link of the sphere, so the reader sees where the score comes from: one with
+            # both ends in it first, and never the one another sphere has already named.
+            own = points[sphere["id"]]
+            fresh = [aspect for aspect in pair.get("aspects", []) if pair_aspect_title(aspect) not in named]
+            both = [aspect for aspect in fresh if aspect["a"] in own and aspect["b"] in own]
+            either = [aspect for aspect in fresh if aspect["a"] in own or aspect["b"] in own]
+            if main := (both or either or [None])[0]:
+                title = pair_aspect_title(main)
+                named.add(title)
+                text += f" Сильнее всего эту сферу задаёт связь «{title}»."
+            parts.append(_part(label, text))
 
         for aspect in pair["key"][:3]:
             parts.append(_part(pair_aspect_title(aspect), self.pair_aspect(aspect["a"], aspect["b"], aspect["type"])))
@@ -744,23 +773,24 @@ class StubInterpreter(Interpreter):
 
         composite = pair.get("composite")
         if composite:
-            sign, manner = SIGNS[composite["sun"]]
-            text = P.COMPOSITE_SUN.format(sign=sign, manner=manner)
+            text = P.COMPOSITE_SUN[composite["sun"]]
             if composite["moon"]:
-                sign, manner = SIGNS[composite["moon"]]
-                text += " " + P.COMPOSITE_MOON.format(sign=sign, manner=manner)
+                text += " " + P.COMPOSITE_MOON[composite["moon"]]
+                sun, moon = element_of(composite["sun"]), element_of(composite["moon"])
+                if sun == moon:
+                    text += " " + _UNION_ELEMENTS["same"]
+                elif {sun, moon} in _KINDRED:
+                    text += " " + _UNION_ELEMENTS["kindred"]
+                else:
+                    text += " " + _UNION_ELEMENTS["apart"]
             parts.append(_part("Союз как целое", text))
 
         parts.append(_part("Совет", _PAIR_CLOSE[tone]))
         return {"essence": _PAIR_OPEN[tone], "parts": parts}
 
     def pair_aspect(self, a: str, b: str, kind: str) -> str:
-        meaning = P.PAIRS.get(frozenset({a, b}))
-        if meaning is None:
-            meaning = f"С вашей стороны здесь {_PAIR_THEMES[a]}, со стороны партнёра — {_PAIR_THEMES[b]}."
-        # The same pair of points always gets the same words: the choice rests on their names alone.
-        variants = P.DYNAMIC[kind]
-        return f"{meaning} {variants[sum(map(ord, a + b)) % len(variants)]}"
+        own = PA.PAIR_ASPECT[frozenset({a, b})]
+        return f"{own[PA.GROUP[kind]]} {PA.KIND_NOTE[kind]}"
 
     def chat(self, history: list[dict], chart: dict, context: dict | None = None) -> dict:
         question = _words(history[-1]["text"])

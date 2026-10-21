@@ -12,8 +12,11 @@ from zoneinfo import ZoneInfo
 from app.astro import aspects, houses
 from app.astro.ephemeris import PLANETS, sky_at, wrap
 
+# Beyond the planets: the true node, Chiron and Black Moon Lilith (the mean apogee).
+EXTRA = ("node", "chiron", "lilith")
+
 # Raised whenever the output changes, so the cached charts are recomputed.
-VERSION = 1
+VERSION = 2
 
 SIGNS = (
     "aries", "taurus", "gemini", "cancer", "leo", "virgo",
@@ -44,7 +47,7 @@ def natal(birth_date: date, birth_time: time | None, lat: float | None, lon: flo
     sky = sky_at(moment)
 
     points = []
-    for key in (*PLANETS, "node"):
+    for key in (*PLANETS, *EXTRA):
         body = sky["points"][key]
         point = {"id": key, **_place(body["lon"]), "speed": round(body["speed"], 4), "retro": body["speed"] < 0}
         if key == "moon" and not time_known:
