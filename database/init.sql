@@ -183,6 +183,63 @@ UPDATE payments pa SET pair_id = p.pair_id FROM partners p WHERE pa.pair_id IS N
 CREATE UNIQUE INDEX IF NOT EXISTS payments_yookassa_key ON payments (yookassa_id);
 CREATE INDEX IF NOT EXISTS payments_user_idx ON payments (user_id, created_at);
 
+-- Реферальные ссылки рекламных кампаний: <адрес сайта>/?ref=<token> на любой странице.
+-- Удалённая ссылка уносит свои переходы; люди, пришедшие по ней, остаются без метки.
+CREATE TABLE IF NOT EXISTS ref_links (
+    id BIGSERIAL PRIMARY KEY,
+    token TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ref_links_token_key ON ref_links (token);
+
+-- Посетители: анонимный id, который браузер хранит в localStorage (не cookie). ref_id — первая
+-- реферальная ссылка, по которой он пришёл: ей навсегда засчитываются его регистрация и оплаты.
+-- visits — визиты: новый начинается после получаса тишины или с переходом по ссылке.
+CREATE TABLE IF NOT EXISTS visitors (
+    id TEXT PRIMARY KEY,
+    ref_id BIGINT REFERENCES ref_links (id) ON DELETE SET NULL,
+    user_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    source TEXT NOT NULL DEFAULT '',
+    landing TEXT NOT NULL DEFAULT '',
+    device TEXT NOT NULL DEFAULT '',
+    visits INTEGER NOT NULL DEFAULT 1,
+    first_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS visitors_first_idx ON visitors (first_at);
+CREATE INDEX IF NOT EXISTS visitors_ref_idx ON visitors (ref_id);
+CREATE INDEX IF NOT EXISTS visitors_user_idx ON visitors (user_id);
+
+-- События для статистики: visit (начало визита), view (страница — имя маршрута), ref (переход по
+-- реферальной ссылке), signup, tour (name — тур и исход: section-chart:done, intro:skip; value — шаг).
+CREATE TABLE IF NOT EXISTS events (
+    id BIGSERIAL PRIMARY KEY,
+    visitor_id TEXT REFERENCES visitors (id) ON DELETE CASCADE,
+    user_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    ref_id BIGINT REFERENCES ref_links (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    value INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS events_kind_idx ON events (kind, created_at);
+CREATE INDEX IF NOT EXISTS events_user_idx ON events (user_id, created_at);
+CREATE INDEX IF NOT EXISTS events_ref_idx ON events (ref_id, created_at) WHERE ref_id IS NOT NULL;
+
+-- Откуда пришёл человек: его браузер при регистрации и реферальная ссылка этого браузера.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS visitor_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ref_id BIGINT REFERENCES ref_links (id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS users_ref_idx ON users (ref_id);
+-- Кампания платежа — ссылка плательщика в момент оплаты: доход остаётся за ней и после удаления кабинета.
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS ref_id BIGINT REFERENCES ref_links (id) ON DELETE SET NULL;
+UPDATE payments p SET ref_id = u.ref_id FROM users u WHERE p.user_id = u.id AND p.ref_id IS NULL AND u.ref_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS payments_ref_idx ON payments (ref_id) WHERE ref_id IS NOT NULL;
+
 INSERT INTO app_settings (key, value) VALUES
     ('site_name', 'Астра'),
     ('tagline', 'Натальная карта обычным языком'),

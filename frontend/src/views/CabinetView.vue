@@ -130,21 +130,43 @@ onUnmounted(() => {
 /**
  * The introductions offer themselves once: the cabinet's, as soon as the birth date has drawn the
  * star (an invited partner's opens with the pair); «Небосвод»'s, once it is lit — after the dome
- * has had its moment. Never over the birth form, never over another tour.
+ * has had its moment. Never over the birth form, never over another tour. After the cabinet's
+ * own, each section walks through itself the first time it is opened (the «?» in its corner
+ * brings the walk back at will).
  */
+const WALKED = ['chart', 'forecast', 'pair', 'chat', 'sky']
 let tourTimer = 0
 function offerTour() {
   clearTimeout(tourTimer)
   const current = user.value
   if (!current?.birth || tour.kind) return
   const kind = !tourSeen(current.id, 'intro') ? 'intro' : current.sky && !tourSeen(current.id, 'sky') ? 'sky' : ''
-  if (!kind) return
+  if (!kind) {
+    offerSectionTour()
+    return
+  }
   tourTimer = setTimeout(() => {
     if (tour.kind || route.name === 'cabinet-birth' || !user.value?.birth) return
     startTour(kind, { pair: kind === 'intro' && route.query.joined !== undefined })
   }, kind === 'sky' ? 2600 : 1800)
 }
 watch(() => [user.value?.id, Boolean(user.value?.birth), Boolean(user.value?.sky)], offerTour)
+
+/** The open section's walk, once: when its panel has had a moment to show what it holds. */
+function offerSectionTour() {
+  const current = user.value
+  const id = section.value
+  if (!current?.birth || tour.kind || !WALKED.includes(id) || route.params.item || tourSeen(current.id, `section-${id}`)) return
+  tourTimer = setTimeout(() => {
+    if (tour.kind || section.value !== id || route.params.item || !user.value?.birth) return
+    startTour('section')
+  }, 1200)
+}
+watch(section, () => {
+  if (tour.kind) return
+  clearTimeout(tourTimer)
+  offerTour()
+})
 // Leaving the birth form for the overview is the moment the star is drawn.
 watch(() => route.name, (name, from) => {
   if (from === 'cabinet-birth') offerTour()

@@ -120,11 +120,11 @@ def create_payment(user_id: int, product: str, partner_id: int | None = None) ->
     with pool.connection() as conn:
         row = conn.execute(
             f"""
-            INSERT INTO payments (user_id, email, product, partner_id, pair_id, days, amount, title)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO payments (user_id, email, product, partner_id, pair_id, days, amount, title, ref_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, (SELECT ref_id FROM users WHERE id = %s))
             RETURNING {_COLUMNS}
             """,
-            (user_id, user["email"], product, partner_id, pair_id, days, amount, title),
+            (user_id, user["email"], product, partner_id, pair_id, days, amount, title, user_id),
         ).fetchone()
 
     receipt = {

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useSky } from '../../composables/useSky.js'
 import { SIGNS } from '../../utils/skyToday.js'
 import { markTourSeen, stopTour, tour } from '../../utils/tour.js'
+import { track } from '../../utils/track.js'
 import { cabinetLayout, panelLeft } from './layout.js'
 
 /**
@@ -518,16 +519,30 @@ async function prepareSection() {
   available.value = null
   const deadline = performance.now() + 4000
   await nextTick()
-  while (performance.now() < deadline && document.querySelector('.cabinet-panel .loading')) {
+  // A «…» line, or the panel of the section left still fading out.
+  while (performance.now() < deadline && document.querySelector('.cabinet-panel .loading, .cabinet-panel .next-leave-active, .cabinet-panel .next-enter-active')) {
     await new Promise((resolve) => setTimeout(resolve, 150))
   }
+  // The panel may still be sliding in with its parts (a section just opened): what it shows
+  // is taken once it has held still for half a second.
+  const look = () => (sectionTour.value?.steps || []).filter((item) => targetOf(item)).map((item) => item.id)
+  let found = look()
+  for (let still = 0; still < 3 && performance.now() < deadline + 1500; ) {
+    await new Promise((resolve) => setTimeout(resolve, 170))
+    if (tour.kind !== 'section') return
+    const now = look()
+    still = now.join() === found.join() ? still + 1 : 0
+    found = now
+  }
   if (tour.kind !== 'section') return
-  const found = (sectionTour.value?.steps || []).filter((item) => targetOf(item)).map((item) => item.id)
   if (!found.length) {
     stopTour()
     return
   }
   available.value = found
+  // Shown is seen: the section's walk does not come by itself again, its «?» still brings it back.
+  markTourSeen(props.user.id, `section-${route.meta.section}`)
+  told(name(), 'start')
   show(0)
 }
 
@@ -605,19 +620,26 @@ async function show(index) {
   primary.value?.focus({ preventScroll: true })
 }
 
+/* ---- What the figures learn: a tour shown, walked to its end, or left at some step ---- */
+
+const name = () => (tour.kind === 'section' ? `section-${route.meta.section || ''}` : tour.kind)
+const told = (tourName, how, value) => track('tour', `${tourName}:${how}`, value === undefined ? {} : { value })
+
 function begin() {
   tour.scene = false
   show(0)
 }
 function forward() {
-  if (last.value) finish()
+  if (last.value) finish(true)
   else show(tour.step + 1)
 }
 function back() {
   if (tour.step > 0) show(tour.step - 1)
 }
-function finish() {
+function finish(done = false) {
   const kind = tour.kind
+  // A skip tells the step it was left at: 0 is the scene, 1 the first step.
+  if (kind) told(name(), done === true ? 'done' : 'skip', done === true ? steps.value.length : tour.scene ? 0 : tour.step + 1)
   if (kind !== 'section') markTourSeen(props.user.id, kind)
   // The intro has already told a lit sky what it holds: the «Небосвод» tour would repeat it.
   if (kind === 'intro' && props.user.sky) markTourSeen(props.user.id, 'sky')
@@ -670,6 +692,7 @@ watch(() => [tour.kind, tour.scene], async ([kind, isScene]) => {
     return
   }
   if (isScene) {
+    told(kind, 'start')
     if (kind === 'sky') flare()
     await nextTick()
     measure()
@@ -699,8 +722,10 @@ const label = computed(() => {
 })
 
 /* Leaving the section mid-walk ends its tour: its steps belong to the section left behind. */
-watch(() => route.meta.section, () => {
-  if (tour.kind === 'section') stopTour()
+watch(() => route.meta.section, (now, before) => {
+  if (tour.kind !== 'section') return
+  if (available.value) told(`section-${before || ''}`, 'skip', tour.step + 1)
+  stopTour()
 })
 
 const free = computed(() => step.value?.free)
@@ -734,7 +759,7 @@ const paid = computed(() => step.value?.paid)
             <h2 class="title">{{ scene.title }}</h2>
             <p class="text">{{ scene.lead }}</p>
             <div class="actions">
-              <button type="button" class="skip" @click="finish">Позже</button>
+              <button type="button" class="skip" @click="finish()">Позже</button>
               <button ref="sceneButton" type="button" class="go" @click="begin">{{ scene.go }}</button>
             </div>
           </section>
@@ -753,7 +778,7 @@ const paid = computed(() => step.value?.paid)
         >
           <div class="step-top">
             <p class="kicker"><template v-if="tour.kind === 'section'">{{ sectionTour?.name }} · </template>{{ tour.step + 1 }} из {{ steps.length }}</p>
-            <button type="button" class="skip" @click="finish">Пропустить</button>
+            <button type="button" class="skip" @click="finish()">Пропустить</button>
           </div>
           <h2 class="title">{{ step.title }}</h2>
           <p class="text">{{ step.text }}</p>

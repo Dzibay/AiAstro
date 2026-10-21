@@ -14,6 +14,8 @@ useHead({ title: 'Админка', noindex: true })
 /** The menu: a column on a wide screen, a row of tabs on a phone. */
 const PAGES = [
   { to: { name: 'admin' }, label: 'Обзор', icon: 'M4 19V11M10 19V5M16 19v-6M22 19H2' },
+  { to: { name: 'admin-analytics' }, label: 'Аналитика', icon: 'M3 4h18l-7 8.5V19l-4 2v-8.5Z' },
+  { to: { name: 'admin-links' }, label: 'Ссылки', icon: 'M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4L11.6 6M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.6-1.6' },
   { to: { name: 'admin-users' }, label: 'Пользователи', icon: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM2 21a7 7 0 0 1 14 0M17 3.5a4 4 0 0 1 0 7.5M22 21a7 7 0 0 0-4-6.3' },
   { to: { name: 'admin-payments' }, label: 'Платежи', icon: 'M2 6h20v12H2zM2 10h20M6 15h4' },
   { to: { name: 'admin-pairs' }, label: 'Пары', icon: 'M8.5 15a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11ZM15.5 20a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11Z' },

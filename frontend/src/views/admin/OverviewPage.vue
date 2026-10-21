@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import ColumnChart from '../../components/admin/ColumnChart.vue'
 import { adminApi } from '../../api/admin.js'
-import { PAYMENT_STATUS, PRODUCTS, failed, fmt } from './shared.js'
+import { PAYMENT_STATUS, PRODUCTS, buckets, failed, fmt } from './shared.js'
 
 const PERIODS = [
   { days: 7, label: '7 дней' },
@@ -39,59 +39,8 @@ onMounted(async () => {
   }
 })
 
-const short = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' })
-const full = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
-const monthShort = new Intl.DateTimeFormat('ru-RU', { month: 'short' })
-const monthLong = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' })
-const asDay = (iso) => new Date(`${iso}T12:00:00`)
-const clean = (text) => text.replace('.', '')
-
-/**
- * Days for a week or a month; weeks for 90 days, months for a year,
- * so that a column never shrinks to a hair.
- */
-function buckets(series, field) {
-  if (!series.length) return []
-  if (days.value <= 30) {
-    return series.map((row) => ({ key: row.day, label: clean(short.format(asDay(row.day))), title: full.format(asDay(row.day)), value: row[field] }))
-  }
-  const groups = new Map()
-  if (days.value <= 90) {
-    // Seven-day weeks ending today: the last column is the current week.
-    const n = series.length
-    series.forEach((row, i) => {
-      const k = Math.floor((n - 1 - i) / 7)
-      const g = groups.get(k) || { first: row.day, last: row.day, value: 0 }
-      g.first = g.first < row.day ? g.first : row.day
-      g.last = g.last > row.day ? g.last : row.day
-      g.value += row[field]
-      groups.set(k, g)
-    })
-    return [...groups.entries()]
-      .sort((a, b) => b[0] - a[0])
-      .map(([k, g]) => ({
-        key: `w${k}`,
-        label: clean(short.format(asDay(g.first))),
-        title: `${short.format(asDay(g.first))} — ${short.format(asDay(g.last))}`,
-        value: g.value,
-      }))
-  }
-  series.forEach((row) => {
-    const month = row.day.slice(0, 7)
-    const g = groups.get(month) || { value: 0 }
-    g.value += row[field]
-    groups.set(month, g)
-  })
-  return [...groups.entries()].map(([month, g]) => ({
-    key: month,
-    label: clean(monthShort.format(asDay(`${month}-15`))),
-    title: monthLong.format(asDay(`${month}-15`)),
-    value: g.value,
-  }))
-}
-
-const revenue = computed(() => buckets(data.value?.series || [], 'revenue'))
-const signups = computed(() => buckets(data.value?.series || [], 'signups'))
+const revenue = computed(() => buckets(data.value?.series || [], 'revenue', days.value))
+const signups = computed(() => buckets(data.value?.series || [], 'signups', days.value))
 const step = computed(() => (days.value <= 30 ? 'по дням' : days.value <= 90 ? 'по неделям' : 'по месяцам'))
 
 function delta(now, before) {

@@ -31,4 +31,13 @@ export const adminApi = {
   partners: (userId) => get(`/api/admin/users/${id(userId)}/partners`),
   setBought: (userId, partnerId, bought) =>
     send(`/api/admin/users/${id(userId)}/partners/${id(partnerId)}/purchase`, 'PUT', { bought }),
+  /** Visits, the funnel, the pages, the tours and the sources for 7, 30, 90 or 365 days. */
+  analytics: (days) => get(`/api/admin/analytics?${query({ days })}`),
+  /** The campaign links with what came by each; days 0 is all time. */
+  links: (days) => get(`/api/admin/links?${query({ days })}`),
+  link: (linkId, days) => get(`/api/admin/links/${id(linkId)}?${query({ days })}`),
+  /** { name, token, note }; an empty token is made up by the server. */
+  createLink: (body) => send('/api/admin/links', 'POST', body),
+  updateLink: (linkId, body) => send(`/api/admin/links/${id(linkId)}`, 'PUT', body),
+  deleteLink: (linkId) => send(`/api/admin/links/${id(linkId)}`, 'DELETE'),
 }

@@ -14,6 +14,8 @@ const AdminUser = () => import('../views/admin/UserPanel.vue')
 const AdminPayments = () => import('../views/admin/PaymentsPage.vue')
 const AdminPairs = () => import('../views/admin/PairsPage.vue')
 const AdminSettings = () => import('../views/admin/SettingsPage.vue')
+const AdminAnalytics = () => import('../views/admin/AnalyticsPage.vue')
+const AdminLinks = () => import('../views/admin/LinksPage.vue')
 const OverviewPanel = () => import('../views/cabinet/OverviewPanel.vue')
 const BirthPanel = () => import('../views/cabinet/BirthPanel.vue')
 const SectionSoon = () => import('../views/cabinet/SectionSoon.vue')
@@ -77,6 +79,8 @@ const router = createRouter({
       component: AdminView,
       children: [
         { path: '', name: 'admin', component: AdminOverview },
+        { path: 'analytics', name: 'admin-analytics', component: AdminAnalytics },
+        { path: 'links', name: 'admin-links', component: AdminLinks },
         {
           path: 'users',
           name: 'admin-users',

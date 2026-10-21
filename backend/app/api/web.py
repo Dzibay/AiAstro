@@ -20,6 +20,7 @@ from app.partners import (
 )
 from app.places import search
 from app.security import make_web_session
+from app.track import attach
 
 router = APIRouter(prefix="/web")
 
@@ -38,6 +39,8 @@ class RegisterIn(BaseModel):
     name: str = Field(default="", max_length=80)
     consent: bool = False
     birth: BirthIn | None = None
+    # The browser's anonymous id: the account takes its campaign link.
+    visitor: str | None = Field(default=None, max_length=40)
 
 
 class PartnerIn(BaseModel):
@@ -94,6 +97,7 @@ class PaymentIn(BaseModel):
 class LoginIn(BaseModel):
     email: str = Field(max_length=254)
     password: str = Field(max_length=200)
+    visitor: str | None = Field(default=None, max_length=40)
 
 
 class ForgotIn(BaseModel):
@@ -114,7 +118,7 @@ class MarksIn(BaseModel):
 
 
 @router.post("/register")
-def register_user(body: RegisterIn) -> dict:
+def register_user(body: RegisterIn, background: BackgroundTasks) -> dict:
     birth = body.birth
     try:
         user = register(
@@ -131,16 +135,18 @@ def register_user(body: RegisterIn) -> dict:
         token = make_web_session(user["id"])
     except DomainError as exc:
         raise as_http(exc) from exc
+    background.add_task(attach, user["id"], body.visitor, True)
     return {"token": token, "user": user}
 
 
 @router.post("/login")
-def login_user(body: LoginIn) -> dict:
+def login_user(body: LoginIn, background: BackgroundTasks) -> dict:
     try:
         user = authenticate(body.email, body.password)
         token = make_web_session(user["id"])
     except DomainError as exc:
         raise as_http(exc) from exc
+    background.add_task(attach, user["id"], body.visitor)
     return {"token": token, "user": user}
 
 

@@ -6,8 +6,8 @@ import { addMark, hasMark } from './marks.js'
  * drawn the person's star; `sky` — what «Небосвод» opened, once it is lit. Each is shown once per
  * account, remembered in the account itself (utils/marks.js); the «?» by the star and the profile bring it back at will.
  *
- * A section's own «?» opens `section` — a short walk through the open section, with no scene and
- * nothing remembered: it is there whenever asked.
+ * `section` is a short walk through the open section, with no scene: it comes by itself the first
+ * time the section is opened (remembered as `section-<id>`), and the section's «?» brings it back.
  *
  * `kind` is the tour on screen ('' when none), `scene` whether its opening scene is still up,
  * `step` the spotlight step; `pair` opens the intro with the pair just joined by an invitation;

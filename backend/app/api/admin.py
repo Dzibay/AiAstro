@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel, Field
 
 from app import notes
+from app.analytics import analytics, create_link, delete_link, link_detail, list_links, update_link
 from app.accounts import SKY_MAX_DAYS, admin_delete, list_users, operator_user, set_birth, set_sky, set_sky_until
 from app.api.deps import as_http, require_admin
 from app.config import settings
@@ -47,6 +48,18 @@ class BirthIn(BaseModel):
 
 class TestMailIn(BaseModel):
     email: str = Field(max_length=254)
+
+
+class LinkIn(BaseModel):
+    # Empty: the page gets a random token.
+    token: str = Field(default="", max_length=40)
+    name: str = Field(default="", max_length=80)
+    note: str = Field(default="", max_length=300)
+
+
+class LinkEditIn(BaseModel):
+    name: str = Field(default="", max_length=80)
+    note: str = Field(default="", max_length=300)
 
 
 class SettingIn(BaseModel):
@@ -103,6 +116,57 @@ def stats_view(days: int = Query(default=30)) -> dict:
     """Money and new accounts by day for the period, the products and the totals."""
     try:
         return stats(days)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/analytics", dependencies=[Depends(require_admin)])
+def analytics_view(days: int = Query(default=30)) -> dict:
+    """Visitors, the funnel, where people stop, the tours, the sources and the devices."""
+    try:
+        return analytics(days)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/links", dependencies=[Depends(require_admin)])
+def links_list(days: int = Query(default=0)) -> dict:
+    """The campaign links with their clicks, registrations and money; days = 0 — for all time."""
+    try:
+        return list_links(days)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.post("/links", dependencies=[Depends(require_admin)])
+def links_create(body: LinkIn) -> dict:
+    try:
+        return create_link(body.token, body.name, body.note)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/links/{link_id}", dependencies=[Depends(require_admin)])
+def links_one(link_id: int, days: int = Query(default=0)) -> dict:
+    try:
+        return link_detail(link_id, days)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.put("/links/{link_id}", dependencies=[Depends(require_admin)])
+def links_update(link_id: int, body: LinkEditIn) -> dict:
+    try:
+        return update_link(link_id, body.name, body.note)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.delete("/links/{link_id}", dependencies=[Depends(require_admin)])
+def links_delete(link_id: int) -> dict:
+    """The link and its clicks go; the people who came by it stay, without the mark."""
+    try:
+        return delete_link(link_id)
     except DomainError as exc:
         raise as_http(exc) from exc
 
