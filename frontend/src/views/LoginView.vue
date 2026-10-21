@@ -218,6 +218,11 @@ onMounted(() => {
     if (saved && typeof saved === 'object') {
       for (const key of ['date', 'time', 'city']) if (typeof saved[key] === 'string') birth[key] = saved[key]
       birth.noTime = saved.noTime === true
+      // A landing page also brings the city it found on the map.
+      const place = saved.place
+      if (place && place.label === birth.city && Number.isFinite(place.lat) && Number.isFinite(place.lon)) {
+        birth.place = { label: place.label, lat: place.lat, lon: place.lon, tz: typeof place.tz === 'string' ? place.tz : '' }
+      }
     }
   } catch {
     /* private mode or a broken value */

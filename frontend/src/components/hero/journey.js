@@ -163,6 +163,8 @@ export const POSES = {
   'cabinet-chat': { theta: 0.68, pan: -0.16, frame: [0.44, 1.42, 0.92], narrow: [0.5, 1.02, 0.55] },
   // «Небосвод»: the planet lowest of all, so the vault above it is free for the dome.
   'cabinet-sky': { theta: -0.95, pan: 0, frame: [0.52, 1.5, 0.92], narrow: [0.5, 1.04, 0.55] },
+  // The landing pages: the planet rests low on the right under the form, the text on the left reads on open sky.
+  landing: { theta: 0.3, pan: 0.04, frame: [0.74, 1.36, 0.88], narrow: [0.5, 1.06, 0.55] },
 }
 
 export function poseScene(geo, id, userTheta) {

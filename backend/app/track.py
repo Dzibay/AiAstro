@@ -11,8 +11,9 @@ from app.db import pool
 VISITOR = re.compile(r"^[a-z0-9-]{16,40}$")
 NAME = re.compile(r"^[a-z0-9][a-z0-9:_-]{0,47}$")
 TOKEN = re.compile(r"^[a-z0-9][a-z0-9_-]{1,39}$")
-# What a page may report; signup is written by the server itself.
-KINDS = {"view", "tour"}
+# What a page may report; signup is written by the server itself. A goal is a landing's step:
+# «lp-natal:calc» (the calculation shown), «lp-natal:cta» (on to the registration).
+KINDS = {"view", "tour", "goal"}
 DEVICES = {"phone", "desktop"}
 # Silence after which the next view opens a new visit.
 VISIT_GAP = "30 minutes"

@@ -148,12 +148,21 @@ def analytics(days: int) -> dict:
             p,
         )
 
+        # The first page of each visitor; the landing pages' goals (track.py: `<page>:calc`, `<page>:cta`) beside it.
         landings = _rows(
             conn,
             f"""
-            SELECT v.landing AS name, count(*) AS visitors, count(u.id) AS signups
+            SELECT v.landing AS name, count(*) AS visitors,
+                   count(*) FILTER (WHERE EXISTS (
+                       SELECT 1 FROM events g WHERE g.visitor_id = v.id AND g.kind = 'goal' AND g.name = v.landing || ':calc'
+                   )) AS calcs,
+                   count(*) FILTER (WHERE EXISTS (
+                       SELECT 1 FROM events g WHERE g.visitor_id = v.id AND g.kind = 'goal' AND g.name = v.landing || ':cta'
+                   )) AS ctas,
+                   count(u.id) AS signups,
+                   count(u.id) FILTER (WHERE EXISTS (SELECT 1 FROM payments pa WHERE pa.user_id = u.id AND pa.status = 'succeeded')) AS paying
             FROM visitors v LEFT JOIN users u ON u.visitor_id = v.id
-            WHERE v.first_at >= {SINCE} GROUP BY 1 ORDER BY visitors DESC LIMIT 10
+            WHERE v.first_at >= {SINCE} GROUP BY 1 ORDER BY visitors DESC LIMIT 16
             """,
             p,
         )

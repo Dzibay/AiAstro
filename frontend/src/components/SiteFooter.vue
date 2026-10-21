@@ -4,6 +4,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import BrandMark from './BrandMark.vue'
 import { fallbackConfig, useSiteConfig } from '../composables/useSiteConfig.js'
 import { skyOn } from '../utils/skyToday.js'
+import { LANDINGS } from '../landing/pages.js'
 
 const { config, load } = useSiteConfig()
 const route = useRoute()
@@ -21,6 +22,8 @@ const sections = [
   { label: 'Вопросы', to: { path: '/', hash: '#about' } },
   { label: 'Кабинет', to: '/cabinet' },
 ]
+// The landing pages: every page of the site links to them, so search finds them from anywhere.
+const calculations = LANDINGS.map((page) => ({ label: page.crumb, to: `/${page.slug}` }))
 const documents = [
   { label: 'Конфиденциальность', to: '/legal/privacy' },
   { label: 'Оферта', to: '/legal/offer' },
@@ -91,6 +94,11 @@ onMounted(() => {
           <RouterLink v-for="link in sections" :key="link.label" :to="link.to">{{ link.label }}</RouterLink>
         </nav>
 
+        <nav class="col" aria-label="Расчёты">
+          <p class="col-title">Расчёты</p>
+          <RouterLink v-for="link in calculations" :key="link.to" :to="link.to">{{ link.label }}</RouterLink>
+        </nav>
+
         <div class="col">
           <p class="col-title">Связь</p>
           <a v-if="TELEGRAM_URL" :href="TELEGRAM_URL" target="_blank" rel="noopener">Telegram</a>
@@ -154,7 +162,7 @@ onMounted(() => {
 
 .cols {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr 1fr;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr;
   gap: 32px;
   padding: 28px 0 32px;
 }

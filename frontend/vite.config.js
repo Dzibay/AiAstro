@@ -5,9 +5,10 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     host: '127.0.0.1',
-    port: 5173,
+    port: Number(process.env.PORT) || 5173,
     proxy: {
-      '/api': 'http://127.0.0.1:8000',
+      // API_TARGET points a second dev server at another backend, e.g. a test one.
+      '/api': process.env.API_TARGET || 'http://127.0.0.1:8000',
     },
   },
 })

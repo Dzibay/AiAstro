@@ -6,4 +6,7 @@ Disallow: /cabinet
 Disallow: /login
 Disallow: /legal/
 
+# Метки рекламы и кампаний не создают новых адресов (Яндекс).
+Clean-param: ref&utm_source&utm_medium&utm_campaign&utm_content&utm_term&yclid
+
 Sitemap: __ORIGIN__/sitemap.xml

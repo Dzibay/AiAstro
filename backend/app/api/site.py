@@ -1,12 +1,14 @@
+import datetime as dt
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app import legal
+from app import landing, legal
 from app.astro import forecast
-from app.api.deps import optional_web_user
+from app.api.deps import as_http, optional_web_user
+from app.errors import DomainError
 from app.config import settings
 from app.settings_store import public_config
 from app.track import track
@@ -73,3 +75,49 @@ def _track_quietly(body: TrackIn, user_id: int | None) -> None:
         track(body.visitor, body.kind, body.name, body.value, body.ref, body.source, body.device, user_id)
     except Exception:  # noqa: BLE001 — a lost view is better than a noisy log on every page
         pass
+
+
+# ---- The landing pages' calculation, open without an account ----
+
+class PreviewBirthIn(BaseModel):
+    date: dt.date
+    time: dt.time | None = None
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lon: float | None = Field(default=None, ge=-180, le=180)
+
+    def args(self) -> dict:
+        return {"birth_date": self.date, "birth_time": self.time.replace(second=0, microsecond=0, tzinfo=None) if self.time else None,
+                "lat": self.lat, "lon": self.lon}
+
+
+class NatalPreviewIn(PreviewBirthIn):
+    focus: str = Field(default="", max_length=16)
+
+
+class PairPreviewIn(BaseModel):
+    mine: PreviewBirthIn
+    theirs: PreviewBirthIn
+
+
+def _preview(request: Request, make):
+    try:
+        landing.allow(request.client.host if request.client else "")
+        return make()
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.post("/preview/natal")
+def preview_natal(body: NatalPreviewIn, request: Request) -> dict:
+    """A few points of the chart with their readings: what a landing shows before the registration."""
+    return _preview(request, lambda: landing.natal_preview(**body.args(), focus=body.focus))
+
+
+@router.post("/preview/pair")
+def preview_pair(body: PairPreviewIn, request: Request) -> dict:
+    return _preview(request, lambda: landing.pair_preview(body.mine.args(), body.theirs.args()))
+
+
+@router.post("/preview/forecast")
+def preview_forecast(body: PreviewBirthIn, request: Request) -> dict:
+    return _preview(request, lambda: landing.forecast_preview(**body.args()))

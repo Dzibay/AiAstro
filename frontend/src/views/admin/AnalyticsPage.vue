@@ -106,6 +106,8 @@ const barsOf = (rows, field) => {
 const stuck = computed(() => barsOf(data.value?.stuck || [], 'people'))
 const pages = computed(() => data.value?.pages || [])
 const landings = computed(() => data.value?.landings || [])
+/** The landing pages for search and ads, with their own goals: a calculation made, a step to the account. */
+const adLandings = computed(() => landings.value.filter((row) => row.name?.startsWith('lp-')))
 
 const SOURCE_KIND = { ref: 'по ссылке', site: 'с сайта', direct: 'напрямую' }
 const sources = computed(() => (data.value?.sources || []).map((row) => ({
@@ -375,6 +377,27 @@ const products = computed(() => (data.value?.products || []).map((row) => ({ ...
         <p v-else class="adm-empty">Нет данных.</p>
       </section>
     </div>
+
+    <section class="adm-panel">
+      <div class="adm-panel-head">
+        <h2>Посадочные</h2>
+        <p>первая страница визита · расчёт и переход к регистрации — цели страницы</p>
+      </div>
+      <table v-if="adLandings.length" class="adm-table an-table">
+        <thead><tr><th>Страница</th><th class="num">Посетители</th><th class="num">Расчёт</th><th class="num">К регистрации</th><th class="num">Регистрации</th><th class="num">Платят</th></tr></thead>
+        <tbody>
+          <tr v-for="row in adLandings" :key="row.name">
+            <td>{{ pageName(row.name) }}</td>
+            <td class="num">{{ fmt.count(row.visitors) }}</td>
+            <td class="num">{{ fmt.count(row.calcs) }} <span class="adm-dim">· {{ pct(row.calcs, row.visitors) }}</span></td>
+            <td class="num">{{ fmt.count(row.ctas) }} <span class="adm-dim">· {{ pct(row.ctas, row.visitors) }}</span></td>
+            <td class="num">{{ fmt.count(row.signups) }} <span class="adm-dim">· {{ pct(row.signups, row.visitors) }}</span></td>
+            <td class="num">{{ fmt.count(row.paying) }} <span class="adm-dim">· {{ pct(row.paying, row.visitors) }}</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="adm-empty">На посадочные за этот срок не заходили.</p>
+    </section>
 
     <section class="adm-panel">
       <div class="adm-panel-head">

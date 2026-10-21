@@ -1,11 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { SECTIONS } from '../components/cabinet/layout.js'
 import { readSession } from '../composables/useSession.js'
+import { LANDINGS } from '../landing/pages.js'
 
 // The home page comes with the first load; every other page is fetched when first opened.
 import HomeView from '../views/HomeView.vue'
 const LegalView = () => import('../views/LegalView.vue')
 const LoginView = () => import('../views/LoginView.vue')
+const LandingView = () => import('../views/LandingView.vue')
 const CabinetView = () => import('../views/CabinetView.vue')
 const AdminView = () => import('../views/AdminView.vue')
 const AdminOverview = () => import('../views/admin/OverviewPage.vue')
@@ -93,6 +95,8 @@ const router = createRouter({
         { path: 'settings', name: 'admin-settings', component: AdminSettings },
       ],
     },
+    // The landing pages for search and ads, one calculation each; their names are what «Аналитика» counts.
+    ...LANDINGS.map((page) => ({ path: `/${page.slug}`, name: page.name, component: LandingView, meta: { sky: 'landing' } })),
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })

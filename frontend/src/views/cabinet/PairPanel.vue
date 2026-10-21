@@ -147,11 +147,29 @@ function onDraft(next) {
   Object.assign(draft, next)
 }
 
+/** The partner typed on the «Совместимость» landing (LandingView), read once for the form by hand. */
+const PARTNER_KEY = 'astra-partner'
+function readCarried() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(PARTNER_KEY) || 'null')
+    if (!saved || typeof saved !== 'object' || !saved.birth || typeof saved.birth.date !== 'string') return null
+    return { name: typeof saved.name === 'string' ? saved.name : '', birth: saved.birth }
+  } catch {
+    return null
+  }
+}
+const carried = readCarried()
+
 async function addByHand({ name, birth }) {
   return add({ name, birth })
 }
 function onAdded(created) {
   clearDraft()
+  try {
+    sessionStorage.removeItem(PARTNER_KEY)
+  } catch {
+    /* private mode */
+  }
   router.replace({ name: 'cabinet-pair', query: { partner: created.id } })
 }
 
@@ -328,6 +346,8 @@ function status_of(item) {
     <BirthForm
       v-if="mode === 'add'"
       with-name
+      :name="carried?.name || ''"
+      :birth="carried?.birth || null"
       :sky="false"
       :submit="addByHand"
       submit-label="Зажечь звезду"
