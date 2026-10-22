@@ -27,12 +27,18 @@ else
     GLOBAL="{
 	email ${ACME_EMAIL}
 }
-"
+    "
   fi
+  # Канонический хост без www; www → тот же путь на канон. Иначе возврат из ЮKassa
+  # на «другой» хост мог обрезаться до главной.
+  APEX=$(printf '%s' "$HOST" | sed 's/^www\.//')
   cat > /etc/caddy/Caddyfile <<EOF
-${GLOBAL}${HOST} {
+${GLOBAL}${APEX} {
 	encode zstd gzip
 	reverse_proxy nginx:80
+}
+www.${APEX} {
+	redir https://${APEX}{uri} permanent
 }
 EOF
 fi

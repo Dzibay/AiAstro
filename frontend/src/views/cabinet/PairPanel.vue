@@ -13,7 +13,7 @@ import { inviteLink, usePartners } from '../../composables/usePartners.js'
 import { useToast } from '../../composables/useToast.js'
 import { formatDate } from '../../utils/format.js'
 import { usePrices } from '../../utils/prices.js'
-import { paidId, usePayment } from '../../composables/usePayment.js'
+import { usePayment } from '../../composables/usePayment.js'
 import { birthSigns } from '../../utils/skyToday.js'
 
 /**
@@ -60,26 +60,11 @@ onMounted(() => load())
 
 /* ---- Buying the reading, and the way back from ЮKassa ---- */
 
-const { result: paid, busy: paying, message: payMessage, start, follow } = usePayment()
+const { busy: paying, message: payMessage, start } = usePayment()
 const priceSet = computed(() => Boolean(prices.value[props.user.sky ? 'synastry_sky' : 'synastry']))
 function buy() {
   if (partner.value && payOn.value && priceSet.value) start({ product: 'synastry', partner: partner.value.id })
 }
-onMounted(() => {
-  const id = paidId(route.query)
-  if (!id) return
-  const pid = partnerId.value
-  router.replace({ name: 'cabinet-pair', query: pid ? { partner: pid } : {} })
-  follow(id, async () => {
-    // The pair is read again, now whole, and the list learns it is bought; the sky and the panel celebrate.
-    delete syntheses[pid]
-    await load(true)
-    if (!pid) return
-    synastry(pid)
-    if (partnerId.value === pid) news.value = 'paid'
-    celebrate(pid)
-  })
-})
 watch(partner, (value) => {
   if (value?.birth) synastry(value.id)
 }, { immediate: true })
@@ -444,16 +429,6 @@ const rows = computed(() => partners.value.map((item) => {
 
     <!-- ---- One pair ---- -->
     <template v-else-if="mode === 'pair' && partner">
-      <div v-if="paid && paid !== 'succeeded'" class="pay-state" :class="`is-${paid}`" role="status">
-        <span class="pay-star" aria-hidden="true" />
-        <p>
-          <template v-if="paid === 'checking'">Сверяемся с ЮKassa — разбор откроется через мгновение…</template>
-          <template v-else-if="paid === 'canceled'">Оплата не прошла, деньги не списаны.</template>
-          <template v-else>ЮKassa ещё не подтвердила оплату. Разбор откроется сам, как только придёт ответ, — эту страницу можно не держать открытой.</template>
-        </p>
-        <button v-if="paid === 'canceled' && pair?.data?.locked" type="button" class="soft-button" :disabled="paying" @click="buy">Попробовать ещё раз</button>
-      </div>
-
       <div v-if="newsText" class="news" :class="{ 'is-opening': opened }" role="status">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
         <p>
@@ -564,7 +539,7 @@ const rows = computed(() => partners.value.map((item) => {
                 <div :class="{ 'is-mine': !user.sky }"><dt>Отдельно</dt><dd>{{ pairPrice }}</dd></div>
                 <div class="with-sky" :class="{ 'is-mine': user.sky }"><dt>С Небосводом</dt><dd>{{ pairSkyPrice }}</dd></div>
               </dl>
-              <button type="button" class="unlock-cta" :disabled="paying || !payOn || !priceSet || paid === 'checking'" @click="buy">
+              <button type="button" class="unlock-cta" :disabled="paying || !payOn || !priceSet" @click="buy">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
                 <template v-if="paying">Открываем ЮKassa…</template>
                 <template v-else-if="linked">Открыть разбор для нас обоих — {{ user.sky ? pairSkyPrice : pairPrice }}</template>
@@ -829,25 +804,6 @@ const rows = computed(() => partners.value.map((item) => {
 .news.is-opening svg { width: 14px; height: 14px; margin-top: 4px; animation: news-star 1.4s cubic-bezier(0.2, 0.7, 0.2, 1) 0.3s both; }
 .news-title { display: block; margin-bottom: 2px; font-style: normal; font-size: 19px; color: #f6e2b4; }
 
-.pay-state {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 12px;
-  align-items: center;
-  padding: 12px 16px;
-  border-radius: 14px;
-  border: 1px solid rgba(240, 205, 138, 0.3);
-  background: rgba(240, 205, 138, 0.05);
-}
-.pay-state p { margin: 0; font-family: var(--serif); font-style: italic; font-size: 15.5px; line-height: 1.4; color: #f3dcae; }
-.pay-state .soft-button { grid-column: 2; margin-top: 6px; }
-.pay-state.is-canceled { border-color: rgba(242, 164, 140, 0.35); background: rgba(242, 164, 140, 0.05); }
-.pay-state.is-canceled p { color: #f2c0ae; }
-.pay-star { width: 8px; height: 8px; border-radius: 50%; background: #f0cd8a; box-shadow: 0 0 10px 2px rgba(240, 205, 138, 0.6); }
-.pay-state.is-checking .pay-star { animation: pay-pulse 1.4s ease-in-out infinite; }
-.pay-state.is-canceled .pay-star { background: none; border: 1px solid #f2a48c; box-shadow: none; }
-.pay-state.is-waiting .pay-star { background: none; border: 1px dashed #f0cd8a; box-shadow: none; }
-
 /* The haze over the reading melts from the top down, as it opens. */
 .reading-open.is-revealing {
   -webkit-mask-image: linear-gradient(180deg, #000 40%, transparent 60%);
@@ -870,7 +826,6 @@ const rows = computed(() => partners.value.map((item) => {
   60% { transform: scale(1.35) rotate(8deg); opacity: 1; }
   100% { transform: scale(1) rotate(0); }
 }
-@keyframes pay-pulse { 50% { transform: scale(0.6); opacity: 0.5; } }
 @keyframes reveal {
   from { -webkit-mask-position: 0 100%; mask-position: 0 100%; }
   to { -webkit-mask-position: 0 0; mask-position: 0 0; }
@@ -1079,7 +1034,7 @@ const rows = computed(() => partners.value.map((item) => {
 }
 @media (prefers-reduced-motion: reduce) {
   .unlock-cta, .pair-row { transition: none; }
-  .news.is-opening, .news.is-opening svg, .pay-state.is-checking .pay-star { animation: none; }
+  .news.is-opening, .news.is-opening svg { animation: none; }
   .news.is-opening::after { display: none; }
   .reading-open.is-revealing { -webkit-mask-image: none; mask-image: none; animation: reveal-fade 1.2s ease both; }
 }

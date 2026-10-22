@@ -1,13 +1,12 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { computed, onUnmounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
 import { FEATURES } from '../../components/sky/features.js'
 import { useSkyOffer } from '../../composables/useSkyOffer.js'
 import { usePrices } from '../../utils/prices.js'
 import { skyEnding, skyLine } from '../../utils/skyTerm.js'
-import { webApi } from '../../api/web.js'
-import { paidId, usePayment } from '../../composables/usePayment.js'
+import { usePayment } from '../../composables/usePayment.js'
 import { startTour } from '../../utils/tour.js'
 
 /**
@@ -16,17 +15,13 @@ import { startTour } from '../../utils/tour.js'
  * its constellation, a constellation under the pointer lights its row; a press opens a row,
  * smoothly, and the rest slides down with it.
  *
- * ЮKassa brings the person back here with ?paid=ID: the panel asks how the payment stands until
- * it is settled, then the sky catches fire.
+ * The person comes back to the cabinet after ЮKassa; the subscription opens on the notification.
  */
 
 const props = defineProps({
   user: { type: Object, required: true },
 })
-const emit = defineEmits(['updated'])
 
-const route = useRoute()
-const router = useRouter()
 const offer = useSkyOffer()
 const { prices, pay: payOn } = usePrices()
 
@@ -76,22 +71,11 @@ function toggle(id) {
 
 /* ---- Paying, and the way back from ЮKassa ---- */
 
-const { result, busy, message, start, follow } = usePayment()
+const { busy, message, start } = usePayment()
 function pay() {
   if (chosen.value?.price && payOn.value) start({ product: plan.value })
 }
 
-onMounted(() => {
-  const id = paidId(route.query)
-  if (!id) return
-  // The address loses its mark: a reload does not ask again, the result stays on the page.
-  router.replace({ name: 'cabinet-sky' })
-  follow(id, async () => {
-    emit('updated', await webApi.me())
-    offer.preview = false
-    offer.celebrate += 1
-  })
-})
 onUnmounted(() => {
   offer.focus = ''
   offer.opened = ''
@@ -108,13 +92,6 @@ onUnmounted(() => {
         <template v-else>Пока на вашем небе горит одна звезда — ваша карта. Зажгите остальные.</template>
       </template>
     </PanelHead>
-
-    <p v-if="result" class="result" :class="`is-${result}`" role="status">
-      <template v-if="result === 'checking'">Сверяемся с ЮKassa…</template>
-      <template v-else-if="result === 'succeeded'">Оплата прошла — Небосвод зажжён. Чек придёт на {{ user.email }}.</template>
-      <template v-else-if="result === 'canceled'">Оплата не прошла, деньги не списаны. Можно попробовать ещё раз.</template>
-      <template v-else>ЮKassa ещё не подтвердила оплату. Небосвод зажжётся сам, как только придёт ответ, — загляните чуть позже.</template>
-    </p>
 
     <!-- Once lit, the walk through what «Небосвод» opened can be taken again at any time. -->
     <button v-if="user.sky" type="button" class="sky-replay" @click="startTour('sky')">
@@ -255,10 +232,6 @@ onUnmounted(() => {
 .sky-replay:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 3px; }
 
 .part-title { margin: 0 0 10px; font-family: var(--caps); font-weight: 600; font-size: 15px; letter-spacing: 0.12em; color: rgba(240, 205, 138, 0.85); }
-
-.result { margin: 0; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(240, 210, 150, 0.2); font-family: var(--serif); font-style: italic; font-size: 16.5px; line-height: 1.4; color: #f3dcae; }
-.result.is-succeeded { border-color: rgba(240, 205, 138, 0.6); background: radial-gradient(120% 120% at 0% 0%, rgba(240, 205, 138, 0.16), transparent 70%); color: #fff1d4; }
-.result.is-canceled { border-color: rgba(242, 164, 140, 0.4); color: #f2b8a4; }
 
 /* The features: a quiet list; the open row shows what it gives and what stays free. */
 .features { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }

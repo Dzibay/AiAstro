@@ -52,8 +52,13 @@ export const webApi = {
     request(`/api/web/invite/${encodeURIComponent(token)}/link`, { method: 'POST', body: { claim }, audience: 'web', auth: true }),
   answerInvitation: (token, body) =>
     request(`/api/web/invite/${encodeURIComponent(token)}`, { method: 'POST', body, audience: 'web' }),
-  /** A payment at ЮKassa ({ product, partner }): { id, url } of its page; then its status after the return. */
-  pay: (body) => request('/api/web/me/payments', { method: 'POST', body, audience: 'web', auth: true }),
-  payment: (id) => request(`/api/web/me/payments/${encodeURIComponent(id)}`, { audience: 'web', auth: true }),
+  /** A payment at ЮKassa ({ product, partner }): { id, url } of its page; the purchase opens on the notification. */
+  pay: (body) =>
+    request('/api/web/me/payments', {
+      method: 'POST',
+      body: { ...body, origin: typeof window !== 'undefined' ? window.location.origin : undefined },
+      audience: 'web',
+      auth: true,
+    }),
   places: (q) => request(`/api/web/places?${new URLSearchParams({ q })}`, { audience: 'web' }),
 }

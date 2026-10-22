@@ -13,7 +13,7 @@ from app.charts import chart_item, chart_of, forecast_of, month_of, portrait_of
 from app.chat import LENGTH, ask, history
 from app.errors import DomainError
 from app.mailer import mail_on
-from app.payments import create_payment, payment_of
+from app.payments import create_payment
 from app.partners import (
     accept_invite, create_partner, delete_partner, fill_invite, forecast_of as pair_forecast_of, invite, link_invite,
     list_partners, mine_changed, open_invite, seen, share, synastry_of, update_partner,
@@ -92,6 +92,8 @@ class PaymentIn(BaseModel):
     # sky1, sky3, sky12 or synastry; the pair's reading names its partner.
     product: str = Field(max_length=16)
     partner: int | None = None
+    # The browser's own origin: kept for a local dev server; production uses PUBLIC_BASE_URL.
+    origin: str | None = Field(default=None, max_length=200)
 
 
 class LoginIn(BaseModel):
@@ -418,16 +420,12 @@ def ask_astrologer(body: QuestionIn, user_id: int = Depends(require_web_user)) -
 def pay(body: PaymentIn, request: Request, user_id: int = Depends(require_web_user)) -> dict:
     """Creates the payment at ЮKassa: the page sends the person on to `url` and gets them back with `id`."""
     try:
-        return create_payment(user_id, body.product, body.partner, origin=request.headers.get("origin"))
-    except DomainError as exc:
-        raise as_http(exc) from exc
-
-
-@router.get("/me/payments/{payment_id}")
-def payment(payment_id: int, user_id: int = Depends(require_web_user)) -> dict:
-    """After the return from ЮKassa: pending, succeeded (the purchase is already applied) or canceled."""
-    try:
-        return payment_of(user_id, payment_id)
+        return create_payment(
+            user_id,
+            body.product,
+            body.partner,
+            origin=body.origin or request.headers.get("origin"),
+        )
     except DomainError as exc:
         raise as_http(exc) from exc
 

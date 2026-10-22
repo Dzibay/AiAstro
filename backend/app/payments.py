@@ -1,9 +1,9 @@
 """Payments through ЮKassa: «Небосвод» for 1, 3 or 12 months and the reading of one pair.
 
-A payment is written here first, then created at ЮKassa and paid on its page. It comes back
-twice: the person returns to the cabinet, and ЮKassa sends a notification. Neither is trusted
-as it is: both only make us ask ЮKassa for the payment by its id, so neither can be forged.
-Whichever comes first applies the purchase, and only once (see _apply).
+A payment is written here first, then created at ЮKassa and paid on its page. The person is
+brought back to the cabinet; the purchase itself is applied only when ЮKassa sends a
+notification. The notification's body is not trusted as it is: only the payment's id is taken
+from it, and the payment is asked from ЮKassa again, then applied once (see _apply).
 
 There is no auto-renewal: every payment is one charge for one term, as the offer says.
 """
@@ -86,11 +86,11 @@ _LOCAL = ("localhost", "127.0.0.1", "::1")
 
 
 def _return_base(origin: str | None) -> str:
-    """Where ЮKassa brings the person back: to the site they paid from, if it is this one; else the public address.
+    """Where ЮKassa brings the person back after paying.
 
-    The origin is the browser's own (Origin of the request), so a person comes back to the very
-    address they are signed in at, a dev server's or the public one with or without «www.».
-    Anything else is not trusted and the public address is used.
+    The public address is the rule in production: Caddy serves that host, and a «www.» twin of
+    the origin must not win — a redirect that drops the path would leave the person on the home
+    page. A local origin (dev server) is kept so a machine of one's own still comes back to itself.
     """
     base = settings.public_base_url.rstrip("/")
     try:
@@ -98,10 +98,13 @@ def _return_base(origin: str | None) -> str:
         host = (parts.hostname or "").lower()
     except ValueError:
         return base
-    if parts.scheme not in ("http", "https") or not host or parts.username or parts.path not in ("", "/"):
-        return base
-    own = (urlsplit(base).hostname or "").lower().removeprefix("www.")
-    if (own and host.removeprefix("www.") == own) or host in _LOCAL or host.endswith((".localhost", ".test")):
+    if (
+        parts.scheme in ("http", "https")
+        and host
+        and not parts.username
+        and parts.path in ("", "/")
+        and (host in _LOCAL or host.endswith((".localhost", ".test")))
+    ):
         return f"{parts.scheme}://{parts.netloc}"
     return base
 
@@ -116,8 +119,8 @@ def _price(key: str) -> int:
 def create_payment(user_id: int, product: str, partner_id: int | None = None, origin: str | None = None) -> dict:
     """Writes the payment, creates it at ЮKassa and gives the page of ЮKassa to send the person to.
 
-    The way back leads into the cabinet: the pair's own page or «Небосвод», with ?paid=ID, where the
-    page asks how the payment stands (`origin` — the site the person pays from, see _return_base).
+    The way back is the cabinet; the purchase opens when ЮKassa's notification arrives
+    (`origin` — the site the person pays from, see _return_base).
     """
     if not payments_on():
         raise DomainError("pay_off", 409)
@@ -140,12 +143,10 @@ def create_payment(user_id: int, product: str, partner_id: int | None = None, or
         # With a partner who has a cabinet too, the reading opens for both: the receipt says so.
         both = partner["linked_user_id"] is not None
         title = f"Разбор пары: вы и {partner['name']}{' — для вас обоих' if both else ''}"[:128]
-        back = f"/cabinet/pair?partner={partner_id}&paid="
     else:
         partner_id = None
         days, key, title = PLANS[product]
         amount = _price(key)
-        back = "/cabinet/sky?paid="
 
     with pool.connection() as conn:
         row = conn.execute(
@@ -176,7 +177,7 @@ def create_payment(user_id: int, product: str, partner_id: int | None = None, or
     body = {
         "amount": _money(amount),
         "capture": True,
-        "confirmation": {"type": "redirect", "return_url": f"{_return_base(origin)}{back}{row['id']}"},
+        "confirmation": {"type": "redirect", "return_url": f"{_return_base(origin)}/cabinet"},
         "description": title,
         "metadata": {"payment_id": str(row["id"]), "user_id": str(user_id)},
         "receipt": receipt,
@@ -275,23 +276,6 @@ def _settle(row: dict) -> dict:
             conn.execute("UPDATE payments SET status = 'canceled' WHERE id = %s AND status = 'pending'", (row["id"],))
         return {**row, "status": "canceled"}
     return row
-
-
-def payment_of(user_id: int, payment_id: int) -> dict:
-    """The person's payment after the return from ЮKassa; a pending one is checked with ЮKassa first."""
-    with pool.connection() as conn:
-        row = conn.execute(
-            f"SELECT {_COLUMNS} FROM payments WHERE id = %s AND user_id = %s",
-            (payment_id, user_id),
-        ).fetchone()
-    if row is None:
-        raise DomainError("missing", 404)
-    try:
-        row = _settle(row)
-    except DomainError:
-        # ЮKassa is silent for now: the page asks again a little later.
-        pass
-    return _public(row)
 
 
 def notify(event: dict) -> None:
