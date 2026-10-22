@@ -22,6 +22,13 @@ const hotAspect = ref(null)
 /** Partners whose star has just lit up: the sky flashes them once. */
 const lit = ref(new Set())
 const syntheses = reactive({})
+/**
+ * The pair whose reading has just opened, { id, key }: the sky runs gold along its thread once
+ * (PairSky), the panel lifts the haze off the reading. Greeted once per pair and visit: right
+ * after the payment, or the first time a pair is opened after it was bought or given.
+ */
+const opening = ref(null)
+let greeted = new Set()
 
 let pending = null
 let generation = 0
@@ -125,6 +132,14 @@ function synastry(id, again = false) {
   return syntheses[id]
 }
 
+/** The reading of the pair has opened: true the first time in this visit, when the sky and the panel celebrate it. */
+function celebrate(id) {
+  if (greeted.has(id)) return false
+  greeted = new Set([...greeted, id])
+  opening.value = { id, key: Date.now() }
+  return true
+}
+
 function clearDraft() {
   Object.assign(draft, { name: '', date: '', time: '' })
 }
@@ -140,6 +155,8 @@ function forget() {
   status.value = 'idle'
   pending = null
   lit.value = new Set()
+  opening.value = null
+  greeted = new Set()
   hot.value = null
   hotAspect.value = null
   message.value = ''
@@ -152,8 +169,8 @@ watch(webToken, () => forget(), { flush: 'sync' })
 
 export function usePartners() {
   return {
-    partners, status, message, draft, hot, hotAspect, lit, syntheses,
-    load, add, update, share, seen, invite, remove, synastry, clearDraft, forgetSyntheses, forget,
+    partners, status, message, draft, hot, hotAspect, lit, syntheses, opening,
+    load, add, update, share, seen, invite, remove, synastry, celebrate, clearDraft, forgetSyntheses, forget,
   }
 }
 

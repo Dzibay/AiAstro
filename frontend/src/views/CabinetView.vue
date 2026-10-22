@@ -31,7 +31,7 @@ const router = useRouter()
 const { mark, markUser, clearMark } = useSky()
 const { chart, load: loadChart, forget: forgetChart } = useChart()
 const { forecasts, forget: forgetForecast } = useForecast()
-const { partners, draft, hot, hotAspect, lit, syntheses, load: loadPartners, forgetSyntheses } = usePartners()
+const { partners, draft, hot, hotAspect, lit, syntheses, opening, load: loadPartners, forgetSyntheses } = usePartners()
 const { forget: forgetChat } = useChat()
 const user = ref(null)
 const message = ref('')
@@ -74,6 +74,9 @@ const pairStars = computed(() => {
     lit: Boolean(item.birth),
     hot: hot.value === item.id,
     flash: lit.value.has(item.id),
+    bought: item.bought,
+    // The reading has just opened: the thread runs gold once (a new key for each opening).
+    opening: opening.value?.id === item.id ? opening.value.key : 0,
   })
   // An open pair keeps the others on the sky, stepped back, so another star can be pressed instead.
   const open = Number(query.partner) || 0

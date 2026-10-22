@@ -140,15 +140,23 @@ def _pair_bought(conn, pair_id: int) -> bool:
     ).fetchone() is not None
 
 
+def _toned(user_id: int, items: list[dict]) -> list[dict]:
+    """Each pair with both charts known gets its tone (easy, calm, tense, mixed): the colour of its thread in the list."""
+    birth = get_user(user_id)["birth"]
+    if birth is None:
+        return items
+    mine = chart_for(birth)
+    return [{**item, "tone": synastry.build(mine, chart_for(item["birth"]))["tone"]} if item["birth"] else item for item in items]
+
+
 def list_partners(user_id: int) -> list[dict]:
-    get_user(user_id)
     with pool.connection() as conn:
         rows = conn.execute(
             f"SELECT {_cols()}, {_MUTUAL} FROM partners p WHERE p.user_id = %s ORDER BY p.created_at, p.id",
             (user_id,),
         ).fetchall()
     bought = _bought(user_id)
-    return [_public(row, bought) for row in rows]
+    return _toned(user_id, [_public(row, bought) for row in rows])
 
 
 def _own(user_id: int, partner_id: int) -> dict:
@@ -163,7 +171,7 @@ def _own(user_id: int, partner_id: int) -> dict:
 
 
 def _one(user_id: int, partner_id: int) -> dict:
-    return _public(_own(user_id, partner_id), _bought(user_id))
+    return _toned(user_id, [_public(_own(user_id, partner_id), _bought(user_id))])[0]
 
 
 def create_partner(
@@ -198,7 +206,7 @@ def create_partner(
             """,
             (user_id, pair, cleaned, *birth, birth_date is not None, birth_date is None),
         ).fetchone()
-    return _public(row)
+    return _toned(user_id, [_public(row)])[0]
 
 
 def update_partner(

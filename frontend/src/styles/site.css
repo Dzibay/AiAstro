@@ -591,6 +591,11 @@ html.no-glass .sky-card {
 }
 html.no-glass .line-cta { background: rgba(20, 18, 22, 0.82); }
 html.no-glass .sky-stage svg * { filter: none !important; }
+/* The gold of a pair whose reading opens (PairSky): no blur, and half the sparks on the light sky. */
+html.no-glass .pair-sky .open-trail-glow,
+html.no-glass .pair-sky .open-comet-glow,
+html.no-glass .pair-sky .open-spark { filter: none; }
+html.lite .pair-sky .open-spark:nth-of-type(even) { display: none; }
 html.no-glass .sky-stage .orbit-layer,
 html.no-glass .sky-stage .band { will-change: auto; }
 /* These glints run on `left`, a layout every frame: without the glass they rest too. */

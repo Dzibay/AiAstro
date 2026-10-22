@@ -6,7 +6,7 @@ import ReadingText from '../../components/cabinet/ReadingText.vue'
 import BirthForm from '../../components/cabinet/BirthForm.vue'
 import PairSpheres from '../../components/sky/PairSpheres.vue'
 import PairShare from '../../components/sky/PairShare.vue'
-import { ASPECTS, POINTS } from '../../components/cabinet/astro.js'
+import { ASPECTS, POINTS, SIGN_BY_ID } from '../../components/cabinet/astro.js'
 import { errorText } from '../../api/http.js'
 import { webApi } from '../../api/web.js'
 import { inviteLink, usePartners } from '../../composables/usePartners.js'
@@ -14,6 +14,7 @@ import { useToast } from '../../composables/useToast.js'
 import { formatDate } from '../../utils/format.js'
 import { usePrices } from '../../utils/prices.js'
 import { paidId, usePayment } from '../../composables/usePayment.js'
+import { birthSigns } from '../../utils/skyToday.js'
 
 /**
  * «Пара»: the list of pairs, the two ways to a partner and the pair itself.
@@ -36,8 +37,8 @@ const route = useRoute()
 const router = useRouter()
 const { push } = useToast()
 const {
-  partners, status, message, draft, hot, hotAspect, lit, syntheses,
-  load, add, invite, update, remove, synastry, clearDraft, seen,
+  partners, status, message, draft, hot, hotAspect, lit, syntheses, opening,
+  load, add, invite, update, remove, synastry, clearDraft, seen, celebrate,
   share: sharePair,
 } = usePartners()
 
@@ -70,12 +71,13 @@ onMounted(() => {
   const pid = partnerId.value
   router.replace({ name: 'cabinet-pair', query: pid ? { partner: pid } : {} })
   follow(id, async () => {
-    // The pair is read again, now whole, and the list learns it is bought.
+    // The pair is read again, now whole, and the list learns it is bought; the sky and the panel celebrate.
     delete syntheses[pid]
     await load(true)
-    if (pid) synastry(pid)
-    const both = partners.value.find((item) => item.id === pid)?.kind === 'linked'
-    push(both ? 'Разбор открыт для вас обоих — он останется с этой парой навсегда' : 'Разбор открыт — он останется с этой парой навсегда')
+    if (!pid) return
+    synastry(pid)
+    if (partnerId.value === pid) news.value = 'paid'
+    celebrate(pid)
   })
 })
 watch(partner, (value) => {
@@ -95,11 +97,14 @@ watch(mode, () => {
 const NEWS = {
   filled: (name) => `Пришёл ответ на приглашение: ${name} — вторая звезда зажглась.`,
   linked: () => 'У партнёра теперь свой кабинет: пара стала общей, она видна вам обоим.',
-  bought: () => 'Партнёр открыл разбор пары — для вас обоих.',
+  paid: (name, both) => (both ? 'Для вас обоих: партнёру платить не нужно.' : 'Он останется с этой парой — возвращайтесь к нему, когда захочется.'),
+  bought: () => 'Его открыл партнёр — для вас обоих.',
   gift: () => 'Подарок: мы открыли для вас полный разбор этой пары.',
   left: () => 'Партнёр удалил пару у себя. У вас она остаётся — со всем, что было открыто.',
   joined: (name) => `Пара теперь в вашем кабинете и общая с партнёром ${name}: разбор, открытый одним из вас, откроется у обоих.`,
 }
+/** The reading opened (bought here, by the partner, or given): the sky and the panel celebrate it once. */
+const OPENED = new Set(['paid', 'bought', 'gift'])
 const news = ref('')
 watch(partner, (value, old) => {
   if (!value) return
@@ -107,10 +112,19 @@ watch(partner, (value, old) => {
   if (value.news) {
     // Just joined from this side: the pair's own news about the joining would say it the other way round.
     if (news.value !== 'joined') news.value = value.news
+    if (OPENED.has(value.news) && value.bought) celebrate(value.id)
     seen(value.id)
   }
 }, { immediate: true })
-const newsText = computed(() => (news.value && partner.value ? NEWS[news.value]?.(partner.value.name) || '' : ''))
+const newsText = computed(() => (news.value && partner.value ? NEWS[news.value]?.(partner.value.name, linked.value) || '' : ''))
+const opened = computed(() => OPENED.has(news.value))
+
+/** The reading has just opened: the haze over it melts, top to bottom, once per opening. */
+const revealedKey = ref(0)
+const revealing = computed(() => Boolean(opening.value) && opening.value.id === partner.value?.id && opening.value.key !== revealedKey.value)
+function revealed() {
+  if (opening.value) revealedKey.value = opening.value.key
+}
 
 /* ---- Waiting for invitations: the list is asked again, and a star that lit up flashes ---- */
 
@@ -331,13 +345,39 @@ async function confirmRemove() {
   }
 }
 
-function status_of(item) {
-  if (item.waiting_share) return 'общая пара · ждём данных партнёра'
-  if (!item.birth) return item.invite ? 'ждём ответа' : 'без данных'
-  const parts = [item.left ? 'партнёр удалил пару' : item.kind === 'linked' ? 'общая пара' : 'звезда горит']
-  if (item.bought) parts.push('разбор открыт')
-  return parts.join(' · ')
+/* ---- The list: each pair's tone, its signs beside the person's own, and whether its reading is open ---- */
+
+const TONE_COLOUR = { easy: '#f0cd8a', tense: '#e08a76', mixed: '#eab48a', calm: '#e6e0f4' }
+const TONE_PAIR = { easy: 'лёгкая пара', tense: 'пара с искрой', mixed: 'переменчивая пара', calm: 'спокойная пара' }
+
+function status_of(item, tone) {
+  if (item.waiting_share) return 'общая · ждём данных партнёра'
+  if (!item.birth) return item.invite ? 'ждём ответа по ссылке' : 'без данных'
+  const kind = item.left ? 'партнёр удалил пару' : { linked: 'общая', invite: 'по ссылке' }[item.kind] || ''
+  return [TONE_PAIR[tone] || 'звезда горит', kind].filter(Boolean).join(' · ')
 }
+
+const mySigns = computed(() => (props.user.birth ? birthSigns(props.user.birth.date, props.user.birth.time) : null))
+/** ☉ the person's sign × the partner's, and ☽ the same once the partner's time is known. */
+function signsOf(item) {
+  const theirs = item.birth ? birthSigns(item.birth.date, item.birth.time) : null
+  if (!theirs) return null
+  const mine = mySigns.value
+  const line = (point, own, word, their) => ({
+    point: POINTS[point].glyph,
+    mine: own ? SIGN_BY_ID[own].glyph : '',
+    theirs: SIGN_BY_ID[their].glyph,
+    label: `${POINTS[point].name}: ${own ? `${word} ${SIGN_BY_ID[own].in}, ` : ''}партнёра ${SIGN_BY_ID[their].in}`,
+  })
+  const lines = [line('sun', mine?.sun, 'ваше', theirs.sun)]
+  if (theirs.moon) lines.push(line('moon', mine?.moon, 'ваша', theirs.moon))
+  return { lines, label: lines.map((entry) => entry.label).join('; ') }
+}
+
+const rows = computed(() => partners.value.map((item) => {
+  const tone = item.birth ? item.tone || syntheses[item.id]?.data?.tone || '' : ''
+  return { item, colour: TONE_COLOUR[tone] || '#f3dcae', status: status_of(item, tone), signs: signsOf(item) }
+}))
 </script>
 
 <template>
@@ -404,10 +444,23 @@ function status_of(item) {
 
     <!-- ---- One pair ---- -->
     <template v-else-if="mode === 'pair' && partner">
-      <p v-if="newsText" class="news" role="status">
+      <div v-if="paid && paid !== 'succeeded'" class="pay-state" :class="`is-${paid}`" role="status">
+        <span class="pay-star" aria-hidden="true" />
+        <p>
+          <template v-if="paid === 'checking'">Сверяемся с ЮKassa — разбор откроется через мгновение…</template>
+          <template v-else-if="paid === 'canceled'">Оплата не прошла, деньги не списаны.</template>
+          <template v-else>ЮKassa ещё не подтвердила оплату. Разбор откроется сам, как только придёт ответ, — эту страницу можно не держать открытой.</template>
+        </p>
+        <button v-if="paid === 'canceled' && pair?.data?.locked" type="button" class="soft-button" :disabled="paying" @click="buy">Попробовать ещё раз</button>
+      </div>
+
+      <div v-if="newsText" class="news" :class="{ 'is-opening': opened }" role="status">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
-        {{ newsText }}
-      </p>
+        <p>
+          <span v-if="opened" class="news-title">Разбор открыт — навсегда</span>
+          {{ newsText }}
+        </p>
+      </div>
 
       <template v-if="partner.waiting_share">
         <PanelHead :lead="`Пара уже общая. Как только ${partner.name} укажет в своём кабинете данные рождения, на небе зажжётся вторая звезда — ничего делать не нужно.`">
@@ -511,11 +564,6 @@ function status_of(item) {
                 <div :class="{ 'is-mine': !user.sky }"><dt>Отдельно</dt><dd>{{ pairPrice }}</dd></div>
                 <div class="with-sky" :class="{ 'is-mine': user.sky }"><dt>С Небосводом</dt><dd>{{ pairSkyPrice }}</dd></div>
               </dl>
-              <p v-if="paid" class="paid-note" role="status">
-                <template v-if="paid === 'checking'">Сверяемся с ЮKassa…</template>
-                <template v-else-if="paid === 'canceled'">Оплата не прошла, деньги не списаны. Можно попробовать ещё раз.</template>
-                <template v-else-if="paid === 'waiting'">ЮKassa ещё не подтвердила оплату — разбор откроется сам, загляните чуть позже.</template>
-              </p>
               <button type="button" class="unlock-cta" :disabled="paying || !payOn || !priceSet || paid === 'checking'" @click="buy">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
                 <template v-if="paying">Открываем ЮKassa…</template>
@@ -530,7 +578,7 @@ function status_of(item) {
             </div>
           </template>
           <template v-else>
-            <section class="block" aria-labelledby="reading-title">
+            <section class="block reading-open" :class="{ 'is-revealing': revealing }" aria-labelledby="reading-title" @animationend.self="revealed">
               <h3 id="reading-title" class="block-title">Разбор пары</h3>
               <p v-if="boughtLine" class="bought-line">{{ boughtLine }}</p>
               <ReadingText :reading="pair.data.reading" />
@@ -586,19 +634,44 @@ function status_of(item) {
       </PanelHead>
 
       <ul v-if="partners.length" class="pairs">
-        <li v-for="item in partners" :key="item.id">
+        <li v-for="{ item, colour, status: line, signs } in rows" :key="item.id">
           <RouterLink
             class="pair-row"
-            :class="{ 'is-waiting': !item.birth }"
+            :class="{ 'is-waiting': !item.birth, 'is-bought': item.bought, 'is-hot': hot === item.id }"
+            :style="{ '--tone': colour }"
             :to="{ name: 'cabinet-pair', query: { partner: item.id } }"
             @pointerenter="hot = item.id"
             @pointerleave="hot = null"
             @focus="hot = item.id"
             @blur="hot = null"
           >
-            <span class="pair-star" aria-hidden="true" />
+            <!-- The pair as on the sky: the person's star, the thread in the pair's tone, the partner's star. -->
+            <svg class="pair-mini" viewBox="0 0 60 40" aria-hidden="true">
+              <path class="mini-thread" d="M7 31Q27 5 50 15" />
+              <circle class="mini-mine" cx="7" cy="31" r="2.2" />
+              <g transform="translate(50 15)">
+                <template v-if="item.birth">
+                  <circle class="mini-halo" r="8" />
+                  <path v-if="item.bought" class="mini-spike" d="M0 -9Q0.7 -0.7 9 0Q0.7 0.7 0 9Q-0.7 0.7 -9 0Q-0.7 -0.7 0 -9Z" />
+                  <circle class="mini-theirs" r="2.6" />
+                </template>
+                <circle v-else class="mini-wait" r="3.2" />
+              </g>
+            </svg>
             <span class="pair-name">{{ item.name }}</span>
-            <span class="pair-status">{{ status_of(item) }}</span>
+            <span class="pair-status">{{ line }}</span>
+            <span v-if="item.birth" class="pair-badge" :class="item.bought ? 'is-open' : 'is-closed'">
+              <svg v-if="item.bought" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
+              <svg v-else viewBox="0 0 12 14" aria-hidden="true"><rect x="1.5" y="6" width="9" height="7" rx="1.6" /><path d="M3.6 6V4.3a2.4 2.4 0 0 1 4.8 0V6" /></svg>
+              {{ item.bought ? 'разбор открыт' : 'разбор закрыт' }}
+            </span>
+            <span v-if="signs" class="pair-signs" :aria-label="signs.label">
+              <span v-for="entry in signs.lines" :key="entry.point" class="sign-line" aria-hidden="true">
+                <span class="sign-point">{{ entry.point }}</span>
+                <template v-if="entry.mine"><span class="glyph-mine">{{ entry.mine }}</span><span class="sign-x">×</span></template>
+                <span class="glyph-theirs">{{ entry.theirs }}</span>
+              </span>
+            </span>
             <span v-if="item.news" class="pair-news" aria-label="Есть новости" />
           </RouterLink>
         </li>
@@ -627,47 +700,89 @@ function status_of(item) {
 .birth-line { margin: -8px 0 0; text-align: center; font-family: var(--serif); font-style: italic; font-size: 16px; color: rgba(226, 220, 210, 0.6); }
 .retry { display: grid; gap: 6px; justify-items: start; }
 
-/* ---- The list ---- */
-.pairs { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+/* ---- The list: a card for each pair, its little sky on the left ---- */
+.pairs { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .pair-row {
+  position: relative;
   display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-rows: auto auto;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  grid-template-areas:
+    'mini name badge'
+    'mini status signs';
   column-gap: 12px;
+  row-gap: 3px;
   align-items: center;
-  padding: 10px 14px;
-  border-radius: 14px;
+  padding: 12px 16px 12px 10px;
+  border-radius: 16px;
   border: 1px solid rgba(240, 210, 150, 0.14);
-  background: rgba(255, 240, 210, 0.02);
+  background:
+    radial-gradient(70% 120% at 0% 50%, color-mix(in srgb, var(--tone) 9%, transparent), transparent 70%),
+    linear-gradient(160deg, rgba(255, 240, 210, 0.035), rgba(255, 240, 210, 0.01));
   color: #efe7d8;
   text-decoration: none;
-  transition: border-color 0.25s ease, background 0.25s ease;
+  transition: border-color 0.25s ease, background-color 0.25s ease, box-shadow 0.3s ease, transform 0.25s ease;
 }
-.pair-row:hover { border-color: rgba(240, 205, 138, 0.5); background: rgba(240, 205, 138, 0.06); }
+.pair-row.is-bought { border-color: rgba(240, 205, 138, 0.3); }
+.pair-row:hover, .pair-row.is-hot {
+  border-color: rgba(240, 205, 138, 0.55);
+  background-color: rgba(240, 205, 138, 0.05);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 240, 210, 0.06);
+}
 .pair-row:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 2px; }
-.pair-star {
-  grid-row: span 2;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #fff4ee;
-  box-shadow: 0 0 10px 2px rgba(255, 185, 164, 0.7);
+
+.pair-mini { grid-area: mini; width: 56px; height: 38px; overflow: visible; }
+.mini-thread { fill: none; stroke: var(--tone); stroke-width: 1.1; stroke-linecap: round; opacity: 0.75; transition: opacity 0.25s ease, stroke-width 0.25s ease; }
+.pair-row.is-waiting .mini-thread { stroke-dasharray: 1.5 3; opacity: 0.5; }
+.pair-row:hover .mini-thread, .pair-row.is-hot .mini-thread { opacity: 1; stroke-width: 1.5; }
+.mini-mine { fill: #f0cd8a; filter: drop-shadow(0 0 3px rgba(255, 205, 130, 0.9)); }
+.mini-halo { fill: color-mix(in srgb, var(--tone) 22%, transparent); }
+.mini-theirs { fill: #fff6f2; filter: drop-shadow(0 0 3px #ffb9a4); }
+.mini-spike { fill: rgba(255, 228, 190, 0.75); }
+.mini-wait { fill: none; stroke: #f3dcae; stroke-width: 1; stroke-dasharray: 2 2.4; opacity: 0.75; }
+
+.pair-name { grid-area: name; overflow: hidden; font-family: var(--serif); font-size: 19px; line-height: 1.2; white-space: nowrap; text-overflow: ellipsis; }
+.pair-status { grid-area: status; font-family: var(--serif); font-style: italic; font-size: 14.5px; line-height: 1.3; color: rgba(226, 220, 210, 0.6); }
+
+.pair-badge {
+  grid-area: badge;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
 }
-.pair-row.is-waiting .pair-star { background: none; border: 1px dashed rgba(243, 220, 174, 0.7); box-shadow: none; }
-.pair-name { font-family: var(--serif); font-size: 19px; line-height: 1.15; }
-.pair-status { font-family: var(--serif); font-style: italic; font-size: 15px; color: rgba(226, 220, 210, 0.55); }
+.pair-badge svg { width: 9px; height: 10px; }
+.pair-badge.is-open { color: #f3dcae; border: 1px solid rgba(240, 205, 138, 0.45); background: rgba(240, 205, 138, 0.08); }
+.pair-badge.is-open svg { fill: #f0cd8a; filter: drop-shadow(0 0 4px rgba(255, 200, 110, 0.85)); }
+.pair-badge.is-closed { color: rgba(226, 220, 210, 0.5); border: 1px solid rgba(226, 220, 210, 0.14); }
+.pair-badge.is-closed svg { fill: none; stroke: currentColor; stroke-width: 1.2; }
+
+.pair-signs {
+  grid-area: signs;
+  justify-self: end;
+  display: inline-flex;
+  gap: 10px;
+  font-family: 'Segoe UI Symbol', 'Noto Sans Symbols', sans-serif;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.sign-line { display: inline-flex; align-items: baseline; gap: 3px; }
+.sign-point { font-size: 11.5px; color: rgba(226, 220, 210, 0.45); }
+.sign-x { font-family: var(--serif); font-size: 12px; color: rgba(226, 220, 210, 0.4); }
 
 .ways { display: flex; flex-wrap: wrap; gap: 10px; }
 .ways .gold-cta { flex: none; }
 
-.pair-row { position: relative; }
 .pair-news {
   position: absolute;
-  top: 50%;
-  right: 14px;
-  width: 7px;
-  height: 7px;
-  margin-top: -3.5px;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: #f0cd8a;
   box-shadow: 0 0 8px 2px rgba(240, 205, 138, 0.6);
@@ -689,7 +804,78 @@ function status_of(item) {
   line-height: 1.4;
   color: #f3dcae;
 }
+.news p { margin: 0; }
 .news svg { flex: none; width: 10px; height: 10px; margin-top: 6px; fill: #f0cd8a; filter: drop-shadow(0 0 5px rgba(255, 200, 110, 0.8)); }
+/* The reading has opened: the note glows gold once, its star flares, a sheen runs across it. */
+.news.is-opening {
+  position: relative;
+  overflow: hidden;
+  padding: 14px 16px;
+  border-color: rgba(240, 205, 138, 0.6);
+  background:
+    radial-gradient(90% 140% at 0% 0%, rgba(255, 214, 140, 0.16), transparent 65%),
+    rgba(240, 205, 138, 0.05);
+  animation: news-glow 2.6s ease 0.2s both;
+}
+.news.is-opening::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 240, 205, 0.18) 50%, transparent 65%);
+  transform: translateX(-100%);
+  animation: news-sheen 1.6s ease 0.9s forwards;
+  pointer-events: none;
+}
+.news.is-opening svg { width: 14px; height: 14px; margin-top: 4px; animation: news-star 1.4s cubic-bezier(0.2, 0.7, 0.2, 1) 0.3s both; }
+.news-title { display: block; margin-bottom: 2px; font-style: normal; font-size: 19px; color: #f6e2b4; }
+
+.pay-state {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(240, 205, 138, 0.3);
+  background: rgba(240, 205, 138, 0.05);
+}
+.pay-state p { margin: 0; font-family: var(--serif); font-style: italic; font-size: 15.5px; line-height: 1.4; color: #f3dcae; }
+.pay-state .soft-button { grid-column: 2; margin-top: 6px; }
+.pay-state.is-canceled { border-color: rgba(242, 164, 140, 0.35); background: rgba(242, 164, 140, 0.05); }
+.pay-state.is-canceled p { color: #f2c0ae; }
+.pay-star { width: 8px; height: 8px; border-radius: 50%; background: #f0cd8a; box-shadow: 0 0 10px 2px rgba(240, 205, 138, 0.6); }
+.pay-state.is-checking .pay-star { animation: pay-pulse 1.4s ease-in-out infinite; }
+.pay-state.is-canceled .pay-star { background: none; border: 1px solid #f2a48c; box-shadow: none; }
+.pay-state.is-waiting .pay-star { background: none; border: 1px dashed #f0cd8a; box-shadow: none; }
+
+/* The haze over the reading melts from the top down, as it opens. */
+.reading-open.is-revealing {
+  -webkit-mask-image: linear-gradient(180deg, #000 40%, transparent 60%);
+  mask-image: linear-gradient(180deg, #000 40%, transparent 60%);
+  -webkit-mask-size: 100% 250%;
+  mask-size: 100% 250%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: reveal 2.6s cubic-bezier(0.35, 0.1, 0.25, 1) 0.4s both;
+}
+
+@keyframes news-glow {
+  0% { box-shadow: 0 0 0 0 rgba(240, 205, 138, 0); }
+  30% { box-shadow: 0 0 34px 2px rgba(240, 205, 138, 0.28); }
+  100% { box-shadow: 0 0 0 0 rgba(240, 205, 138, 0); }
+}
+@keyframes news-sheen { to { transform: translateX(100%); } }
+@keyframes news-star {
+  0% { transform: scale(0.3) rotate(-45deg); opacity: 0; }
+  60% { transform: scale(1.35) rotate(8deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); }
+}
+@keyframes pay-pulse { 50% { transform: scale(0.6); opacity: 0.5; } }
+@keyframes reveal {
+  from { -webkit-mask-position: 0 100%; mask-position: 0 100%; }
+  to { -webkit-mask-position: 0 0; mask-position: 0 0; }
+}
+@keyframes reveal-fade { from { opacity: 0; } }
 .shared-note { margin: -10px 0 0; text-align: center; font-size: 12.5px; letter-spacing: 0.04em; color: rgba(233, 194, 124, 0.75); }
 .invite-consent { margin: 0; font-size: 13px; line-height: 1.5; color: rgba(226, 220, 210, 0.6); }
 .share-box { display: grid; gap: 10px; padding: 12px 14px; border-radius: 14px; border: 1px dashed rgba(240, 205, 138, 0.35); }
@@ -847,7 +1033,6 @@ function status_of(item) {
 .unlock-cta { border: 0; font-family: inherit; cursor: pointer; }
 .unlock-cta:disabled { opacity: 0.5; cursor: default; box-shadow: none; transform: none; }
 .unlock-cta svg { width: 10px; height: 10px; fill: #5a3d12; }
-.paid-note { margin: 0; font-family: var(--serif); font-style: italic; font-size: 15.5px; line-height: 1.4; color: #f3dcae; }
 .pay-error { margin: 0; font-size: 13px; color: #f2a48c; }
 .unlock-cta:hover:not(:disabled) { box-shadow: 0 10px 34px rgba(230, 170, 80, 0.38); transform: translateY(-1px); }
 .unlock-cta:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 3px; }
@@ -883,8 +1068,19 @@ function status_of(item) {
   .field input, .link { font-size: 16px; }
   .chip, .unlock-cta, .add-birth, .soft-button, .quiet, .pair-row { min-height: 44px; }
   .week-tone { display: none; }
+  /* A narrow card: the signs go under the line about the pair. */
+  .pair-row {
+    grid-template-areas:
+      'mini name badge'
+      'mini status status'
+      'mini signs signs';
+  }
+  .pair-signs { justify-self: start; margin-top: 2px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .unlock-cta { transition: none; }
+  .unlock-cta, .pair-row { transition: none; }
+  .news.is-opening, .news.is-opening svg, .pay-state.is-checking .pay-star { animation: none; }
+  .news.is-opening::after { display: none; }
+  .reading-open.is-revealing { -webkit-mask-image: none; mask-image: none; animation: reveal-fade 1.2s ease both; }
 }
 </style>

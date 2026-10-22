@@ -19,10 +19,16 @@ import { cabinetLayout, wheelSpot } from './layout.js'
  * lights its row in the panel (`hover`). The one open pair wears the engraving of its Sun sign,
  * as the person's own star does; the others dim and step back to a ring, and a press on any of
  * them opens it instead.
+ *
+ * A pair whose reading has just opened (`opening`) lights its thread once: gold runs along it from
+ * the person's star with a spark at its head, and the partner's star answers with a burst.
  */
 
 const props = defineProps({
-  /** [{ id, name, date, time, lit, hot, flash, open }]: `lit` once the birth data are known, `open` for the pair in the panel. */
+  /**
+   * [{ id, name, date, time, lit, hot, flash, open, bought, opening }]: `lit` once the birth data are known,
+   * `open` for the pair in the panel, `opening` a new key each time its reading opens (0 otherwise).
+   */
   stars: { type: Array, default: () => [] },
   /** The tone of the open pair (GET /me/partners/{id}/synastry): the colour of its thread. */
   tone: { type: String, default: '' },
@@ -52,8 +58,12 @@ const room = computed(() => props.area || wheelSpot(geo.value))
  * a star typed in later starts at once.
  */
 const delays = new Map()
+const appeared = new Map()
 function delayOf(id) {
-  if (!delays.has(id)) delays.set(id, Math.max(0, 1.3 - (performance.now() - born) / 1000))
+  if (!delays.has(id)) {
+    delays.set(id, Math.max(0, 1.3 - (performance.now() - born) / 1000))
+    appeared.set(id, performance.now())
+  }
   return delays.get(id)
 }
 
@@ -73,6 +83,14 @@ const focusId = computed(() => (props.stars.length === 1 ? props.stars[0].id : p
 const stepped = computed(() => props.stars.length > 1 && focusId.value !== null)
 
 const COLOURS = { easy: '#f0cd8a', tense: '#e08a76', mixed: '#eab48a', calm: '#e6e0f4' }
+
+/** The burst at the partner's star: sparks flying out at uneven angles and lengths, a few a beat late. */
+const SPARKS = Array.from({ length: 12 }, (_, i) => ({
+  a: Math.round(i * 30 + ((i * 47) % 17) - 8),
+  far: 7 + ((i * 5) % 7) * 1.3,
+  r: i % 3 === 0 ? 1.5 : 1,
+  late: (i % 4) * 0.06,
+}))
 
 /** The partner's sign as large as the person's own in a section, but never wider than the free sky. */
 const signSpan = computed(() => {
@@ -211,7 +229,38 @@ watch(layout, (stars) => {
   if (flights.size && !frame) frame = requestAnimationFrame(tick)
 }, { immediate: true })
 
-onUnmounted(() => cancelAnimationFrame(frame))
+/**
+ * The reading opened: the gold waits for the star to stand (its thread drawn and the star lit on
+ * its first visit, or its flight to the middle over), then runs for OPENING seconds and is gone.
+ * Each key runs once, so a pair reloaded after the payment does not light again.
+ */
+const OPENING = 4.4
+const effects = shallowRef(new Map())
+const greeted = new Map()
+const timers = new Set()
+
+watch(() => props.stars.map((star) => `${star.id}:${star.opening || 0}`).join(), () => {
+  for (const star of props.stars) {
+    if (!star.opening || greeted.get(star.id) === star.opening) continue
+    greeted.set(star.id, star.opening)
+    const ready = appeared.get(star.id) + (delayOf(star.id) + 1.9) * 1000
+    const delay = Math.max(0, (ready - performance.now()) / 1000, landingIn(star.id))
+    effects.value = new Map(effects.value).set(star.id, { key: star.opening, delay })
+    const timer = setTimeout(() => {
+      timers.delete(timer)
+      if (effects.value.get(star.id)?.key !== star.opening) return
+      const next = new Map(effects.value)
+      next.delete(star.id)
+      effects.value = next
+    }, (delay + OPENING) * 1000)
+    timers.add(timer)
+  }
+}, { immediate: true })
+
+onUnmounted(() => {
+  cancelAnimationFrame(frame)
+  for (const timer of timers) clearTimeout(timer)
+})
 
 const drawn = computed(() => {
   const from = origin.value
@@ -227,6 +276,7 @@ const drawn = computed(() => {
       s,
       // A pair opened from the sky draws its sign once its star has landed in the middle.
       signDelay: star.signKey ? signDelayOf(star.signKey, star.known, star.delay, landingIn(star.id)) : 0,
+      effect: effects.value.get(star.id) || null,
       d: `M${fixed(from.x)} ${fixed(from.y)}Q${fixed(control[0])} ${fixed(control[1])} ${fixed(x)} ${fixed(y)}`,
       mid: [0.25 * from.x + 0.5 * control[0] + 0.25 * x, 0.25 * from.y + 0.5 * control[1] + 0.25 * y],
     }
@@ -273,6 +323,11 @@ const aria = computed(() => {
         <feColorMatrix in="b" type="matrix" values="1 0 0 0 0  0 0.78 0 0 0  0 0 0.6 0 0  0 0 0 0.9 0" result="g" />
         <feMerge><feMergeNode in="g" /><feMergeNode in="SourceGraphic" /></feMerge>
       </filter>
+      <radialGradient id="pair-gold">
+        <stop offset="0" stop-color="#fff8e6" stop-opacity="0.95" />
+        <stop offset="0.28" stop-color="#ffd98e" stop-opacity="0.42" />
+        <stop offset="1" stop-color="#f0b860" stop-opacity="0" />
+      </radialGradient>
       <radialGradient id="pair-halo">
         <stop offset="0" stop-color="#fff4ee" stop-opacity="0.9" />
         <stop offset="0.25" stop-color="#ffc9b8" stop-opacity="0.32" />
@@ -284,11 +339,17 @@ const aria = computed(() => {
       v-for="star in drawn"
       :key="star.id"
       class="pair"
-      :class="{ 'is-lit': star.lit, 'is-hot': star.hot, 'is-aside': star.aside, 'is-quiet': drawn.length > 1 && !star.focus && !star.aside && !star.hot }"
+      :class="{ 'is-lit': star.lit, 'is-bought': star.bought, 'is-hot': star.hot, 'is-aside': star.aside, 'is-quiet': drawn.length > 1 && !star.focus && !star.aside && !star.hot }"
       :style="{ '--d0': `${star.delay}s`, '--c': star.colour }"
     >
       <path class="thread-glow" :d="star.d" pathLength="1" />
       <path class="thread" :d="star.d" pathLength="1" />
+      <g v-if="star.effect" :key="`run-${star.effect.key}`" class="open-run" :style="{ '--od': `${star.effect.delay.toFixed(2)}s` }">
+        <path class="open-trail-glow" :d="star.d" pathLength="1" />
+        <path class="open-trail" :d="star.d" pathLength="1" />
+        <path class="open-comet-glow" :d="star.d" pathLength="1" />
+        <path class="open-comet" :d="star.d" pathLength="1" />
+      </g>
 
       <g class="partner" :style="{ transform: `translate(${fixed(star.x)}px, ${fixed(star.y)}px)${star.s !== 1 ? ` scale(${star.s.toFixed(3)})` : ''}` }">
         <Transition name="sign">
@@ -353,6 +414,24 @@ const aria = computed(() => {
           />
         </g>
       </g>
+
+      <g
+        v-if="star.effect"
+        :key="`burst-${star.effect.key}`"
+        class="open-burst"
+        :style="{ '--od': `${star.effect.delay.toFixed(2)}s`, transform: `translate(${fixed(star.x)}px, ${fixed(star.y)}px)` }"
+      >
+        <circle class="open-bloom" :r="star.radius * 14" fill="url(#pair-gold)" />
+        <circle class="open-ring" :r="star.radius * 2.6" />
+        <circle class="open-ring is-late" :r="star.radius * 2.6" />
+        <circle
+          v-for="spark in SPARKS"
+          :key="spark.a"
+          class="open-spark"
+          :r="spark.r"
+          :style="{ '--a': `${spark.a}deg`, '--far': `${(star.radius * spark.far).toFixed(1)}px`, '--sd': `${spark.late}s` }"
+        />
+      </g>
     </g>
 
     <Transition name="label">
@@ -397,6 +476,44 @@ const aria = computed(() => {
 .pair.is-aside .thread-glow { opacity: 0.04; }
 .pair.is-hot .thread { opacity: 1; stroke-width: 1.5; }
 .pair.is-hot .thread-glow { opacity: 0.22; }
+/* An opened reading keeps a little more light in its thread. */
+.pair.is-bought .thread-glow { opacity: 0.18; }
+.pair.is-bought.is-quiet .thread-glow { opacity: 0.08; }
+
+/* The reading has opened: gold along the thread, a spark at its head, a burst at the star. */
+.open-run path { fill: none; stroke-linecap: round; }
+.open-trail, .open-trail-glow {
+  stroke: #ffe3a6;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw 1.1s cubic-bezier(0.4, 0.1, 0.2, 1) var(--od) forwards, fade 1.6s ease calc(var(--od) + 1.9s) forwards;
+}
+.open-trail { stroke-width: 1.7; }
+.open-trail-glow { stroke-width: 9; opacity: 0.32; filter: blur(4px); }
+.open-comet, .open-comet-glow {
+  stroke: #fffaf0;
+  stroke-dasharray: 0.07 2;
+  stroke-dashoffset: 0.07;
+  opacity: 0;
+  animation: comet 1.1s cubic-bezier(0.4, 0.1, 0.2, 1) var(--od) both;
+}
+.open-comet { stroke-width: 2.6; }
+.open-comet-glow { stroke: #ffd98e; stroke-width: 12; filter: blur(5px); }
+
+.open-burst > * { transform-origin: 0 0; opacity: 0; }
+.open-bloom { animation: bloom 2.2s ease-out calc(var(--od) + 0.95s) forwards; }
+.open-ring {
+  fill: none;
+  stroke: #ffe3a6;
+  stroke-width: 1.1;
+  animation: ring 1.5s cubic-bezier(0.2, 0.7, 0.2, 1) calc(var(--od) + 1s) forwards;
+}
+.open-ring.is-late { stroke: #f6f0ff; stroke-width: 0.8; animation-delay: calc(var(--od) + 1.3s); }
+.open-spark {
+  fill: #fff2d0;
+  filter: drop-shadow(0 0 2px #ffd27a);
+  animation: spark 1.3s cubic-bezier(0.15, 0.7, 0.3, 1) calc(var(--od) + 1s + var(--sd)) forwards;
+}
 
 /* The place is flown in script (with the thread after it); only the dimming is left to CSS. */
 .partner { transition: opacity 0.6s ease; }
@@ -476,6 +593,31 @@ const aria = computed(() => {
 .label-enter-from, .label-leave-to { opacity: 0; }
 
 @keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes fade { to { opacity: 0; } }
+@keyframes comet {
+  0% { stroke-dashoffset: 0.07; opacity: 0; }
+  6%, 88% { opacity: 1; }
+  100% { stroke-dashoffset: -0.93; opacity: 0; }
+}
+@keyframes bloom {
+  0% { transform: scale(0.25); opacity: 0; }
+  18% { opacity: 1; }
+  100% { transform: scale(1.15); opacity: 0; }
+}
+@keyframes ring {
+  from { transform: scale(0.4); opacity: 0.95; }
+  to { transform: scale(5); opacity: 0; }
+}
+@keyframes spark {
+  0% { transform: rotate(var(--a)) translateX(2px); opacity: 0; }
+  12% { opacity: 1; }
+  100% { transform: rotate(var(--a)) translateX(var(--far)); opacity: 0; }
+}
+@keyframes glow-once {
+  0% { opacity: 0; }
+  30% { opacity: var(--o, 1); }
+  100% { opacity: 0; }
+}
 @keyframes show { to { opacity: var(--o, 1); } }
 @keyframes sign-out { to { opacity: 0; } }
 @keyframes show-sky { from { opacity: 0; } }
@@ -496,4 +638,10 @@ const aria = computed(() => {
 .motion-off .partner-flash { display: none; }
 .motion-off .partner { transition: none; }
 .motion-off .sign-art path { animation: none; stroke-dashoffset: 0; }
+/* Reduced motion: the thread and the star only brighten in gold and fade, nothing runs or flies. */
+.motion-off .open-trail, .motion-off .open-trail-glow { stroke-dashoffset: 0; opacity: 0; animation: glow-once 3s ease var(--od) forwards; }
+.motion-off .open-trail { --o: 0.9; }
+.motion-off .open-trail-glow { --o: 0.32; }
+.motion-off .open-bloom { --o: 0.8; transform: scale(0.8); animation: glow-once 3s ease var(--od) forwards; }
+.motion-off .open-comet, .motion-off .open-comet-glow, .motion-off .open-ring, .motion-off .open-spark { display: none; }
 </style>

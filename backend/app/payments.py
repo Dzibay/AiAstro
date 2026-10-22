@@ -13,6 +13,7 @@ import json
 import logging
 import threading
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from app.accounts import _like, get_user
@@ -80,6 +81,31 @@ def _public(row: dict) -> dict:
     }
 
 
+# A machine of one's own: the site run on it comes back to itself, whatever the public address says.
+_LOCAL = ("localhost", "127.0.0.1", "::1")
+
+
+def _return_base(origin: str | None) -> str:
+    """Where ЮKassa brings the person back: to the site they paid from, if it is this one; else the public address.
+
+    The origin is the browser's own (Origin of the request), so a person comes back to the very
+    address they are signed in at, a dev server's or the public one with or without «www.».
+    Anything else is not trusted and the public address is used.
+    """
+    base = settings.public_base_url.rstrip("/")
+    try:
+        parts = urlsplit(origin or "")
+        host = (parts.hostname or "").lower()
+    except ValueError:
+        return base
+    if parts.scheme not in ("http", "https") or not host or parts.username or parts.path not in ("", "/"):
+        return base
+    own = (urlsplit(base).hostname or "").lower().removeprefix("www.")
+    if (own and host.removeprefix("www.") == own) or host in _LOCAL or host.endswith((".localhost", ".test")):
+        return f"{parts.scheme}://{parts.netloc}"
+    return base
+
+
 def _price(key: str) -> int:
     value = setting(key)
     if not value:
@@ -87,8 +113,12 @@ def _price(key: str) -> int:
     return int(value)
 
 
-def create_payment(user_id: int, product: str, partner_id: int | None = None) -> dict:
-    """Writes the payment, creates it at ЮKassa and gives the page of ЮKassa to send the person to."""
+def create_payment(user_id: int, product: str, partner_id: int | None = None, origin: str | None = None) -> dict:
+    """Writes the payment, creates it at ЮKassa and gives the page of ЮKassa to send the person to.
+
+    The way back leads into the cabinet: the pair's own page or «Небосвод», with ?paid=ID, where the
+    page asks how the payment stands (`origin` — the site the person pays from, see _return_base).
+    """
     if not payments_on():
         raise DomainError("pay_off", 409)
     if product not in PRODUCTS:
@@ -146,7 +176,7 @@ def create_payment(user_id: int, product: str, partner_id: int | None = None) ->
     body = {
         "amount": _money(amount),
         "capture": True,
-        "confirmation": {"type": "redirect", "return_url": f"{settings.public_base_url.rstrip('/')}{back}{row['id']}"},
+        "confirmation": {"type": "redirect", "return_url": f"{_return_base(origin)}{back}{row['id']}"},
         "description": title,
         "metadata": {"payment_id": str(row["id"]), "user_id": str(user_id)},
         "receipt": receipt,
@@ -174,6 +204,8 @@ def _apply(row: dict) -> None:
     """The purchase, once: the status changes and the purchase is written in one transaction.
 
     A pair's reading belongs to the pair: it opens on the partner's side too, and they are told.
+    Both sides get a mark (news): the one who paid «paid», the partner «bought»; the pair's page
+    greets the opening once, whenever each of them comes to it.
     """
     told = []
     with pool.connection() as conn:
@@ -195,6 +227,10 @@ def _apply(row: dict) -> None:
                     (row["user_id"], PAIR, row["partner_id"], row["pair_id"]),
                 ).fetchone()
                 if bought is not None:
+                    conn.execute(
+                        "UPDATE partners SET news = 'paid', news_at = now() WHERE pair_id = %s AND user_id = %s",
+                        (row["pair_id"], row["user_id"]),
+                    )
                     told = conn.execute(
                         """
                         UPDATE partners SET news = 'bought', news_at = now()

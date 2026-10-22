@@ -415,10 +415,10 @@ def ask_astrologer(body: QuestionIn, user_id: int = Depends(require_web_user)) -
 
 
 @router.post("/me/payments")
-def pay(body: PaymentIn, user_id: int = Depends(require_web_user)) -> dict:
+def pay(body: PaymentIn, request: Request, user_id: int = Depends(require_web_user)) -> dict:
     """Creates the payment at ЮKassa: the page sends the person on to `url` and gets them back with `id`."""
     try:
-        return create_payment(user_id, body.product, body.partner)
+        return create_payment(user_id, body.product, body.partner, origin=request.headers.get("origin"))
     except DomainError as exc:
         raise as_http(exc) from exc
 

@@ -5,7 +5,9 @@ import { errorText } from '../api/http.js'
 /**
  * A payment at ЮKassa from a panel: `start` sends the person to ЮKassa's page, `follow` meets
  * them on the way back (?paid=ID) and asks how the payment stands until it is settled: every
- * two seconds for about a minute, then it leaves a word and lets the notification do the rest.
+ * two seconds for about a minute, then it leaves a word and keeps asking, slower, for a few
+ * minutes more while the page is open (the notification may come late), so the purchase
+ * still opens right on the page.
  *
  * `result`: '' | 'checking' | 'succeeded' | 'canceled' | 'waiting'.
  */
@@ -56,11 +58,9 @@ export function usePayment() {
           return
         }
       }
-      if (tries >= 30) {
-        result.value = 'waiting'
-        return
-      }
-      timer = setTimeout(() => ask(tries + 1), 2000)
+      if (tries >= 30) result.value = 'waiting'
+      if (tries >= 60) return
+      timer = setTimeout(() => ask(tries + 1), tries >= 30 ? 10000 : 2000)
     }
     ask(0)
   }
