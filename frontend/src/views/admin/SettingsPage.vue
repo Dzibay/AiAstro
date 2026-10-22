@@ -16,6 +16,7 @@ const GROUPS = [
 const { push } = useToast()
 const items = ref([])
 const notifyUrl = ref('')
+const returnUrl = ref('')
 const error = ref('')
 const saving = ref('')
 
@@ -24,6 +25,7 @@ onMounted(async () => {
     const [data, pays] = await Promise.all([adminApi.settings(), adminApi.payments({})])
     items.value = data.items
     notifyUrl.value = pays.notify_url
+    returnUrl.value = pays.return_url || ''
   } catch (caught) {
     error.value = failed(caught)
   }
@@ -64,10 +66,10 @@ async function sendTestMail() {
   }
 }
 
-async function copyUrl() {
+async function copyText(text, ok = 'Адрес скопирован') {
   try {
-    await navigator.clipboard.writeText(notifyUrl.value)
-    push('Адрес скопирован')
+    await navigator.clipboard.writeText(text)
+    push(ok)
   } catch {
     push('Не получилось скопировать — выделите адрес вручную')
   }
@@ -125,15 +127,29 @@ async function copyUrl() {
         <p v-if="testMail.result" class="st-result" :class="testMail.ok ? 'is-ok' : 'error'">{{ testMail.result }}</p>
       </form>
 
-      <div v-if="group.id === 'pay' && notifyUrl" class="st-extra">
-        <p class="adm-note">
-          В личном кабинете ЮKassa, «Интеграция → HTTP-уведомления», укажите этот адрес и события
-          <code>payment.succeeded</code> и <code>payment.canceled</code>:
-        </p>
-        <div class="st-row">
-          <code class="st-url">{{ notifyUrl }}</code>
-          <button type="button" class="adm-btn" @click="copyUrl">Скопировать</button>
-        </div>
+      <div v-if="group.id === 'pay' && (notifyUrl || returnUrl)" class="st-extra">
+        <template v-if="returnUrl">
+          <p class="adm-note">
+            После оплаты мы просим ЮKassa вернуть человека сюда (<code>return_url</code>). Если в ссылке
+            на странице ЮKassa всё равно главная — откройте настройки магазина в ЮKassa и в поле
+            «Адрес сайта» поставьте этот же адрес (кнопка «Вернуться» иногда берёт его, а не
+            <code>return_url</code> из платежа):
+          </p>
+          <div class="st-row">
+            <code class="st-url">{{ returnUrl }}</code>
+            <button type="button" class="adm-btn" @click="copyText(returnUrl)">Скопировать</button>
+          </div>
+        </template>
+        <template v-if="notifyUrl">
+          <p class="adm-note">
+            В личном кабинете ЮKassa, «Интеграция → HTTP-уведомления», укажите этот адрес и события
+            <code>payment.succeeded</code> и <code>payment.canceled</code>:
+          </p>
+          <div class="st-row">
+            <code class="st-url">{{ notifyUrl }}</code>
+            <button type="button" class="adm-btn" @click="copyText(notifyUrl)">Скопировать</button>
+          </div>
+        </template>
       </div>
     </section>
   </div>

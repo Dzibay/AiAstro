@@ -183,7 +183,14 @@ def payments_list(
         page = list_payments(q, status, offset, user)
     except DomainError as exc:
         raise as_http(exc) from exc
-    return {**page, "notify_url": f"{settings.public_base_url.rstrip('/')}/api/pay/yookassa"}
+    base = settings.public_base_url.rstrip("/")
+    return {
+        **page,
+        "notify_url": f"{base}/api/pay/yookassa",
+        # What we put in confirmation.return_url; if ЮKassa's button still shows the home page,
+        # its shop «Адрес сайта» is overriding this — set the same address there.
+        "return_url": f"{base}/cabinet",
+    }
 
 
 @router.get("/users", dependencies=[Depends(require_admin)])

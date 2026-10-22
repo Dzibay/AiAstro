@@ -174,18 +174,23 @@ def create_payment(user_id: int, product: str, partner_id: int | None = None, or
     tax_system = setting("receipt_tax_system")
     if tax_system:
         receipt["tax_system_code"] = int(tax_system)
+    return_url = f"{_return_base(origin)}/cabinet"
     body = {
         "amount": _money(amount),
         "capture": True,
-        "confirmation": {"type": "redirect", "return_url": f"{_return_base(origin)}/cabinet"},
+        "confirmation": {"type": "redirect", "return_url": return_url},
         "description": title,
         "metadata": {"payment_id": str(row["id"]), "user_id": str(user_id)},
         "receipt": receipt,
     }
+    log.info("Платёж %s: отдаём ЮKassa return_url=%s", row["id"], return_url)
     try:
         answer = _call("POST", API, body, key=f"aiastro-payment-{row['id']}")
         url = answer["confirmation"]["confirmation_url"]
         yookassa_id = answer["id"]
+        echoed = (answer.get("confirmation") or {}).get("return_url")
+        if echoed and echoed.rstrip("/") != return_url.rstrip("/"):
+            log.warning("Платёж %s: ЮKassa ответила другим return_url=%s", row["id"], echoed)
     except (DomainError, KeyError, TypeError) as exc:
         with pool.connection() as conn:
             conn.execute("UPDATE payments SET status = 'failed' WHERE id = %s", (row["id"],))

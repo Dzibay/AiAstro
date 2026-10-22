@@ -19,6 +19,12 @@ log = logging.getLogger("aiastro")
 async def lifespan(app: FastAPI):
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     log.info("Публичный адрес: %s", settings.public_base_url)
+    host = (settings.public_base_url or "").lower()
+    if "localhost" in host or "127.0.0.1" in host:
+        log.warning(
+            "PUBLIC_BASE_URL=%s — ЮKassa получит return_url на localhost и подставит «Адрес сайта» магазина (часто главную)",
+            settings.public_base_url,
+        )
     if not settings.web_session_secret:
         log.warning("WEB_SESSION_SECRET пуст — вход в кабинет закрыт")
     if not settings.admin_session_secret or not settings.admin_password:
