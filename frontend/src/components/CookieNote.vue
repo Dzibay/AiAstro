@@ -31,7 +31,7 @@ function accept() {
         <h2 id="cookie-title" class="cookie-title">Немного звёздной пыли</h2>
         <p class="cookie-text">
           Сайт хранит в браузере cookie и похожие данные: чтобы помнить вход в кабинет и ваш выбор,
-          а Яндекс Метрика — чтобы мы видели, что на сайте удобно. Оставаясь здесь, вы соглашаетесь с этим.
+          и чтобы видеть, удобно ли пользоваться сайтом. Оставаясь здесь, вы соглашаетесь с этим.
         </p>
         <div class="cookie-actions">
           <button type="button" class="cookie-accept" @click="accept">Принять</button>
