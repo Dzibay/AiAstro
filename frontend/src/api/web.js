@@ -12,6 +12,8 @@ export const webApi = {
   forecast: (period, tz) =>
     request(`/api/web/me/forecast?${new URLSearchParams({ period, tz })}`, { audience: 'web', auth: true }),
   month: (tz) => request(`/api/web/me/forecast/month?${new URLSearchParams({ tz })}`, { audience: 'web', auth: true }),
+  /** A task of the day's checklist ticked or unticked ({ day, key, done }): { day, done: [keys] }. */
+  tickTask: (body) => request('/api/web/me/forecast/tasks', { method: 'POST', body, audience: 'web', auth: true }),
   setName: (name) => request('/api/web/me/name', { method: 'PUT', body: { name }, audience: 'web', auth: true }),
   setEmail: (body) => request('/api/web/me/email', { method: 'PUT', body, audience: 'web', auth: true }),
   setMailNotes: (on) => request('/api/web/me/mail', { method: 'PUT', body: { on }, audience: 'web', auth: true }),

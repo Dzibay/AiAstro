@@ -2,10 +2,11 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
-import ReadingText from '../../components/cabinet/ReadingText.vue'
+import ReadingStories from '../../components/cabinet/ReadingStories.vue'
 import BirthForm from '../../components/cabinet/BirthForm.vue'
 import PairSpheres from '../../components/sky/PairSpheres.vue'
 import PairShare from '../../components/sky/PairShare.vue'
+import PairYears from '../../components/sky/PairYears.vue'
 import { ASPECTS, POINTS, SIGN_BY_ID } from '../../components/cabinet/astro.js'
 import { errorText } from '../../api/http.js'
 import { webApi } from '../../api/web.js'
@@ -20,8 +21,9 @@ import { birthSigns } from '../../utils/skyToday.js'
  * «Пара»: the list of pairs, the two ways to a partner and the pair itself.
  *
  * ?add — the partner's data typed in by hand, ?invite — a link for the partner to fill in,
- * ?partner=<id> — one pair: the stars, the tone in a phrase, the five spheres, the key aspects
- * and the opening of the reading for free, the full reading once it is bought. The sky (CabinetView → PairSky) follows the same query.
+ * ?partner=<id> — one pair: the stars, the tone in a phrase, the five spheres, the key aspects,
+ * the reading's first screen and the nearest of its five years for free; the full reading — read
+ * as screens, with the years and the pair's plan — once it is bought. The sky (CabinetView → PairSky) follows the same query.
  * ?partner=<id>&edit — the data of a partner typed in by hand, corrected until the reading is bought.
  *
  * A pair joined by an invitation is shared by two cabinets: a reading bought on either side is
@@ -306,6 +308,29 @@ const moreAspectsWord = computed(() => {
   if (count % 10 === 1 && !teen) return 'связь'
   return count % 10 >= 2 && count % 10 <= 4 && !teen ? 'связи' : 'связей'
 })
+/** The aspects whose interpretation is open: a list of twenty paragraphs reads as a wall, so each opens on its own. */
+const openAspects = ref(new Set())
+function toggleAspect(aspect) {
+  if (!aspect.text) return
+  const next = new Set(openAspects.value)
+  if (next.has(aspect.key)) next.delete(aspect.key)
+  else next.add(aspect.key)
+  openAspects.value = next
+}
+watch(partnerId, () => {
+  openAspects.value = new Set()
+})
+const aspectTexts = computed(() => aspects.value.some((aspect) => aspect.text))
+
+/* ---- The reading as screens, and its five years ---- */
+
+const stories = ref(null)
+const yearsPart = computed(() => pair.value?.data?.reading?.parts?.find((part) => part.kind === 'years') || null)
+function openYears() {
+  const index = pair.value.data.reading.parts.indexOf(yearsPart.value)
+  stories.value?.open(index)
+}
+
 function setAspect(aspect) {
   hotAspect.value = aspect ? { a: aspect.a, b: aspect.b, type: aspect.type } : null
 }
@@ -498,8 +523,10 @@ const rows = computed(() => partners.value.map((item) => {
                 <button
                   type="button"
                   class="chip"
-                  :class="{ 'is-on': hotKey === aspect.key }"
+                  :class="{ 'is-on': hotKey === aspect.key, 'has-text': aspect.text, 'is-open': openAspects.has(aspect.key) }"
                   :aria-label="aspect.title"
+                  :aria-expanded="aspect.text ? openAspects.has(aspect.key) : undefined"
+                  @click="toggleAspect(aspect)"
                   @pointerenter="setAspect(aspect)"
                   @pointerleave="setAspect(null)"
                   @focus="setAspect(aspect)"
@@ -511,11 +538,13 @@ const rows = computed(() => partners.value.map((item) => {
                     <span class="glyph-theirs">{{ aspect.theirs }}</span>
                   </span>
                   <span class="chip-text" aria-hidden="true">{{ aspect.title }}</span>
-                  <span v-if="aspect.text" class="chip-desc">{{ aspect.text }}</span>
+                  <svg v-if="aspect.text" class="chip-fold" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5L6 7.5L9 4.5" /></svg>
+                  <span v-if="aspect.text && openAspects.has(aspect.key)" class="chip-desc">{{ aspect.text }}</span>
                 </button>
               </li>
             </ul>
             <p v-else class="quiet-text">Тесных аспектов между картами нет: связь складывается из времени и выбора.</p>
+            <p v-if="aspectTexts" class="aspects-hint">Нажмите на связь — откроется её толкование.</p>
             <p v-if="pair.data.locked && moreAspects > 0" class="quiet-text">
               И ещё {{ moreAspects }} {{ moreAspectsWord }} между картами — каждая с толкованием в разборе пары.
             </p>
@@ -524,14 +553,29 @@ const rows = computed(() => partners.value.map((item) => {
           <template v-if="pair.data.locked">
             <section class="block" aria-labelledby="reading-title">
               <h3 id="reading-title" class="block-title">Разбор пары</h3>
-              <div class="text is-locked">
-                <ReadingText :reading="pair.data.reading" />
-              </div>
+              <ReadingStories ref="stories" :reading="pair.data.reading" locked name="Разбор пары" locked-title="Дальше — в полном разборе">
+                <template #locked>
+                  <div class="unlock in-stories">
+                    <p class="unlock-note">
+                      Разбор открывается один раз и остаётся с этой парой навсегда<template v-if="linked">
+                      — у вас обоих</template>.
+                    </p>
+                    <button type="button" class="unlock-cta" :disabled="paying || !payOn || !priceSet" @click="buy">
+                      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
+                      <template v-if="paying">Открываем ЮKassa…</template>
+                      <template v-else>Открыть разбор — {{ user.sky ? pairSkyPrice : pairPrice }}</template>
+                    </button>
+                    <p v-if="!payOn" class="unlock-note">Оплата откроется совсем скоро.</p>
+                  </div>
+                </template>
+              </ReadingStories>
             </section>
+            <PairYears v-if="yearsPart" :part="yearsPart" locked @open="openYears" />
             <div class="unlock">
               <p class="unlock-note">
-                Дальше — что стоит за каждой из пяти сфер, все связи ваших карт с толкованием,
-                где планеты партнёра стоят в ваших домах и каким получается ваш союз как целое.
+                Дальше — что стоит за каждой из пяти сфер, главные связи ваших карт, где планеты партнёра
+                стоят в ваших домах, каким получается ваш союз и куда он растёт, ваши ближайшие пять лет
+                по периодам и план пары из конкретных шагов. На каждом экране — что с этим делать.
                 Разбор открывается один раз и остаётся с этой парой навсегда<template v-if="linked">
                 — у вас обоих: партнёру платить не нужно</template>.
               </p>
@@ -556,8 +600,9 @@ const rows = computed(() => partners.value.map((item) => {
             <section class="block reading-open" :class="{ 'is-revealing': revealing }" aria-labelledby="reading-title" @animationend.self="revealed">
               <h3 id="reading-title" class="block-title">Разбор пары</h3>
               <p v-if="boughtLine" class="bought-line">{{ boughtLine }}</p>
-              <ReadingText :reading="pair.data.reading" />
+              <ReadingStories ref="stories" :reading="pair.data.reading" name="Разбор пары" />
             </section>
+            <PairYears v-if="yearsPart" :part="yearsPart" @open="openYears" />
 
             <section class="block" aria-labelledby="pair-day-title">
               <h3 id="pair-day-title" class="block-title">Ваш день вдвоём</h3>
@@ -841,14 +886,15 @@ const rows = computed(() => partners.value.map((item) => {
 .day-text { margin: 0; font-family: var(--book); font-size: 15px; line-height: 1.6; color: #efe7d8; }
 .lit { display: grid; gap: 4px; margin: 10px 0 0; padding: 0; list-style: none; font-size: 13.5px; color: rgba(226, 220, 210, 0.7); }
 .lit-planet { color: #f0cd8a; }
-.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 14px 0 0; padding: 0; list-style: none; }
-.week li { display: grid; justify-items: center; gap: 6px; padding: 8px 2px; border-radius: 12px; border: 1px solid rgba(240, 210, 150, 0.1); }
+.week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin: 14px 0 0; padding: 0; list-style: none; }
+.week li { position: relative; display: grid; justify-items: center; gap: 6px; padding: 8px 2px; border-radius: 12px; border: 1px solid rgba(240, 210, 150, 0.1); }
 .week li.is-today { border-color: rgba(240, 205, 138, 0.45); }
 .week-day { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(226, 214, 192, 0.66); }
 .week-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(226, 220, 210, 0.45); }
 .week .tone-easy .week-dot { background: #f0cd8a; box-shadow: 0 0 8px rgba(240, 205, 138, 0.7); }
 .week .tone-tense .week-dot { background: #d98b7a; }
-.week-tone { font-family: var(--serif); font-style: italic; font-size: 12.5px; color: rgba(226, 220, 210, 0.6); }
+/* The tone is the dot's colour: seven words do not fit the panel, so the word is for screen readers. */
+.week-tone { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ---- Forms and buttons (as the birth form's) ---- */
 .invite-form { display: grid; gap: 14px; }
@@ -950,16 +996,13 @@ const rows = computed(() => partners.value.map((item) => {
 .chip-glyphs .tone-tense { color: #d98b7a; }
 .chip-text { font-family: var(--book); font-size: 14px; line-height: 1.4; }
 .chip-desc { grid-column: 2 / -1; font-family: var(--book); font-size: 13.5px; line-height: 1.5; color: rgba(226, 220, 210, 0.7); }
+.chip.has-text { grid-template-columns: auto 1fr auto; cursor: pointer; }
+.chip-fold { width: 12px; height: 12px; fill: none; stroke: rgba(240, 205, 138, 0.7); stroke-width: 1.5; stroke-linecap: round; transition: transform 0.25s ease; }
+.chip.is-open .chip-fold { transform: rotate(180deg); }
+.aspects-hint { margin: -6px 0 0; font-family: var(--serif); font-style: italic; font-size: 14.5px; color: rgba(226, 220, 210, 0.55); }
 
 .unlock { display: grid; gap: 12px; justify-items: start; margin-top: -8px; }
-/* The reading's opening dissolves into the haze: the rest is the bought part. */
-.text.is-locked {
-  max-height: 12em;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(180deg, #000 35%, transparent);
-  mask-image: linear-gradient(180deg, #000 35%, transparent);
-  user-select: none;
-}
+.unlock.in-stories { margin-top: 4px; }
 .pair-prices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; margin: 0; }
 .pair-prices div { display: grid; gap: 2px; justify-items: center; padding: 10px 8px; border-radius: 14px; border: 1px solid rgba(240, 210, 150, 0.14); }
 .pair-prices .with-sky { border-color: rgba(240, 205, 138, 0.4); background: linear-gradient(180deg, rgba(240, 205, 138, 0.07), transparent); }
@@ -1022,7 +1065,6 @@ const rows = computed(() => partners.value.map((item) => {
 @media (max-width: 760px) {
   .field input, .link { font-size: 16px; }
   .chip, .unlock-cta, .add-birth, .soft-button, .quiet, .pair-row { min-height: 44px; }
-  .week-tone { display: none; }
   /* A narrow card: the signs go under the line about the pair. */
   .pair-row {
     grid-template-areas:
@@ -1033,7 +1075,7 @@ const rows = computed(() => partners.value.map((item) => {
   .pair-signs { justify-self: start; margin-top: 2px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .unlock-cta, .pair-row { transition: none; }
+  .unlock-cta, .pair-row, .chip-fold { transition: none; }
   .news.is-opening, .news.is-opening svg { animation: none; }
   .news.is-opening::after { display: none; }
   .reading-open.is-revealing { -webkit-mask-image: none; mask-image: none; animation: reveal-fade 1.2s ease both; }

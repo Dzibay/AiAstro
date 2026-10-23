@@ -221,7 +221,10 @@ watch(page, (next) => {
             <li v-for="aspect in result.key" :key="aspect.title" :class="aspect.lean < 0 ? 'is-tense' : 'is-easy'">{{ aspect.title }}</li>
           </ul>
           <p class="essence">{{ result.reading.essence }}</p>
-          <p v-for="part in result.reading.parts" :key="part.label" class="part"><b>{{ part.label }}.</b> {{ part.text }}</p>
+          <template v-for="part in result.reading.parts" :key="part.label">
+            <p class="part"><b>{{ part.label }}.</b> {{ part.text }}</p>
+            <p v-if="part.todo" class="part todo"><b>✦ Что делать:</b> {{ part.todo }}</p>
+          </template>
         </template>
 
         <template v-else>
@@ -236,7 +239,10 @@ watch(page, (next) => {
             <li v-for="transit in result.transits" :key="transit.phrase" :class="transit.lean < 0 ? 'is-tense' : 'is-easy'">{{ transit.phrase }}</li>
           </ul>
           <p class="essence">{{ result.reading.essence }}</p>
-          <p v-for="part in result.reading.parts" :key="part.label" class="part"><b>{{ part.label }}.</b> {{ part.text }}</p>
+          <template v-for="part in result.reading.parts" :key="part.label">
+            <p class="part"><b>{{ part.label }}.</b> {{ part.text }}</p>
+            <p v-if="part.todo" class="part todo"><b>✦ Что делать:</b> {{ part.todo }}</p>
+          </template>
         </template>
 
         <div class="result-next">
@@ -430,6 +436,8 @@ h1 :deep(em) { font-style: italic; color: #f0cd8a; }
 .essence.big { margin: 0 0 18px; font-size: 21px; }
 .part { margin: 10px 0 0; font-size: 15px; line-height: 1.65; color: rgba(232, 226, 216, 0.82); }
 .part b { font-weight: 600; color: #f2ebdf; }
+.part.todo { font-family: var(--serif); font-style: italic; font-size: 16.5px; color: #f6e2b4; }
+.part.todo b { font-style: normal; color: #f0cd8a; }
 
 .aspects { display: grid; gap: 8px; margin: 20px 0 6px; padding: 0; list-style: none; }
 .aspects li { position: relative; padding-left: 20px; font-size: 15px; line-height: 1.45; color: #f2ebdf; }

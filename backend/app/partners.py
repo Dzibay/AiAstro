@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 from psycopg.errors import UniqueViolation
 
 from app.accounts import _clean_birth, get_user
-from app.astro import pair_forecast, synastry
+from app.astro import pair_forecast, pair_years, synastry
 from app.astro.texts import interpreter, pair_aspect_title, pair_phrase
 from app.charts import _zone, chart_for, chart_of
 from app.db import pool
@@ -533,17 +533,24 @@ def synastry_of(user_id: int, partner_id: int) -> dict:
     birth = _birth(row)
     if birth is None:
         raise DomainError("pending", 409)
-    mine = chart_of(user_id)
-    pair = synastry.build(mine, chart_for(birth))
+    mine, theirs = chart_of(user_id), chart_for(birth)
+    pair = synastry.build(mine, theirs)
+    # Counted from the first of the month, so the reading stays the same all month long.
+    pair["years"] = pair_years.build(mine, theirs, date.today().replace(day=1))
     bought_map = _bought(user_id)
     bought = row["pair_id"] in bought_map
-    inputs = [pair["tone"], pair["elements"], [[a["a"], a["b"], a["type"]] for a in pair["key"][:3]],
-              pair["spheres"], pair["overlays"], pair["composite"]]
+    inputs = [pair["tone"], pair["elements"], [[a["a"], a["b"], a["type"], a["lean"]] for a in pair["aspects"]],
+              pair["spheres"], pair["overlays"], pair["composite"], pair["years"]]
     reading = cached("synastry", inputs, lambda: interpreter.synastry(pair))
     total = len(reading["parts"])
-    # Before the purchase only the essence and the first part leave the server: the page fades them.
+    # Before the purchase the essence, the first part and the nearest period of the years leave the
+    # server, with the headlines of the rest: the page shows them as closed screens.
     if not bought:
-        reading = {**reading, "parts": reading["parts"][:1]}
+        parts = reading["parts"]
+        years = next((part for part in parts if part.get("kind") == "years"), None)
+        shown = parts[:1] + ([{**years, "items": years["items"][:1], "hidden": len(years["items"]) - 1}] if years else [])
+        reading = {**reading, "parts": shown,
+                   "outline": [part.get("title") or part["label"] for part in parts[1:] if part is not years]}
     # Bought, the pair shows every link between the charts with its meaning; before, the key ones by name.
     shown = pair["aspects"][:MAX_ASPECTS] if bought else pair["key"]
     return {

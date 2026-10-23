@@ -10,6 +10,7 @@ import re
 from datetime import date
 
 from app.astro import forecast_texts as F
+from app.astro import forecast_todo as FT
 from app.astro import natal_aspects as NA
 from app.astro import natal_houses as H
 from app.astro import natal_point_aspects as NPA
@@ -18,7 +19,9 @@ from app.astro import natal_signs as S
 from app.astro import natal_texts as N
 from app.astro import pair_aspects as PA
 from app.astro import pair_overlays as PO
+from app.astro import pair_plan as PP
 from app.astro import pair_texts as P
+from app.astro import pair_year_texts as PY
 from app.astro import synastry
 from app.astro import transit_fast as TF
 from app.astro import transit_slow as TS
@@ -246,7 +249,7 @@ def _span_line(span: dict, start: date) -> str:
     """«Это надолго: с 5 октября по 22 февраля 2027 года» — a slow transit stands for months."""
     begun, ends = date.fromisoformat(span["from"]), date.fromisoformat(span["to"])
     if (ends - begun).days < 21:
-        return f"Он продлится примерно до {_day_month(span['to'], start.year)}."
+        return f"Транзит продлится примерно до {_day_month(span['to'], start.year)}."
     head = "Это надолго" if (ends - begun).days >= 60 else "Это на несколько недель"
     if begun >= start:
         return f"{head}: с {_day_month(span['from'], start.year)} по {_day_month(span['to'], start.year)}."
@@ -304,18 +307,23 @@ _UNION_ELEMENTS = {
 }
 
 
-def _overlay_text(planets: list[dict], theirs: bool) -> str:
-    """«Венера партнёра — в вашем V доме: одна из самых романтических связей…» for each planet."""
-    lines = []
+_OVERLAY_INTRO = {
+    True: "Планеты партнёра попадают в дома вашей карты: так видно, какие стороны вашей жизни партнёр будит.",
+    False: "Ваши планеты попадают в дома карты партнёра: так видно, что вы будите в жизни партнёра.",
+}
+_OVERLAY_TITLE = {True: "Что партнёр приносит в вашу жизнь", False: "Что вы приносите в жизнь партнёра"}
+
+
+def _overlay_items(planets: list[dict], theirs: bool) -> list[dict]:
+    """«Венера партнёра · V дом»: «Одна из самых романтических связей…» for each planet."""
+    items = []
     for planet in planets:
         key, house = planet["id"], planet["house"]
-        name = POINTS[key][0]
-        if theirs:
-            head = f"{name} {_GENITIVE_PARTNER} — в вашем {ROMAN[house - 1]} доме"
-        else:
-            head = f"{_OWN[POINTS[key][1]]} {name} — в {ROMAN[house - 1]} доме {_GENITIVE_PARTNER}"
-        lines.append(f"{head}: {PO.OVERLAY[key][house - 1]}.")
-    return " ".join(lines)
+        name, pronoun, _ = POINTS[key]
+        head = f"{name} {_GENITIVE_PARTNER} · {ROMAN[house - 1]} дом" if theirs else \
+            f"{_OWN[pronoun]} {name} · {ROMAN[house - 1]} дом {_GENITIVE_PARTNER}"
+        items.append({"name": head, "text": f"{_cap(PO.OVERLAY[key][house - 1])}."})
+    return items
 
 
 def pair_phrase(pair: dict) -> str:
@@ -471,18 +479,34 @@ def chat_suggestions(chart: dict) -> list[str]:
 
 # ---- Reading ----
 
-def _part(label: str, text: str) -> dict:
-    return {"label": label, "text": text}
+def _part(label: str, text: str, **screen) -> dict:
+    """A thesis under its small label. Read as a story, a part is also a screen: a plain `title`, a
+    small `term` line with the astrology, `items` ({name, text, tone}), a `score` and `todo` — what to do."""
+    return {"label": label, "text": text, **{key: value for key, value in screen.items() if value not in (None, "", [])}}
 
 
 def _cap(text: str) -> str:
     return text[0].upper() + text[1:]
 
 
+_EXIT = re.compile(r"\s*Выход — ")
+
+
+def _split_exit(text: str) -> tuple[str, str]:
+    """A pulling reading and its way out apart: the way out becomes the screen's «что делать»."""
+    found = _EXIT.split(text, maxsplit=1)
+    return (found[0], _cap(found[1])) if len(found) > 1 else (text, "")
+
+
 def reading_text(reading: dict) -> str:
     """A reading as plain paragraphs: for whoever reads the conversation as text (an AI provider)."""
     lines = [reading["essence"]] if reading["essence"] else []
-    lines += [f"{part['label']}. {part['text']}" if part["label"] else part["text"] for part in reading["parts"]]
+    for part in reading["parts"]:
+        head = part.get("title") or part["label"]
+        line = [f"{head}." if head else "", part["text"]]
+        line += [f"{item['name']}: {item['text']}" if item.get("name") else item["text"] for item in part.get("items", [])]
+        line.append(f"Что делать: {part['todo']}" if part.get("todo") else "")
+        lines.append(" ".join(piece for piece in line if piece))
     return "\n\n".join(lines)
 
 
@@ -497,11 +521,101 @@ def as_reading(text: str) -> dict:
     return {"essence": "", "parts": [_part("", paragraph) for paragraph in text.split("\n\n") if paragraph]}
 
 
+def _day_tasks(forecast: dict) -> list[dict]:
+    """Two or three things to tick today: from the two main transits to different points, and the Moon's phase."""
+    tasks, seen = [], set()
+    for transit in forecast["transits"][:3]:
+        target = transit["b"]
+        if target in seen or len(tasks) == 2:
+            continue
+        seen.add(target)
+        easy = transit["lean"] > 0
+        tasks.append({"key": f"t:{target}:{'easy' if easy else 'hard'}", "text": FT.TASK[target][0 if easy else 1]})
+    phase = (forecast.get("moon") or {}).get("phase")
+    if phase:
+        tasks.append({"key": f"m:{phase}", "text": FT.PHASE_TASK[phase]})
+    for index, text in enumerate(FT.QUIET_TASKS):
+        if len(tasks) < 3:
+            tasks.append({"key": f"q:{index}", "text": text})
+    return tasks
+
+
+def _month_year(iso: str, genitive: bool = False) -> str:
+    day = date.fromisoformat(iso)
+    return f"{(F.MONTHS if genitive else PY.MONTHS)[day.month - 1]} {day.year}"
+
+
+def _year_span(period: dict, inline: bool = False) -> str:
+    """«март 2027 — январь 2028»; inline, «с марта 2027 по январь 2028»."""
+    begun, ended = date.fromisoformat(period["from"]), date.fromisoformat(period["to"])
+    if period["now"]:
+        return (f"уже идёт и продлится до {_month_year(period['to'], True)}" if inline
+                else f"Уже идёт · до {_month_year(period['to'], True)}")
+    if inline and (begun.year, begun.month) == (ended.year, ended.month):
+        return f"в {PY.MONTHS_IN[begun.month - 1]} {begun.year}"
+    if inline and begun.year == ended.year:
+        return f"с {F.MONTHS[begun.month - 1]} по {PY.MONTHS[ended.month - 1]} {ended.year}"
+    if inline:
+        return f"с {_month_year(period['from'], True)} по {_month_year(period['to'])}"
+    if (begun.year, begun.month) == (ended.year, ended.month):
+        return _cap(_month_year(period["from"]))
+    if begun.year == ended.year:
+        return _cap(f"{PY.MONTHS[begun.month - 1]} — {_month_year(period['to'])}")
+    return _cap(f"{_month_year(period['from'])} — {_month_year(period['to'])}")
+
+
+def _year_texts(period: dict) -> tuple[str, str, str]:
+    return PY.YEARS[(period["planet"], period["target"])][PY.GROUP[period["type"]]]
+
+
+def _year_item(period: dict) -> dict:
+    title, text, todo = _year_texts(period)
+    return {"name": _year_span(period), "title": title, "text": text, "todo": todo, "tone": period["tone"],
+            "from": period["from"], "to": period["to"]}
+
+
+def _growth(spheres: list[dict], years: list[dict] | None) -> str:
+    """Where the pair stands (its strongest sphere), where it grows (its weakest), and what the years bring."""
+    scores = {sphere["id"]: sphere["score"] for sphere in spheres}
+    top, low = max(scores, key=scores.get), min(scores, key=scores.get)
+    lines = [PP.GROW_EVEN] if scores[top] == scores[low] else [PP.GROW_FROM[top], PP.GROW_TO[low]]
+    if years:
+        easy = sum(period["tone"] == "easy" for period in years)
+        tense = sum(period["tone"] == "tense" for period in years)
+        lines.append(PP.YEARS_MOOD["easy" if easy > tense + 1 else "tense" if tense > easy + 1 else "mixed"])
+        turn = max(years, key=lambda period: period["weight"])
+        lines.append(f"Главный поворот — «{_year_texts(turn)[0]}»: {_year_span(turn, inline=True)}.")
+    return " ".join(lines)
+
+
+def _plan(pair: dict) -> list[tuple[str, str]]:
+    """Five to seven steps: for the weak spheres, the hard key links, then to keep the strong spheres strong."""
+    spheres = sorted(pair["spheres"], key=lambda sphere: sphere["score"])
+    weak = [sphere["id"] for sphere in spheres if sphere["score"] <= 2]
+    steps = [PP.PLAN_SPHERE[sphere][0] for sphere in weak]
+    used = set()
+    for aspect in pair["key"][:3]:
+        if aspect["lean"] >= 0:
+            continue
+        point = next((key for key in PP.HARD_ORDER
+                      if key in (aspect["a"], aspect["b"]) and key not in used and PP.HARD_SPHERE.get(key) not in weak), None)
+        if point:
+            used.add(point)
+            steps.append(PP.PLAN_HARD[point])
+    steps += [PP.PLAN_SPHERE[sphere["id"]][1] for sphere in spheres[::-1] if sphere["score"] >= 4][:2]
+    for step in PP.PLAN_ALWAYS:
+        if len(steps) < PP.PLAN_SIZE[0]:
+            steps.append(step)
+    return steps[:PP.PLAN_SIZE[1]]
+
+
 class Interpreter:
     """What the site asks of whoever writes the readings.
 
     Each method returns a reading: {essence, parts: [{label, text}]}. The essence is one line, the
     heart of it; the parts are short theses under small labels («Тема», «Как звучит», «Совет»).
+    The forecast and the pair are read as stories, a screen a part: theirs also carry a plain
+    title, a term line, items, a score and «что делать» (see _part); the day adds its tasks.
     """
 
     # Raised whenever the texts change, so the cached readings are written again.
@@ -542,7 +656,7 @@ class Interpreter:
 class StubInterpreter(Interpreter):
     """Templates until the AI is connected. The chat answers with facts of the chart, not with wit."""
 
-    version = 18
+    version = 21
 
     def natal_item(self, point: str, sign: str, house: int | None, retro: bool = False) -> dict:
         name, pronoun, theme = POINTS[point]
@@ -665,19 +779,34 @@ class StubInterpreter(Interpreter):
         if period == "day":
             moon = forecast["moon"]
             line = f"Сегодня Луна {SIGNS[moon['sign']][0]}"
+            term = [f"Луна {SIGNS[moon['sign']][0]}"]
             if moon["house"]:
                 line += f" и проходит ваш {ROMAN[moon['house'] - 1]} дом: {HOUSES[moon['house'] - 1]}"
-            text = f"{line}. День звучит {SIGNS[moon['sign']][1]}."
+                term.append(f"{ROMAN[moon['house'] - 1]} дом")
+            text, todo = f"{line}. День звучит {SIGNS[moon['sign']][1]}.", ""
             if moon.get("phase"):
-                name, meaning = F.PHASE[moon["phase"]]
-                text += f" Фаза — {name}. {meaning}"
+                name, todo = F.PHASE[moon["phase"]]
+                term.append(name)
             upcoming = moon.get("next")
             if upcoming and upcoming["in"] > 0:
                 text += f" {F.LUNATION[upcoming['kind']]} — {_in_days(upcoming['in'])}, {_day_month(upcoming['date'])}."
-            parts.append(_part("Луна", text))
-            if forecast.get("spheres"):
-                parts.append(_part("Сферы дня", " ".join(
-                    f"{F.SPHERE_NAMES[key]}: {F.SPHERE_TONE[key][value]}." for key, value in forecast["spheres"].items())))
+            parts.append(_part("Луна", text, title="Настроение дня", term=" · ".join(term), todo=todo))
+            if spheres := forecast.get("spheres"):
+                easy = [F.SPHERE_NAMES[key].lower() for key, value in spheres.items() if value == "easy"]
+                tense = [F.SPHERE_NAMES[key].lower() for key, value in spheres.items() if value == "tense"]
+                if easy and tense:
+                    todo = f"Опирайтесь на то, что идёт легко: {_joined(easy)}. А в том, что чувствительно, — {_joined(tense)} — не торопите события."
+                elif easy:
+                    todo = f"Опирайтесь на то, что идёт легко: {_joined(easy)}."
+                elif len(tense) == len(spheres):
+                    todo = "Весь день просит бережности: выберите одно главное дело, остальное делайте без нажима и оставьте вечер себе."
+                elif tense:
+                    todo = f"Сегодня не требуйте от себя многого там, где чувствительно: {_joined(tense)}."
+                else:
+                    todo = "День ровный во всём: распределите силы так, как удобно вам."
+                items = [{"name": F.SPHERE_NAMES[key], "text": f"{_cap(F.SPHERE_TONE[key][value])}.", "tone": value}
+                         for key, value in spheres.items()]
+                parts.append(_part("Сферы дня", "", title="Где легко, где бережно", items=items, todo=todo))
         else:
             names: dict[str, list[str]] = {}
             for day in forecast["days"]:
@@ -690,66 +819,86 @@ class StubInterpreter(Interpreter):
             if 0 < len(names.get("tense", [])) <= 4:
                 verb = "потребует" if len(names["tense"]) == 1 else "потребуют"
                 days.append(f"Больше бережности {verb} {_joined(names['tense'])}.")
-            if days:
-                parts.append(_part("Дни недели", " ".join(days)))
-            best = forecast.get("best") or {}
+            best = sorted((forecast.get("best") or {}).items(), key=lambda entry: entry[1])
+            items = [{"name": _cap(f"{WEEKDAYS[date.fromisoformat(day).weekday()]}, {_day_month(day)}"),
+                      "text": f"Лучший день {F.SPHERE_FOR[key]}.", "tone": "easy"} for key, day in best]
+            todo = ""
             if best:
-                parts.append(_part("Лучшие дни", " ".join(
-                    f"{_cap(F.SPHERE_FOR[key])} — {WEEKDAYS[date.fromisoformat(day).weekday()]}."
-                    for key, day in best.items())))
+                todo = "Планируйте так: " + ", ".join(
+                    f"{FT.BEST_PLAN[key]} — {_ON_WEEKDAY[date.fromisoformat(day).weekday()]}" for key, day in best) + "."
+            elif names.get("easy"):
+                todo = "Важное ставьте на лёгкие дни, а трудные оставьте для привычных дел."
+            if days or items:
+                parts.append(_part("Неделя", " ".join(days), title="Как пройдёт неделя", items=items, todo=todo))
 
         start = date.fromisoformat(forecast["start"])
+        used = set()
         for index, transit in enumerate(forecast["transits"][:3]):
             when = ""
             if transit.get("date"):
                 when = f", точнее всего {_ON_WEEKDAY[date.fromisoformat(transit['date']).weekday()]}"
-            lines = [f"{transit_phrase(transit)}{when}.", transit_reading(transit)]
+            text, todo = _split_exit(transit_reading(transit))
             if transit.get("span"):
-                lines.append(_span_line(transit["span"], start))
-            parts.append(_part(("Главный транзит", "И ещё", "Фоном")[index], " ".join(lines)))
+                text += " " + _span_line(transit["span"], start)
+            target = transit["b"]
+            # A helping transit gets the step of its part of life, once: two to the same point would repeat it.
+            if not todo and target not in used:
+                todo = FT.USE[target]
+            used.add(target)
+            lean = transit["lean"]
+            parts.append(_part(
+                ("Главный транзит", "И ещё", "Фоном")[index], text,
+                title=FT.HEAD[target][_TRANSIT_GROUP[transit["type"]]], term=f"{transit_phrase(transit)}{when}", todo=todo,
+                tone="easy" if lean > 0 else "tense" if lean < 0 else "calm",
+            ))
         if not forecast["transits"]:
             parts.append(_part("Транзиты", "Тесных транзитов к вашей карте нет: небо оставляет вам свободу, "
-                                           "распорядитесь ею по-своему."))
+                                           "распорядитесь ею по-своему.",
+                               title="Небо оставляет свободу", todo="Займитесь тем, что выбираете сами, без оглядки на звёзды."))
 
-        events = forecast.get("events") or []
-        if events:
-            lines = []
-            for event in events:
-                line = _event_line(event)
-                if event.get("date") and period == "week":
-                    line = f"{_cap(_ON_WEEKDAY[date.fromisoformat(event['date']).weekday()])} {line}"
-                lines.append(_cap(line) + ".")
-            parts.append(_part("Небо " + ("дня" if period == "day" else "недели"), " ".join(lines)))
-
+        items = []
+        for event in forecast.get("events") or []:
+            when = _cap(_ON_WEEKDAY[date.fromisoformat(event["date"]).weekday()]) if event.get("date") and period == "week" else ""
+            items.append({"name": when, "text": f"{_cap(_event_line(event))}."})
         retro = forecast.get("retro") or []
-        if retro:
-            lines = [F.RETRO[key] for key in retro if key in F.RETRO]
-            slow = [POINTS[key][0] for key in retro if key not in F.RETRO]
-            if slow:
-                template = F.RETRO_SLOW_ONE if len(slow) == 1 else F.RETRO_SLOW
-                lines.append(template.format(names=_joined(slow), also=" тоже" if lines else ""))
-            parts.append(_part("Попятные планеты", " ".join(lines)))
+        personal = [{"text": F.RETRO[key]} for key in retro if key in F.RETRO]
+        items += personal
+        slow = [POINTS[key][0] for key in retro if key not in F.RETRO]
+        if slow:
+            template = F.RETRO_SLOW_ONE if len(slow) == 1 else F.RETRO_SLOW
+            items.append({"text": template.format(names=_joined(slow), also=" тоже" if personal else "")})
+        if items:
+            parts.append(_part("Небо " + ("дня" if period == "day" else "недели"), "",
+                               title="Что происходит в небе", term="Одно небо для всех", items=items))
 
-        parts.append(_part("Совет", _varied(_CLOSE[tone], forecast["start"], period == "week")))
-        return {"essence": _varied(_OPEN[period][tone], forecast["start"]), "parts": parts}
+        parts.append(_part("Совет", _varied(_CLOSE[tone], forecast["start"], period == "week"),
+                           title="Совет дня" if period == "day" else "Совет недели"))
+        reading = {"essence": _varied(_OPEN[period][tone], forecast["start"]), "parts": parts}
+        if period == "day":
+            reading["tasks"] = _day_tasks(forecast)
+        return reading
 
     def synastry(self, pair: dict) -> dict:
         tone = pair["tone"]
         mine, theirs = pair["elements"]["mine"], pair["elements"]["theirs"]
         if mine == theirs:
+            relation, term = "same", f"Стихия обоих — {_ELEMENT_NAMES[mine]}"
             elements = f"У вас обоих преобладает {_ELEMENT_NAMES[mine]}: вы понимаете друг друга без перевода."
-        elif {mine, theirs} in _KINDRED:
-            elements = (f"У вас преобладает {_ELEMENT_NAMES[mine]}, у партнёра — {_ELEMENT_NAMES[theirs]}: "
-                        "стихии, которые питают друг друга.")
         else:
-            elements = (f"У вас преобладает {_ELEMENT_NAMES[mine]}, у партнёра — {_ELEMENT_NAMES[theirs]}: "
-                        "разный темп, и в этом ваша возможность научиться друг у друга.")
-        parts = [_part("Стихии", elements)]
+            relation = "kindred" if {mine, theirs} in _KINDRED else "apart"
+            term = f"Ваша стихия — {_ELEMENT_NAMES[mine]}, партнёра — {_ELEMENT_NAMES[theirs]}"
+            elements = f"У вас преобладает {_ELEMENT_NAMES[mine]}, у партнёра — {_ELEMENT_NAMES[theirs]}: " + (
+                "стихии, которые питают друг друга." if relation == "kindred"
+                else "разный темп, и в этом ваша возможность научиться друг у друга.")
+        title, todo = PP.ELEMENTS[relation]
+        parts = [_part("Стихии", elements, title=title, term=term, todo=todo)]
 
         points, named = dict(synastry.SPHERES), set()
         for sphere in pair["spheres"]:
             label, readings = P.SPHERES[sphere["id"]]
-            text = readings[sphere["score"] - 1]
+            score = sphere["score"]
+            text, todo = _split_exit(readings[score - 1])
+            term = f"{score} из 5"
             # The strongest link of the sphere, so the reader sees where the score comes from: one with
             # both ends in it first, and never the one another sphere has already named.
             own = points[sphere["id"]]
@@ -757,35 +906,57 @@ class StubInterpreter(Interpreter):
             both = [aspect for aspect in fresh if aspect["a"] in own and aspect["b"] in own]
             either = [aspect for aspect in fresh if aspect["a"] in own or aspect["b"] in own]
             if main := (both or either or [None])[0]:
-                title = pair_aspect_title(main)
-                named.add(title)
-                text += f" Сильнее всего эту сферу задаёт связь «{title}»."
-            parts.append(_part(label, text))
+                link = pair_aspect_title(main)
+                named.add(link)
+                term += f" · главная связь — {link[0].lower()}{link[1:]}"
+            parts.append(_part(label, text, title=label, term=term, score=score,
+                               todo=todo or PP.SPHERE_USE[sphere["id"]][score - 3],
+                               tone="easy" if score >= 4 else "tense" if score <= 2 else "calm"))
 
+        kinds, used = set(), set()
         for aspect in pair["key"][:3]:
-            parts.append(_part(pair_aspect_title(aspect), self.pair_aspect(aspect["a"], aspect["b"], aspect["type"])))
+            a, b, kind = aspect["a"], aspect["b"], aspect["type"]
+            text, todo = _split_exit(PA.PAIR_ASPECT[frozenset({a, b})][PA.GROUP[kind]])
+            # What the aspect itself means, once for each kind: three trines need not say it three times.
+            if kind not in kinds:
+                text += f" {PA.KIND_NOTE[kind]}"
+                kinds.add(kind)
+            if not todo:
+                point = next((key for key in PP.LINK_ORDER if key in (a, b) and key not in used), None)
+                if point:
+                    used.add(point)
+                    todo = PP.LINK_USE[point]
+            parts.append(_part(pair_aspect_title(aspect), text, title=PP.LINK_TITLE[frozenset({a, b})], todo=todo,
+                               tone="easy" if aspect["lean"] > 0 else "tense" if aspect["lean"] < 0 else "calm"))
 
         overlays = pair["overlays"]
-        if overlays["theirs_in_mine"]:
-            parts.append(_part("Партнёр в ваших домах", _overlay_text(overlays["theirs_in_mine"], theirs=True)))
-        if overlays["mine_in_theirs"]:
-            parts.append(_part("Вы в домах партнёра", _overlay_text(overlays["mine_in_theirs"], theirs=False)))
+        for key, label, theirs_side in (("theirs_in_mine", "Партнёр в ваших домах", True),
+                                        ("mine_in_theirs", "Вы в домах партнёра", False)):
+            if overlays[key]:
+                parts.append(_part(label, _OVERLAY_INTRO[theirs_side], title=_OVERLAY_TITLE[theirs_side],
+                                   items=_overlay_items(overlays[key], theirs_side)))
 
         composite = pair.get("composite")
         if composite:
-            text = P.COMPOSITE_SUN[composite["sun"]]
+            text, term, todo = P.COMPOSITE_SUN[composite["sun"]], f"Солнце союза {SIGNS[composite['sun']][0]}", ""
             if composite["moon"]:
                 text += " " + P.COMPOSITE_MOON[composite["moon"]]
+                term += f" · Луна {SIGNS[composite['moon']][0]}"
                 sun, moon = element_of(composite["sun"]), element_of(composite["moon"])
-                if sun == moon:
-                    text += " " + _UNION_ELEMENTS["same"]
-                elif {sun, moon} in _KINDRED:
-                    text += " " + _UNION_ELEMENTS["kindred"]
-                else:
-                    text += " " + _UNION_ELEMENTS["apart"]
-            parts.append(_part("Союз как целое", text))
+                relation = "same" if sun == moon else "kindred" if {sun, moon} in _KINDRED else "apart"
+                union, todo = _split_exit(_UNION_ELEMENTS[relation])
+                text += " " + union
+                todo = todo or PP.UNION_USE[relation]
+            parts.append(_part("Союз как целое", text, title="Каким получается ваш союз", term=term, todo=todo))
 
-        parts.append(_part("Совет", _PAIR_CLOSE[tone]))
+        years = pair.get("years")
+        parts.append(_part("Куда растёт пара", _growth(pair["spheres"], years), title="Куда растёт ваша пара",
+                           todo=PP.GROW_STEP))
+        if years:
+            parts.append(_part("Пять лет", PY.INTRO, title="Ваши ближайшие пять лет", kind="years",
+                               items=[_year_item(period) for period in years]))
+        parts.append(_part("План", _PAIR_CLOSE[tone], title="План вашей пары", kind="plan",
+                           items=[{"name": name, "text": text} for name, text in _plan(pair)]))
         return {"essence": _PAIR_OPEN[tone], "parts": parts}
 
     def pair_aspect(self, a: str, b: str, kind: str) -> str:

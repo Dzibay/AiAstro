@@ -2,7 +2,8 @@
 import { computed, onUnmounted, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
-import ReadingText from '../../components/cabinet/ReadingText.vue'
+import ReadingStories from '../../components/cabinet/ReadingStories.vue'
+import DayTasks from '../../components/sky/DayTasks.vue'
 import StarCalendar from '../../components/sky/StarCalendar.vue'
 import SkyNudge from '../../components/sky/SkyNudge.vue'
 import { useChart } from '../../composables/useChart.js'
@@ -13,8 +14,9 @@ import { usePrices } from '../../utils/prices.js'
 
 /**
  * The forecast beside the wheel: a day, a week or the star calendar of the month. The transits
- * are a calculation and open to everyone; the text is «Небосвод», so without it the first lines
- * fade into the haze, and the calendar shows its first week only.
+ * are a calculation and open to everyone; the text, read as screens, is «Небосвод», so without it
+ * only its first screen opens and the rest are named, and the calendar shows its first week only.
+ * The day ends with its checklist, kept in the account.
  */
 
 defineProps({
@@ -170,16 +172,33 @@ function setHot(key) {
     <template v-else>
       <PanelHead :lead="dateLine">{{ data.title }}</PanelHead>
 
-      <div class="text" :class="{ 'is-locked': data.locked }">
-        <ReadingText :reading="data.reading" />
+      <div class="text">
+        <ReadingStories
+          :reading="data.reading"
+          :locked="data.locked"
+          :name="period === 'day' ? 'Прогноз дня' : 'Прогноз недели'"
+          locked-title="Остальное — в «Небосводе»"
+        >
+          <template #locked>
+            <div class="unlock in-stories">
+              <p class="unlock-note">Каждый экран — с советом, что делать, а у дня ещё и свой чек-лист.</p>
+              <RouterLink class="unlock-cta" :to="{ name: 'cabinet-sky' }">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
+                Зажечь Небосвод — {{ skyPrice }}
+              </RouterLink>
+            </div>
+          </template>
+        </ReadingStories>
       </div>
       <div v-if="data.locked" class="unlock">
-        <p class="unlock-note">Транзиты открыты всем. Полный текст дня и недели — в «Небосводе».</p>
+        <p class="unlock-note">Транзиты открыты всем. Все экраны дня и недели с советами «что делать» и чек-лист дня — в «Небосводе».</p>
         <RouterLink class="unlock-cta" :to="{ name: 'cabinet-sky' }">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
           Зажечь Небосвод — {{ skyPrice }}
         </RouterLink>
       </div>
+
+      <DayTasks v-if="data.tasks?.length" :tasks="data.tasks" :day="data.start" />
 
       <section v-if="spheres.length" class="block" aria-labelledby="spheres-title">
         <h3 id="spheres-title" class="block-title">Сферы дня</h3>
@@ -308,16 +327,9 @@ function setHot(key) {
 }
 
 .text { display: grid; gap: 12px; }
-/* Without «Небосвод» the first lines dissolve into the haze. */
-.text.is-locked {
-  max-height: 10.5em;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent);
-  mask-image: linear-gradient(180deg, #000 30%, transparent);
-  user-select: none;
-}
 
 .unlock { display: grid; gap: 12px; justify-items: start; margin-top: -8px; }
+.unlock.in-stories { margin-top: 4px; }
 .unlock-note { margin: 0; font-size: 13.5px; line-height: 1.5; color: rgba(233, 194, 124, 0.8); }
 .unlock-cta {
   display: inline-flex;

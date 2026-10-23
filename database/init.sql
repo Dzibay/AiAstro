@@ -240,6 +240,14 @@ ALTER TABLE payments ADD COLUMN IF NOT EXISTS ref_id BIGINT REFERENCES ref_links
 UPDATE payments p SET ref_id = u.ref_id FROM users u WHERE p.user_id = u.id AND p.ref_id IS NULL AND u.ref_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS payments_ref_idx ON payments (ref_id) WHERE ref_id IS NOT NULL;
 
+-- Отметки чек-листа дня: какие задачи прогноза человек выполнил в этот день.
+CREATE TABLE IF NOT EXISTS day_tasks (
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    day DATE NOT NULL,
+    done TEXT[] NOT NULL DEFAULT '{}',
+    PRIMARY KEY (user_id, day)
+);
+
 INSERT INTO app_settings (key, value) VALUES
     ('site_name', 'Астра'),
     ('tagline', 'Натальная карта обычным языком'),

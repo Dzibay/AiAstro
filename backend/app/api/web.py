@@ -9,7 +9,7 @@ from app.accounts import (
     set_mail_notes, set_name, set_password,
 )
 from app.api.deps import as_http, optional_web_user, require_web_user
-from app.charts import chart_item, chart_of, forecast_of, month_of, portrait_of
+from app.charts import chart_item, chart_of, forecast_of, mark_task, month_of, portrait_of
 from app.chat import LENGTH, ask, history
 from app.errors import DomainError
 from app.mailer import mail_on
@@ -117,6 +117,12 @@ class MailNotesIn(BaseModel):
 
 class MarksIn(BaseModel):
     marks: list[str] = Field(min_length=1, max_length=10)
+
+
+class TaskIn(BaseModel):
+    day: dt.date
+    key: str = Field(max_length=40)
+    done: bool
 
 
 @router.post("/register")
@@ -286,6 +292,17 @@ def my_forecast(
     """Transits of the day or the week over the natal chart; the full text only with «Небосвод»."""
     try:
         return forecast_of(user_id, period, tz)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.post("/me/forecast/tasks")
+def tick_task(body: TaskIn, user_id: int = Depends(require_web_user)) -> dict:
+    """A task of the day's checklist done or undone; kept in the account for that day."""
+    try:
+        if not get_user(user_id)["sky"]:
+            raise DomainError("sky", 403)
+        return mark_task(user_id, body.day, body.key, body.done)
     except DomainError as exc:
         raise as_http(exc) from exc
 

@@ -6,6 +6,7 @@ of the calculation simply miss the cache, and the stale rows are never read agai
 
 import hashlib
 import json
+import re
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
@@ -129,12 +130,58 @@ def forecast_of(user_id: int, period: str, tz: str | None = None) -> dict:
         data["spheres"], data["retro"], data["events"], data["best"],
     ]
     reading = cached("forecast", inputs, lambda: interpreter.forecast(data))
+    tasks = reading.get("tasks")
+    reading = {key: value for key, value in reading.items() if key != "tasks"}
+    if tasks and user["sky"]:
+        done = set(_done(user_id, today))
+        tasks = [{**task, "done": task["key"] in done} for task in tasks]
     return {
         **data,
         "title": forecast_title(data),
-        "reading": reading if user["sky"] else {**reading, "parts": reading["parts"][:1]},
+        # Without «Небосвод» the other screens are only named, so the reader sees what is behind the haze.
+        "reading": reading if user["sky"] else {
+            **reading, "parts": reading["parts"][:1],
+            "outline": [part.get("title") or part["label"] for part in reading["parts"][1:]],
+        },
+        # The day's checklist comes with the text, so with «Небосвод».
+        "tasks": tasks if user["sky"] else None,
         "locked": not user["sky"],
     }
+
+
+# ---- The day's checklist ----
+
+TASK_KEY = re.compile(r"(t:[a-z]+:(easy|hard)|m:[a-z_]+|q:\d)")
+MAX_DONE = 10
+
+
+def _done(user_id: int, day: date) -> list[str]:
+    with pool.connection() as conn:
+        row = conn.execute("SELECT done FROM day_tasks WHERE user_id = %s AND day = %s", (user_id, day)).fetchone()
+    return row["done"] if row else []
+
+
+def mark_task(user_id: int, day: date, key: str, done: bool) -> dict:
+    """A task of the day ticked or unticked. Only around today: yesterday's list is closed, tomorrow's not yet there."""
+    if not TASK_KEY.fullmatch(key):
+        raise DomainError("task")
+    if abs((day - datetime.now(ZoneInfo("UTC")).date()).days) > 1:
+        raise DomainError("day")
+    with pool.connection() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO day_tasks (user_id, day, done)
+            VALUES (%(user)s, %(day)s, CASE WHEN %(done)s THEN ARRAY[%(key)s]::text[] ELSE '{}'::text[] END)
+            ON CONFLICT (user_id, day) DO UPDATE SET done = CASE
+                WHEN NOT %(done)s THEN array_remove(day_tasks.done, %(key)s)
+                WHEN %(key)s = ANY(day_tasks.done) OR cardinality(day_tasks.done) >= %(max)s THEN day_tasks.done
+                ELSE day_tasks.done || %(key)s::text
+            END
+            RETURNING done
+            """,
+            {"user": user_id, "day": day, "done": done, "key": key, "max": MAX_DONE},
+        ).fetchone()
+    return {"day": day.isoformat(), "done": row["done"]}
 
 
 # Without «Небосвод» the calendar shows the days the week forecast already shows; the rest stay veiled.

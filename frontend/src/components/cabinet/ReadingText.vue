@@ -1,9 +1,10 @@
 <script setup>
 /**
- * A reading as the server writes it: { essence, parts: [{ label, text }] }, set as a page of a
- * folio. The essence is a centred italic line in guillemets; the parts are paragraphs,
- * each opening with its label run in small caps, the first one with a gold drop cap. A part
- * without a label (an old answer in the chat) is a plain paragraph.
+ * A reading as the server writes it: { essence, parts: [{ label, text, items?, todo? }] }, set as
+ * a page of a folio. The essence is a centred italic line in guillemets; the parts are paragraphs,
+ * each opening with its label run in small caps, the first one with a gold drop cap, followed by
+ * its items as short lines and its «Что делать». A part without a label (an old answer in the
+ * chat) is a plain paragraph. The forecasts and the pair are read as screens (ReadingStories).
  */
 defineProps({
   reading: { type: Object, required: true },
@@ -19,9 +20,15 @@ const runIn = (label) => (/[.!?…:]$/.test(label) ? label : `${label}.`)
   <div class="reading-text" :class="{ 'is-compact': compact }">
     <p v-if="reading.essence" class="essence">«{{ reading.essence.replace(/[.…]+$/, '') }}»</p>
     <div v-if="reading.parts.length" class="parts">
-      <p v-for="(part, index) in reading.parts" :key="index" class="part">
-        <template v-if="part.label"><span class="label">{{ runIn(part.label) }}</span>{{ ' ' }}</template>{{ part.text }}
-      </p>
+      <template v-for="(part, index) in reading.parts" :key="index">
+        <p class="part">
+          <template v-if="part.label"><span class="label">{{ runIn(part.label) }}</span>{{ ' ' }}</template>{{ part.text }}
+        </p>
+        <ul v-if="part.items?.length" class="items">
+          <li v-for="(item, line) in part.items" :key="line"><b v-if="item.name">{{ item.name }}.</b> {{ item.text }}</li>
+        </ul>
+        <p v-if="part.todo" class="todo"><span class="todo-label">✦ Что делать:</span> {{ part.todo }}</p>
+      </template>
     </div>
   </div>
 </template>
@@ -58,6 +65,10 @@ const runIn = (label) => (/[.!?…:]$/.test(label) ? label : `${label}.`)
   color: #f0cd8a;
 }
 .label { font-family: var(--caps); font-weight: 600; font-size: 1.1em; letter-spacing: 0.06em; color: #f0cd8a; }
+.items { display: grid; gap: 4px; margin: 6px 0 4px; padding-left: 1.2em; font-family: var(--book); font-size: 14.5px; line-height: 1.6; color: rgba(239, 231, 216, 0.9); }
+.items b { font-weight: 600; color: #f3dcae; }
+.todo { margin: 6px 0 10px; font-family: var(--serif); font-style: italic; font-size: 16px; line-height: 1.5; color: #f8ead0; }
+.todo-label { font-family: var(--caps); font-style: normal; font-weight: 600; letter-spacing: 0.06em; color: #f0cd8a; }
 
 .is-compact { gap: 10px; }
 .is-compact .essence { font-size: 18px; }
