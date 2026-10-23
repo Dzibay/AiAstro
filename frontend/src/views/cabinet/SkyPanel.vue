@@ -73,7 +73,9 @@ function toggle(id) {
 
 const { busy, message, start } = usePayment()
 function pay() {
-  if (chosen.value?.price && payOn.value) start({ product: plan.value })
+  if (chosen.value?.price && payOn.value) {
+    start({ product: plan.value }, { sky: props.user.sky, skyUntil: props.user.sky_until })
+  }
 }
 
 onUnmounted(() => {

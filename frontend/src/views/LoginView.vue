@@ -10,6 +10,7 @@ import { useSiteConfig } from '../composables/useSiteConfig.js'
 import { useSky } from '../composables/useSky.js'
 import { useHead } from '../utils/useHead.js'
 import { birthSigns, skyOn } from '../utils/skyToday.js'
+import { reachGoal } from '../utils/track.js'
 
 /**
  * Login lies on the same sky as the home page, in its own pose (router meta.sky: 'login').
@@ -126,7 +127,7 @@ function toSky() {
   step.value = 2
 }
 
-async function enter(request) {
+async function enter(request, { registered = false } = {}) {
   message.value = ''
   pending.value = true
   try {
@@ -137,6 +138,7 @@ async function enter(request) {
     } catch {
       /* private mode */
     }
+    if (registered) reachGoal('astra.registration@success')
     const next = typeof route.query.next === 'string' ? route.query.next : '/cabinet'
     const target = next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/login')
       ? next
@@ -171,7 +173,7 @@ function finish(withBirth) {
     body.birth = { date: birth.date, time: timeKnown.value ? birth.time : null, place: birth.city.trim() || null }
     if (birth.place) Object.assign(body.birth, { lat: birth.place.lat, lon: birth.place.lon })
   }
-  enter(() => webApi.register(body))
+  enter(() => webApi.register(body), { registered: true })
 }
 
 /** The same answer whether the mail is known or not: the form does not tell whose it is. */

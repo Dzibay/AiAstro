@@ -15,6 +15,7 @@ import { useSky } from '../composables/useSky.js'
 import { useChart } from '../composables/useChart.js'
 import { useForecast } from '../composables/useForecast.js'
 import { linkPendingInvite, pendingInvite, usePartners } from '../composables/usePartners.js'
+import { settlePendingPayment } from '../composables/usePayment.js'
 import { useChat } from '../composables/useChat.js'
 import { useHead } from '../utils/useHead.js'
 import { startTour, stopTour, tour, tourSeen } from '../utils/tour.js'
@@ -114,6 +115,18 @@ onMounted(async () => {
     user.value = await webApi.me()
     markUser(user.value)
     if (pendingInvite()) await joinPending()
+    // Back from ЮKassa: wait for the notification, refresh the cabinet, fire the Metrika goal once.
+    settlePendingPayment(async (pending) => {
+      const me = await webApi.me()
+      user.value = me
+      markUser(me)
+      let partnerBought = false
+      if (pending.product === 'synastry' && pending.partner) {
+        await loadPartners(true)
+        partnerBought = Boolean(partners.value.find((item) => item.id === pending.partner)?.bought)
+      }
+      return { sky: me.sky, skyUntil: me.sky_until, partnerBought }
+    }).catch(() => {})
   } catch (error) {
     if (error instanceof ApiError && (error.status === 401 || error.code === 'blocked')) {
       clearSession('web')

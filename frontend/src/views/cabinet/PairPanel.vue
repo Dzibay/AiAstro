@@ -65,7 +65,12 @@ onMounted(() => load())
 const { busy: paying, message: payMessage, start } = usePayment()
 const priceSet = computed(() => Boolean(prices.value[props.user.sky ? 'synastry_sky' : 'synastry']))
 function buy() {
-  if (partner.value && payOn.value && priceSet.value) start({ product: 'synastry', partner: partner.value.id })
+  if (partner.value && payOn.value && priceSet.value) {
+    start(
+      { product: 'synastry', partner: partner.value.id },
+      { partnerBought: partner.value.bought },
+    )
+  }
 }
 watch(partner, (value) => {
   if (value?.birth) synastry(value.id)

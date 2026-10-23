@@ -42,6 +42,16 @@ export function track(kind, name, extra = {}) {
   }).catch(() => {})
 }
 
+/** A Yandex.Metrika goal already created in the counter (id 113754457). */
+export function reachGoal(name) {
+  if (!name || typeof window.ym !== 'function') return
+  try {
+    window.ym(113754457, 'reachGoal', name)
+  } catch {
+    /* counter blocked or not ready */
+  }
+}
+
 /** A page's name for the figures: the route's, the legal page with its own name. */
 function pageName(to) {
   if (to.name === 'legal' && typeof to.params.page === 'string') return `legal:${to.params.page}`
