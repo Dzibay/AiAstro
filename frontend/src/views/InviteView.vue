@@ -113,17 +113,23 @@ async function join() {
   message.value = ''
   signup.pending = true
   try {
+    let confirmed = true
     if (!webToken.value) {
       const opened = await webApi.register({
         email: signup.email.trim(),
         password: signup.password,
         name: invitation.value.name,
         consent: true,
+        next: '/cabinet/pair',
       })
       writeSession('web', opened.token)
+      confirmed = opened.user.email_confirmed !== false
     }
     const joined = await linkPendingInvite()
-    router.push({ path: '/cabinet/pair', query: { partner: joined?.partner, joined: 1 } })
+    const pair = { path: '/cabinet/pair', query: { partner: joined?.partner, joined: 1 } }
+    // The pair is joined already; the cabinet opens with it once the email is confirmed.
+    if (confirmed) router.push(pair)
+    else router.push({ name: 'login', query: { mode: 'confirm', next: router.resolve(pair).fullPath } })
   } catch (error) {
     message.value = error instanceof ApiError && error.code === 'exists'
       ? 'Эта почта уже открывала кабинет — войдите, и пара присоединится к нему'

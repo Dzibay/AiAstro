@@ -48,6 +48,23 @@ CREATE TABLE IF NOT EXISTS password_resets (
 
 CREATE INDEX IF NOT EXISTS password_resets_user_idx ON password_resets (user_id, created_at);
 
+-- Подтверждённая почта: кабинет открывается после перехода по ссылке из письма. Кабинеты, заведённые
+-- до подтверждения почты, засчитываются подтверждёнными в день регистрации (разово, когда столбец появляется).
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'email_confirmed_at') THEN ALTER TABLE users ADD COLUMN email_confirmed_at TIMESTAMPTZ; UPDATE users SET email_confirmed_at = created_at; END IF; END $$;
+
+-- Ссылки подтверждения почты. Хранится только хеш. email — подтверждаемый адрес: при смене почты в профиле
+-- он новый и встаёт в кабинет только после перехода. next — страница кабинета, куда вести после подтверждения.
+CREATE TABLE IF NOT EXISTS email_confirms (
+    token_hash TEXT PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    next TEXT NOT NULL DEFAULT '',
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS email_confirms_user_idx ON email_confirms (user_id, created_at);
+
 -- Посчитанные натальные карты. Ключ — хеш данных рождения и версии расчёта: исправленные
 -- данные или новая версия просто не находят старую строку, её можно удалить в любой момент.
 CREATE TABLE IF NOT EXISTS charts (
@@ -216,7 +233,7 @@ CREATE INDEX IF NOT EXISTS visitors_ref_idx ON visitors (ref_id);
 CREATE INDEX IF NOT EXISTS visitors_user_idx ON visitors (user_id);
 
 -- События для статистики: visit (начало визита), view (страница — имя маршрута), ref (переход по
--- реферальной ссылке), signup, birth (дата рождения сохранена впервые), tour (name — тур и исход:
+-- реферальной ссылке), signup, confirm (почта подтверждена по ссылке), birth (дата рождения сохранена впервые), tour (name — тур и исход:
 -- section-chart:done, intro:skip; value — шаг), goal (цель лендинга), click (кнопка с data-track),
 -- scroll (name — страница, value — глубина 25/50/75/100), time (name — страница, value — секунды
 -- внимания), act (действие: game:play, game:land; value — шаг или секунды), offer (показ предложения

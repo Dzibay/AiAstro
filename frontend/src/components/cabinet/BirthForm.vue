@@ -296,12 +296,21 @@ async function save() {
 .swap-leave-to { opacity: 0; transform: translateY(-6px); }
 
 @media (max-width: 760px) {
-  .form-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+  .form-row { gap: 10px; }
+  /* Phones draw date and time fields by their own rules, wider than the card: they keep to its width. */
+  .field input[type='date'],
+  .field input[type='time'] { display: block; width: 100%; -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; text-align: left; }
+  .field input::-webkit-date-and-time-value { text-align: left; }
   .field > input, .field-head + input { font-size: 16px; }
   .check { padding-block: 8px; margin-block: -8px; }
   .field-head { gap: 6px; }
   .field-head .check { gap: 7px; white-space: nowrap; }
   .field-head .field-label { letter-spacing: 0.18em; }
   .quiet { min-height: 40px; }
+}
+
+/* Narrow phones: the date above the time, each the full width of the card. */
+@media (max-width: 560px) {
+  .form-row { grid-template-columns: minmax(0, 1fr); }
 }
 </style>

@@ -9,6 +9,7 @@ const FILTERS = [
   { id: 'sky', label: 'С «Небосводом»' },
   { id: 'paid', label: 'Платили' },
   { id: 'nobirth', label: 'Без даты рождения' },
+  { id: 'unconfirmed', label: 'Почта не подтверждена' },
 ]
 
 const route = useRoute()

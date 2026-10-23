@@ -9,6 +9,7 @@ from psycopg.errors import UniqueViolation
 from app.config import settings
 from app.db import pool
 from app.errors import DomainError
+from app.mailer import mail_on
 from app.places import timezone_at
 from app.security import hash_password, verify_password
 from app.track import server_event
@@ -16,7 +17,7 @@ from app.track import server_event
 _DUMMY_HASH = hash_password("not-a-real-password")
 _EARLIEST_BIRTH = date(1900, 1, 1)
 _USER_COLUMNS = (
-    "id, email, name, blocked, created_at, birth_date, birth_time, birth_place, birth_lat, birth_lon, birth_tz, sky_until, mail_notes, birth_edits, marks"
+    "id, email, name, blocked, created_at, birth_date, birth_time, birth_place, birth_lat, birth_lon, birth_tz, sky_until, mail_notes, birth_edits, marks, email_confirmed_at"
 )
 
 
@@ -68,6 +69,8 @@ def _public(row: dict) -> dict:
     return {
         "id": row["id"],
         "email": row["email"],
+        # The cabinet opens once the email is confirmed by the link in the letter (asked only while the site can write).
+        "email_confirmed": row["email_confirmed_at"] is not None or not mail_on(),
         "name": row["name"],
         "created_at": row["created_at"],
         "birth": birth,
@@ -118,18 +121,20 @@ def register(
     else:
         birth = (None, None, "", None, None, "")
     display = " ".join(name.split())[:80] or cleaned.split("@", 1)[0][:80]
+    # Without the site's mail no letter could confirm anything: the cabinet opens at once.
+    confirmed = None if mail_on() else datetime.now(timezone.utc)
     try:
         with pool.connection() as conn:
             row = conn.execute(
                 f"""
                 INSERT INTO users (
                     email, password_hash, name,
-                    birth_date, birth_time, birth_place, birth_lat, birth_lon, birth_tz, consent_at
+                    birth_date, birth_time, birth_place, birth_lat, birth_lon, birth_tz, consent_at, email_confirmed_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s)
                 RETURNING {_USER_COLUMNS}
                 """,
-                (cleaned, hash_password(password), display, *birth),
+                (cleaned, hash_password(password), display, *birth, confirmed),
             ).fetchone()
     except UniqueViolation as exc:
         raise DomainError("exists", 409) from exc
@@ -160,6 +165,20 @@ def authenticate(email: str, password: str) -> dict:
     if row["blocked"]:
         raise DomainError("blocked", 403)
     return _public(row)
+
+
+def is_member(user_id: int) -> bool:
+    """Whether the cabinet is open to this session: the account is there and its email confirmed."""
+    with pool.connection() as conn:
+        row = conn.execute(
+            "SELECT blocked, email_confirmed_at IS NOT NULL AS confirmed FROM users WHERE id = %s", (user_id,)
+        ).fetchone()
+    if row is None:
+        raise DomainError("unauthorized", 401)
+    if row["blocked"]:
+        raise DomainError("blocked", 403)
+    # Without the site's mail no letter can come: the confirmation is not asked then.
+    return row["confirmed"] or not mail_on()
 
 
 def get_user(user_id: int) -> dict:
@@ -251,17 +270,20 @@ def set_name(user_id: int, name: str) -> dict:
 
 
 def set_email(user_id: int, email: str, password: str) -> dict:
+    """A new email for signing in: the letter goes to it, and it takes the old one's place once confirmed.
+
+    Gives what notes.confirm_letter needs: {email, name, token, change}.
+    """
     cleaned = _clean_email(email)
-    _checked(user_id, password)
-    try:
-        with pool.connection() as conn:
-            row = conn.execute(
-                f"UPDATE users SET email = %s WHERE id = %s RETURNING {_USER_COLUMNS}",
-                (cleaned, user_id),
-            ).fetchone()
-    except UniqueViolation as exc:
-        raise DomainError("exists", 409) from exc
-    return _public(row)
+    row = _checked(user_id, password)
+    if cleaned == row["email"]:
+        raise DomainError("same_email")
+    with pool.connection() as conn:
+        taken = conn.execute("SELECT 1 FROM users WHERE email = %s AND id <> %s", (cleaned, user_id)).fetchone()
+        if taken:
+            raise DomainError("exists", 409)
+        token = _confirm_link(conn, user_id, cleaned)
+    return {"email": cleaned, "name": row["name"], "token": token, "change": True}
 
 
 def set_password(user_id: int, current: str, password: str) -> None:
@@ -356,14 +378,127 @@ def reset_password(token: str, password: str) -> dict:
         ).fetchone()
         if found is None or found["expires_at"] < datetime.now(timezone.utc):
             raise DomainError("reset")
+        first = conn.execute(
+            "SELECT email_confirmed_at IS NULL AS first FROM users WHERE id = %s", (found["user_id"],)
+        ).fetchone()
+        # The link came by the letter, so the email is the person's: it counts as confirmed.
         row = conn.execute(
-            f"UPDATE users SET password_hash = %s WHERE id = %s AND NOT blocked RETURNING {_USER_COLUMNS}",
+            f"""
+            UPDATE users SET password_hash = %s, email_confirmed_at = COALESCE(email_confirmed_at, now())
+            WHERE id = %s AND NOT blocked RETURNING {_USER_COLUMNS}
+            """,
             (hash_password(password), found["user_id"]),
         ).fetchone()
         if row is None:
             raise DomainError("reset")
         conn.execute("DELETE FROM password_resets WHERE user_id = %s", (found["user_id"],))
+    if first and first["first"]:
+        server_event(row["id"], "confirm")
     return _public(row)
+
+
+# ---- The confirmed email ----
+
+CONFIRM_HOURS = 72
+# One letter to an address a minute: the «send again» button cannot flood someone's mail.
+CONFIRM_PAUSE_SECONDS = 60
+# After the confirmation the person lands on this page of the cabinet, and on no other site.
+_NEXT = re.compile(r"^/cabinet(?:[/?][\w/?=&%.-]{0,120})?$")
+
+
+def _clean_next(page: str | None) -> str:
+    return page if page and _NEXT.match(page) and "//" not in page else ""
+
+
+def _confirm_link(conn, user_id: int, email: str, page: str = "") -> str:
+    """A new link for the letter; a pause stands between two letters to one address."""
+    recent = conn.execute(
+        """
+        SELECT 1 FROM email_confirms
+        WHERE user_id = %s AND email = %s AND created_at > now() - make_interval(secs => %s)
+        """,
+        (user_id, email, CONFIRM_PAUSE_SECONDS),
+    ).fetchone()
+    if recent:
+        raise DomainError("confirm_wait", 429)
+    token = secrets.token_urlsafe(32)
+    conn.execute("DELETE FROM email_confirms WHERE user_id = %s AND expires_at < now()", (user_id,))
+    conn.execute(
+        """
+        INSERT INTO email_confirms (token_hash, user_id, email, next, expires_at)
+        VALUES (%s, %s, %s, %s, now() + make_interval(hours => %s))
+        """,
+        (_reset_hash(token), user_id, email, _clean_next(page), CONFIRM_HOURS),
+    )
+    return token
+
+
+def confirm_request(user_id: int, page: str = "", email: str | None = None) -> dict | None:
+    """The letter for an account still waiting for its confirmation: {email, name, token, change}.
+
+    `email` corrects the address first (a slip in it, noticed on the «letter is flying» screen): the
+    account is not open yet, so no password is asked. None when the email is already confirmed.
+    """
+    cleaned = _clean_email(email) if email is not None else None
+    try:
+        with pool.connection() as conn:
+            row = conn.execute(
+                "SELECT email, name, blocked, email_confirmed_at FROM users WHERE id = %s", (user_id,)
+            ).fetchone()
+            if row is None or row["blocked"]:
+                raise DomainError("unauthorized", 401)
+            if row["email_confirmed_at"] is not None:
+                return None
+            if cleaned and cleaned != row["email"]:
+                conn.execute("UPDATE users SET email = %s WHERE id = %s", (cleaned, user_id))
+                # The links sent to the old address would bring it back.
+                conn.execute("DELETE FROM email_confirms WHERE user_id = %s", (user_id,))
+                conn.execute("DELETE FROM password_resets WHERE user_id = %s", (user_id,))
+            address = cleaned or row["email"]
+            token = _confirm_link(conn, user_id, address, page)
+    except UniqueViolation as exc:
+        raise DomainError("exists", 409) from exc
+    return {"email": address, "name": row["name"], "token": token, "change": False}
+
+
+def confirm_email(token: str) -> dict:
+    """The letter's link: the address is the person's. Gives {user, next}; the link is spent.
+
+    For a new address from the profile, it takes the old one's place here.
+    """
+    if not token or len(token) > 100:
+        raise DomainError("confirm_link")
+    _require_web_secret()
+    try:
+        with pool.connection() as conn:
+            found = conn.execute(
+                "DELETE FROM email_confirms WHERE token_hash = %s RETURNING user_id, email, next, expires_at",
+                (_reset_hash(token),),
+            ).fetchone()
+            if found is None or found["expires_at"] < datetime.now(timezone.utc):
+                raise DomainError("confirm_link")
+            before = conn.execute(
+                "SELECT email, email_confirmed_at FROM users WHERE id = %s AND NOT blocked", (found["user_id"],)
+            ).fetchone()
+            if before is None:
+                raise DomainError("confirm_link")
+            row = conn.execute(
+                f"""
+                UPDATE users SET email = %s, email_confirmed_at = COALESCE(email_confirmed_at, now())
+                WHERE id = %s RETURNING {_USER_COLUMNS}
+                """,
+                (found["email"], found["user_id"]),
+            ).fetchone()
+            # The links to any other address are void now: none of them may take the email back.
+            conn.execute("DELETE FROM email_confirms WHERE user_id = %s AND email <> %s", (row["id"], found["email"]))
+            if before["email"] != found["email"]:
+                conn.execute("DELETE FROM password_resets WHERE user_id = %s", (row["id"],))
+    except UniqueViolation as exc:
+        # Someone else has signed up with this address since the letter left.
+        raise DomainError("exists", 409) from exc
+    if before["email_confirmed_at"] is None:
+        server_event(row["id"], "confirm")
+    return {"user": _public(row), "next": found["next"] or "/cabinet"}
 
 
 def delete_account(user_id: int, password: str) -> list[dict]:
@@ -423,6 +558,7 @@ USER_FILTERS = {
     "": "TRUE",
     "sky": "u.sky_until > now()",
     "nobirth": "u.birth_date IS NULL",
+    "unconfirmed": "u.email_confirmed_at IS NULL",
     "paid": "EXISTS (SELECT 1 FROM payments pa WHERE pa.user_id = u.id AND pa.status = 'succeeded')",
 }
 
@@ -442,6 +578,7 @@ def _operator_view(row: dict) -> dict:
         "paid": row.get("paid", 0),
         # The latest page of this account, or of a browser already tied to it.
         "last_seen": seen.isoformat() if seen else None,
+        "email_confirmed_at": row["email_confirmed_at"].isoformat() if row["email_confirmed_at"] else None,
     }
 
 
@@ -554,6 +691,18 @@ def user_activity(user_id: int, month: str = "") -> dict:
         item["last_at"] = item["last_at"].isoformat()
         out.append(item)
     return {"month": start.strftime("%Y-%m"), "days": out}
+
+
+def operator_confirm(user_id: int) -> dict:
+    """The support confirms the email by hand: the letter went astray, the person wrote from this address."""
+    with pool.connection() as conn:
+        row = conn.execute(
+            "UPDATE users SET email_confirmed_at = now() WHERE id = %s AND email_confirmed_at IS NULL RETURNING id",
+            (user_id,),
+        ).fetchone()
+    if row is not None:
+        server_event(user_id, "confirm")
+    return operator_user(user_id)
 
 
 def set_sky(user_id: int, days: int) -> dict:

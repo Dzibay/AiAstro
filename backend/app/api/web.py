@@ -5,10 +5,10 @@ from pydantic import BaseModel, Field
 
 from app import notes
 from app.accounts import (
-    add_marks, authenticate, delete_account, get_user, register, request_reset, reset_password, set_birth, set_email,
-    set_mail_notes, set_name, set_password,
+    CONFIRM_PAUSE_SECONDS, add_marks, authenticate, confirm_email, confirm_request, delete_account, get_user, register,
+    request_reset, reset_password, set_birth, set_email, set_mail_notes, set_name, set_password,
 )
-from app.api.deps import as_http, optional_web_user, require_web_user
+from app.api.deps import as_http, optional_web_user, require_member, require_web_user
 from app.charts import chart_item, chart_of, forecast_of, mark_task, month_of, portrait_of
 from app.chat import LENGTH, ask, history
 from app.errors import DomainError
@@ -41,6 +41,8 @@ class RegisterIn(BaseModel):
     birth: BirthIn | None = None
     # The browser's anonymous id: the account takes its campaign link.
     visitor: str | None = Field(default=None, max_length=40)
+    # The page of the cabinet the confirmation letter leads to.
+    next: str = Field(default="", max_length=200)
 
 
 class PartnerIn(BaseModel):
@@ -108,6 +110,17 @@ class ForgotIn(BaseModel):
     email: str = Field(max_length=254)
 
 
+class ConfirmIn(BaseModel):
+    token: str = Field(max_length=100)
+    visitor: str | None = Field(default=None, max_length=40)
+
+
+class ConfirmSendIn(BaseModel):
+    # A corrected address, when the first one had a slip in it.
+    email: str | None = Field(default=None, max_length=254)
+    next: str = Field(default="", max_length=200)
+
+
 class ResetIn(BaseModel):
     token: str = Field(max_length=100)
     password: str = Field(max_length=200)
@@ -146,7 +159,43 @@ def register_user(body: RegisterIn, background: BackgroundTasks) -> dict:
     except DomainError as exc:
         raise as_http(exc) from exc
     background.add_task(attach, user["id"], body.visitor, True)
+    if not user["email_confirmed"]:
+        background.add_task(_first_letter, user["id"], body.next)
     return {"token": token, "user": user}
+
+
+def _first_letter(user_id: int, page: str) -> None:
+    try:
+        found = confirm_request(user_id, page)
+    except DomainError:
+        return
+    if found:
+        notes.confirm_letter(found)
+
+
+@router.post("/confirm/send")
+def confirm_send(body: ConfirmSendIn, background: BackgroundTasks, user_id: int = Depends(require_web_user)) -> dict:
+    """Another confirmation letter, or the first one to a corrected address; none once the email is confirmed."""
+    try:
+        found = confirm_request(user_id, body.next, body.email)
+        user = get_user(user_id)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    if found:
+        background.add_task(notes.confirm_letter, found)
+    return {"user": user, "sent": found is not None, "pause": CONFIRM_PAUSE_SECONDS}
+
+
+@router.post("/confirm")
+def confirm(body: ConfirmIn, background: BackgroundTasks) -> dict:
+    """The letter's link: the email is confirmed, and the person is signed in on this device."""
+    try:
+        done = confirm_email(body.token)
+        token = make_web_session(done["user"]["id"])
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    background.add_task(attach, done["user"]["id"], body.visitor)
+    return {"token": token, "user": done["user"], "next": done["next"]}
 
 
 @router.post("/login")
@@ -194,7 +243,7 @@ def me(user_id: int = Depends(require_web_user)) -> dict:
 
 
 @router.put("/me/birth")
-def update_birth(body: BirthIn, user_id: int = Depends(require_web_user)) -> dict:
+def update_birth(body: BirthIn, user_id: int = Depends(require_member)) -> dict:
     try:
         user = set_birth(user_id, body.date, body.time, body.place, body.lat, body.lon)
     except DomainError as exc:
@@ -205,7 +254,7 @@ def update_birth(body: BirthIn, user_id: int = Depends(require_web_user)) -> dic
 
 
 @router.put("/me/name")
-def update_name(body: NameIn, user_id: int = Depends(require_web_user)) -> dict:
+def update_name(body: NameIn, user_id: int = Depends(require_member)) -> dict:
     try:
         return set_name(user_id, body.name)
     except DomainError as exc:
@@ -213,16 +262,20 @@ def update_name(body: NameIn, user_id: int = Depends(require_web_user)) -> dict:
 
 
 @router.put("/me/email")
-def update_email(body: EmailIn, user_id: int = Depends(require_web_user)) -> dict:
-    """A new email for signing in; the password confirms it is the person themselves."""
+def update_email(body: EmailIn, background: BackgroundTasks, user_id: int = Depends(require_member)) -> dict:
+    """A new email for signing in: the password says it is the person themselves, the letter to the new
+    address that it is theirs; it takes the old one's place once the link in the letter is opened."""
     try:
-        return set_email(user_id, body.email, body.password)
+        found = set_email(user_id, body.email, body.password)
+        user = get_user(user_id)
     except DomainError as exc:
         raise as_http(exc) from exc
+    background.add_task(notes.confirm_letter, found)
+    return {"user": user, "pending": found["email"]}
 
 
 @router.put("/me/password")
-def update_password(body: PasswordIn, user_id: int = Depends(require_web_user)) -> dict:
+def update_password(body: PasswordIn, user_id: int = Depends(require_member)) -> dict:
     try:
         set_password(user_id, body.current, body.password)
     except DomainError as exc:
@@ -231,7 +284,7 @@ def update_password(body: PasswordIn, user_id: int = Depends(require_web_user)) 
 
 
 @router.put("/me/mail")
-def update_mail_notes(body: MailNotesIn, user_id: int = Depends(require_web_user)) -> dict:
+def update_mail_notes(body: MailNotesIn, user_id: int = Depends(require_member)) -> dict:
     """The letters about «Небосвод» and the partners: on or off."""
     try:
         return set_mail_notes(user_id, body.on)
@@ -260,7 +313,7 @@ def remove_account(body: DeleteIn, background: BackgroundTasks, user_id: int = D
 
 
 @router.get("/me/chart")
-def my_chart(user_id: int = Depends(require_web_user)) -> dict:
+def my_chart(user_id: int = Depends(require_member)) -> dict:
     try:
         return chart_of(user_id)
     except DomainError as exc:
@@ -268,7 +321,7 @@ def my_chart(user_id: int = Depends(require_web_user)) -> dict:
 
 
 @router.get("/me/chart/items/{item}")
-def my_chart_item(item: str, user_id: int = Depends(require_web_user)) -> dict:
+def my_chart_item(item: str, user_id: int = Depends(require_member)) -> dict:
     """The reading of one planet or angle of the chart: «Венера в Скорпионе, в VIII доме» and its text."""
     try:
         return chart_item(user_id, item)
@@ -277,7 +330,7 @@ def my_chart_item(item: str, user_id: int = Depends(require_web_user)) -> dict:
 
 
 @router.get("/me/chart/portrait")
-def my_portrait(user_id: int = Depends(require_web_user)) -> dict:
+def my_portrait(user_id: int = Depends(require_member)) -> dict:
     """The chart read as a whole: the core, the temperament, the accents, the way; whole with «Небосвод»."""
     try:
         return portrait_of(user_id)
@@ -289,7 +342,7 @@ def my_portrait(user_id: int = Depends(require_web_user)) -> dict:
 def my_forecast(
     period: str = Query(default="day", max_length=8),
     tz: str = Query(default="", max_length=64),
-    user_id: int = Depends(require_web_user),
+    user_id: int = Depends(require_member),
 ) -> dict:
     """Transits of the day or the week over the natal chart; the full text only with «Небосвод»."""
     try:
@@ -299,7 +352,7 @@ def my_forecast(
 
 
 @router.post("/me/forecast/tasks")
-def tick_task(body: TaskIn, user_id: int = Depends(require_web_user)) -> dict:
+def tick_task(body: TaskIn, user_id: int = Depends(require_member)) -> dict:
     """A task of the day's checklist done or undone; kept in the account for that day."""
     try:
         if not get_user(user_id)["sky"]:
@@ -310,7 +363,7 @@ def tick_task(body: TaskIn, user_id: int = Depends(require_web_user)) -> dict:
 
 
 @router.get("/me/forecast/month")
-def my_month(tz: str = Query(default="", max_length=64), user_id: int = Depends(require_web_user)) -> dict:
+def my_month(tz: str = Query(default="", max_length=64), user_id: int = Depends(require_member)) -> dict:
     """The star calendar of thirty days; without «Небосвод» only its first week is open."""
     try:
         return month_of(user_id, tz)
@@ -319,7 +372,7 @@ def my_month(tz: str = Query(default="", max_length=64), user_id: int = Depends(
 
 
 @router.get("/me/partners")
-def my_partners(user_id: int = Depends(require_web_user)) -> dict:
+def my_partners(user_id: int = Depends(require_member)) -> dict:
     try:
         return {"items": list_partners(user_id)}
     except DomainError as exc:
@@ -327,7 +380,7 @@ def my_partners(user_id: int = Depends(require_web_user)) -> dict:
 
 
 @router.post("/me/partners")
-def add_partner(body: PartnerIn, user_id: int = Depends(require_web_user)) -> dict:
+def add_partner(body: PartnerIn, user_id: int = Depends(require_member)) -> dict:
     birth = body.birth
     try:
         return create_partner(
@@ -344,7 +397,7 @@ def add_partner(body: PartnerIn, user_id: int = Depends(require_web_user)) -> di
 
 
 @router.put("/me/partners/{partner_id}")
-def edit_partner(partner_id: int, body: PartnerIn, user_id: int = Depends(require_web_user)) -> dict:
+def edit_partner(partner_id: int, body: PartnerIn, user_id: int = Depends(require_member)) -> dict:
     """The name always; the birth data of a partner typed in by hand until the reading is bought."""
     birth = body.birth
     try:
@@ -363,7 +416,7 @@ def edit_partner(partner_id: int, body: PartnerIn, user_id: int = Depends(requir
 
 
 @router.delete("/me/partners/{partner_id}")
-def remove_partner(partner_id: int, background: BackgroundTasks, user_id: int = Depends(require_web_user)) -> dict:
+def remove_partner(partner_id: int, background: BackgroundTasks, user_id: int = Depends(require_member)) -> dict:
     """The person's side only: the partner's side keeps the pair and what was opened."""
     try:
         told = delete_partner(user_id, partner_id)
@@ -374,7 +427,7 @@ def remove_partner(partner_id: int, background: BackgroundTasks, user_id: int = 
 
 
 @router.post("/me/partners/{partner_id}/share")
-def share_with_partner(partner_id: int, user_id: int = Depends(require_web_user)) -> dict:
+def share_with_partner(partner_id: int, user_id: int = Depends(require_member)) -> dict:
     """The consent to show the joined partner one's own birth data."""
     try:
         return share(user_id, partner_id)
@@ -383,14 +436,14 @@ def share_with_partner(partner_id: int, user_id: int = Depends(require_web_user)
 
 
 @router.post("/me/partners/{partner_id}/seen")
-def partner_seen(partner_id: int, user_id: int = Depends(require_web_user)) -> dict:
+def partner_seen(partner_id: int, user_id: int = Depends(require_member)) -> dict:
     seen(user_id, partner_id)
     return {"ok": True}
 
 
 @router.get("/me/partners/{partner_id}/forecast")
 def partner_forecast(
-    partner_id: int, tz: str = Query(default="", max_length=64), user_id: int = Depends(require_web_user),
+    partner_id: int, tz: str = Query(default="", max_length=64), user_id: int = Depends(require_member),
 ) -> dict:
     """The pair's day under the sky: a bought pair with «Небосвод»; otherwise only what opens it."""
     try:
@@ -400,7 +453,7 @@ def partner_forecast(
 
 
 @router.post("/me/partners/{partner_id}/invite")
-def invite_partner(partner_id: int, user_id: int = Depends(require_web_user)) -> dict:
+def invite_partner(partner_id: int, user_id: int = Depends(require_member)) -> dict:
     """The partner with its invitation token: the page turns it into a link /invite/<token>."""
     try:
         return invite(user_id, partner_id)
@@ -409,7 +462,7 @@ def invite_partner(partner_id: int, user_id: int = Depends(require_web_user)) ->
 
 
 @router.get("/me/partners/{partner_id}/synastry")
-def partner_synastry(partner_id: int, user_id: int = Depends(require_web_user)) -> dict:
+def partner_synastry(partner_id: int, user_id: int = Depends(require_member)) -> dict:
     """The tone of the pair and its key aspects; the full reading once the pair is bought."""
     try:
         return synastry_of(user_id, partner_id)
@@ -418,7 +471,7 @@ def partner_synastry(partner_id: int, user_id: int = Depends(require_web_user)) 
 
 
 @router.get("/me/chat")
-def my_chat(user_id: int = Depends(require_web_user)) -> dict:
+def my_chat(user_id: int = Depends(require_member)) -> dict:
     """The conversation with the astrologer, the questions to start with and the trial left."""
     try:
         return history(user_id)
@@ -427,7 +480,7 @@ def my_chat(user_id: int = Depends(require_web_user)) -> dict:
 
 
 @router.post("/me/chat")
-def ask_astrologer(body: QuestionIn, user_id: int = Depends(require_web_user)) -> dict:
+def ask_astrologer(body: QuestionIn, user_id: int = Depends(require_member)) -> dict:
     """A question and its answer; without «Небосвод» only the trial ones (402 trial_over after them)."""
     try:
         return ask(user_id, body.text)
@@ -436,7 +489,7 @@ def ask_astrologer(body: QuestionIn, user_id: int = Depends(require_web_user)) -
 
 
 @router.post("/me/payments")
-def pay(body: PaymentIn, request: Request, user_id: int = Depends(require_web_user)) -> dict:
+def pay(body: PaymentIn, request: Request, user_id: int = Depends(require_member)) -> dict:
     """Creates the payment at ЮKassa: the page sends the person on to `url` and gets them back with `id`."""
     try:
         return create_payment(

@@ -609,7 +609,7 @@ onMounted(async () => {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
-.form-row { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; }
+.form-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 12px; }
 .field { display: grid; gap: 7px; min-width: 0; transition: opacity 0.3s ease; }
 .field-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .field-label { line-height: 16px; font-size: 10.5px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(226, 214, 192, 0.66); }
@@ -1061,6 +1061,10 @@ onMounted(async () => {
   .chart-form { padding: 18px 16px 16px; }
   .form-cta { padding-inline: 12px; }
   .form-row { gap: 10px; }
+  /* Phones draw date and time fields by their own rules, wider than the card: they keep to its width. */
+  .field input[type='date'],
+  .field input[type='time'] { display: block; width: 100%; -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; text-align: left; }
+  .field input::-webkit-date-and-time-value { text-align: left; }
   /* Too narrow for the arc: the spheres line up in a plain column. */
   .spheres-arc { display: none; }
   .sphere { height: auto; min-height: 0; margin: 0 0 14px; gap: 10px; }
@@ -1078,6 +1082,11 @@ onMounted(async () => {
   .plan.is-star { margin-top: 8px; }
   /* The phone home is calm: no planet comes back, so the finale reads under its Pisces and Aries. */
   .stop-start { align-items: flex-start; padding-top: max(34svh, 270px); }
+}
+
+/* Narrow phones: the date above the time, each the full width of the card. */
+@media (max-width: 560px) {
+  .form-row { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (prefers-reduced-motion: reduce) {

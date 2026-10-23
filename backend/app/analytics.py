@@ -3,7 +3,8 @@ how soon they get to each step and whether they come back, the tours, the source
 hold (time, scroll, buttons, the game), which offers bring the money — and the campaign links with
 everything that came by each.
 
-Days are Moscow days, as on the overview. A funnel counts the people who registered in the period
+Days are Moscow days, as on the overview. The path follows the browsers that first came in the
+period from the first page to a payment; a funnel counts the people who registered in the period
 and how far each of them has gone by now; a campaign gets its people's registrations and payments
 for good (the first link a browser came by). A deleted account takes its whole trail with it.
 """
@@ -43,6 +44,7 @@ def _clean(rows: list[dict]) -> list[dict]:
 # The steps of the funnel, for the people registered in the period: (key, SQL condition on u).
 FUNNEL = (
     ("signup", "TRUE"),
+    ("confirm", "u.email_confirmed_at IS NOT NULL"),
     ("birth", "u.birth_date IS NOT NULL"),
     ("intro", "'tour:intro' = ANY(u.marks)"),
     ("section", "EXISTS (SELECT 1 FROM events e WHERE e.user_id = u.id AND e.kind = 'view' AND e.name IN ('cabinet-chart', 'cabinet-forecast', 'cabinet-pair', 'cabinet-chat', 'cabinet-sky'))"),
@@ -74,6 +76,7 @@ def _first_paid(where: str = "TRUE") -> str:
 # When each step of the funnel first happened, for the hours from the registration to it. The date
 # of birth has its moment only since the birth events are written (older accounts have none).
 FIRST = (
+    ("confirm", "u.email_confirmed_at"),
     ("birth", _first_event("e.kind = 'birth'")),
     ("intro", _first_event("e.kind = 'tour' AND e.name IN ('intro:done', 'intro:skip')")),
     ("section", _first_event("e.kind = 'view' AND e.name IN ('cabinet-chart', 'cabinet-forecast', 'cabinet-pair', 'cabinet-chat', 'cabinet-sky')")),
@@ -447,6 +450,82 @@ def analytics(days: int) -> dict:
         "game": {"acts": {row["act"]: row for row in _clean(game_acts)}, "steps": _clean(game_steps)},
         "offers": _clean(offers),
         "sky_page": int(sky_page),
+    }
+
+
+# ---- The whole way: from the first visit to a payment ----
+
+# The first page a browser opened: the home page, the landing pages for search and ads, the rest.
+ENTRIES = {
+    "": "TRUE",
+    "home": "v.landing = 'home'",
+    "landings": "v.landing LIKE 'lp-%%'",
+    "other": "v.landing <> 'home' AND v.landing NOT LIKE 'lp-%%'",
+}
+PATH_DEVICES = {"": "TRUE", "phone": "v.device = 'phone'", "desktop": "v.device = 'desktop'"}
+# The steps in their order; each is a moment in the row of one browser (or empty if not made).
+PATH = ("reg_open", "reg_who", "signup", "confirm", "cabinet", "checkout", "paid")
+
+
+def path(days: int, entry: str = "", device: str = "") -> dict:
+    """The browsers that first came in the period (by their first page and device) and how far each
+    has gone by now: registration opened, its first step, the account, the email confirmed, the
+    cabinet entered, a payment started and made — with the median time from the first visit to each.
+
+    The registration's own steps are counted since the site writes them (reg:open, reg:who); an
+    account made before that has passed them anyway. The cabinet counts once the email is confirmed:
+    a look at it before that is only the way to the letter's screen."""
+    if days not in PERIODS or entry not in ENTRIES or device not in PATH_DEVICES:
+        raise DomainError("state")
+    p = {"days": days}
+    hours = ", ".join(
+        f"percentile_cont(0.5) WITHIN GROUP (ORDER BY GREATEST(0, extract(epoch FROM {key}_at - first_at)) / 3600)"
+        f" FILTER (WHERE {key}_at IS NOT NULL) AS h_{key}"
+        for key in PATH
+    )
+    with pool.connection() as conn:
+        row = conn.execute(
+            f"""
+            WITH c AS (
+                SELECT v.id, v.first_at, u.id AS user_id, u.created_at AS signup_at, u.email_confirmed_at AS confirm_at, u.birth_date
+                FROM visitors v
+                LEFT JOIN LATERAL (
+                    SELECT u.id, u.created_at, u.email_confirmed_at, u.birth_date FROM users u
+                    WHERE u.visitor_id = v.id ORDER BY u.created_at LIMIT 1
+                ) u ON TRUE
+                WHERE v.first_at >= {SINCE} AND {ENTRIES[entry]} AND {PATH_DEVICES[device]}
+            ),
+            f AS (
+                SELECT c.*,
+                    (SELECT min(e.created_at) FROM events e WHERE e.visitor_id = c.id AND e.kind = 'act' AND e.name = 'reg:open') AS opened,
+                    (SELECT min(e.created_at) FROM events e WHERE e.visitor_id = c.id AND e.kind = 'act' AND e.name = 'reg:who') AS named,
+                    (SELECT min(e.created_at) FROM events e
+                        WHERE e.user_id = c.user_id AND e.kind = 'view' AND e.name LIKE 'cabinet%%' AND e.created_at >= c.confirm_at) AS cabinet_at,
+                    EXISTS (SELECT 1 FROM events e WHERE e.user_id = c.user_id AND e.kind = 'view' AND e.name = 'cabinet-chart') AS chart,
+                    (SELECT min(pa.created_at) FROM payments pa WHERE pa.user_id = c.user_id) AS checkout_at,
+                    (SELECT min(pa.paid_at) FROM payments pa WHERE pa.user_id = c.user_id AND pa.status = 'succeeded') AS paid_at
+                FROM c
+            ),
+            s AS (
+                SELECT f.*, COALESCE(opened, named, signup_at) AS reg_open_at, COALESCE(named, signup_at) AS reg_who_at FROM f
+            )
+            SELECT count(*) AS visit, {", ".join(f"count({key}_at) AS {key}" for key in PATH)},
+                   count(*) FILTER (WHERE birth_date IS NOT NULL) AS birth,
+                   count(*) FILTER (WHERE cabinet_at IS NOT NULL AND chart) AS chart,
+                   {hours}
+            FROM s
+            """,
+            p,
+        ).fetchone()
+    return {
+        "days": days,
+        "entry": entry,
+        "device": device,
+        "steps": {key: int(row[key]) for key in ("visit", *PATH)},
+        # Beside the steps: the accounts with a date of birth, those in the cabinet who opened their chart.
+        "birth": int(row["birth"]),
+        "chart": int(row["chart"]),
+        "hours": {key: (None if row[f"h_{key}"] is None else round(float(row[f"h_{key}"]), 2)) for key in PATH},
     }
 
 

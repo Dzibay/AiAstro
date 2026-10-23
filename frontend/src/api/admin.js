@@ -16,7 +16,7 @@ export const adminApi = {
   stats: (days) => get(`/api/admin/stats?${query({ days })}`),
   /** The payments through ЮKassa, a page at a time, and the address for its notifications. */
   payments: ({ q = '', status = '', offset = 0, user = '' } = {}) => get(`/api/admin/payments?${query({ q, status, offset, user })}`),
-  /** state: '' | sky | nobirth | paid. */
+  /** state: '' | sky | nobirth | paid | unconfirmed. */
   users: ({ q = '', state = '', offset = 0 } = {}) => get(`/api/admin/users?${query({ q, state, offset })}`),
   user: (userId) => get(`/api/admin/users/${id(userId)}`),
   /** Days of one Moscow month (YYYY-MM) this person opened the site, and the pages of each day. */
@@ -27,6 +27,8 @@ export const adminApi = {
   deleteUser: (userId, email) => send(`/api/admin/users/${id(userId)}/delete`, 'POST', { email }),
   /** { days } extends «Небосвод» (0 closes it), { until: 'YYYY-MM-DD' } sets its last day. */
   setSky: (userId, body) => send(`/api/admin/users/${id(userId)}/sky`, 'PUT', body),
+  /** The support confirms the email by hand; the cabinet opens. */
+  confirmUser: (userId) => send(`/api/admin/users/${id(userId)}/confirm`, 'POST'),
   /** The support's correction of the birth data, past the person's own one. */
   setBirth: (userId, birth) => send(`/api/admin/users/${id(userId)}/birth`, 'PUT', birth),
   /** Every pair with both its sides; state: '' | bought | linked | waiting. */
@@ -37,6 +39,8 @@ export const adminApi = {
     send(`/api/admin/users/${id(userId)}/partners/${id(partnerId)}/purchase`, 'PUT', { bought }),
   /** Visits, the funnel and the returns, the money by offer, what the pages hold, the tours and the sources for 7, 30, 90 or 365 days. */
   analytics: (days) => get(`/api/admin/analytics?${query({ days })}`),
+  /** The way from the first visit to a payment; entry: '' | home | landings | other, device: '' | phone | desktop. */
+  path: ({ days, entry = '', device = '' }) => get(`/api/admin/analytics/path?${query({ days, entry, device })}`),
   /** The campaign links with what came by each; days 0 is all time. */
   links: (days) => get(`/api/admin/links?${query({ days })}`),
   link: (linkId, days) => get(`/api/admin/links/${id(linkId)}?${query({ days })}`),

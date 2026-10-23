@@ -1,26 +1,35 @@
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SiteHeader from '../components/SiteHeader.vue'
 import PlaceInput from '../components/ui/PlaceInput.vue'
 import { webApi } from '../api/web.js'
 import { ApiError, errorText } from '../api/http.js'
-import { writeSession } from '../composables/useSession.js'
+import { readSession, writeSession } from '../composables/useSession.js'
 import { useSiteConfig } from '../composables/useSiteConfig.js'
 import { useSky } from '../composables/useSky.js'
 import { useHead } from '../utils/useHead.js'
+import { likelyMeant, mailbox } from '../utils/mailbox.js'
 import { birthSigns, skyOn } from '../utils/skyToday.js'
-import { reachGoal } from '../utils/track.js'
+import { queue, reachGoal } from '../utils/track.js'
 
 /**
  * Login lies on the same sky as the home page, in its own pose (router meta.sky: 'login').
  * Registration takes two steps: who you are, then your sky. The sky answers both: a star for
  * the name, the engraving of the Sun sign for the birth date (see NameMark.vue).
+ *
+ * The cabinet opens once the email is confirmed: after the sign-up the card shows the letter
+ * flying off, the button to the person's mailbox, and waits; the link in the letter (`?confirm=`)
+ * or this very page, once it sees the confirmation, leads on to the cabinet.
  */
 
 /** The home page form leaves the birth data here for the second step. */
 const BIRTH_KEY = 'astra-birth'
+/** The cabinet page the confirmation leads to, for the link opened on this device in another tab. */
+const NEXT_KEY = 'astra-confirm-next'
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+/** The confirmation screen asks the server this often whether the link has been opened. */
+const WATCH_MS = 4000
 
 const route = useRoute()
 const router = useRouter()
@@ -29,8 +38,14 @@ const { mark, markUser, clearMark } = useSky()
 
 /** The letter's link brings `?reset=<token>`: the card asks for the new password straight away. */
 const resetToken = typeof route.query.reset === 'string' ? route.query.reset : ''
-/** login | register | forgot (the email for the link) | reset (the new password by the link). */
-const mode = ref(resetToken ? 'reset' : route.query.mode === 'register' ? 'register' : 'login')
+/** The confirmation letter's link brings `?confirm=<token>`: the email is confirmed on arrival. */
+const confirmToken = typeof route.query.confirm === 'string' ? route.query.confirm : ''
+const QUERY_MODES = ['register', 'confirm']
+/**
+ * login | register | forgot (the email for the link) | reset (the new password by the link)
+ * | confirm (the letter is on its way) | confirming (the letter's link is being opened).
+ */
+const mode = ref(resetToken ? 'reset' : confirmToken ? 'confirming' : QUERY_MODES.includes(route.query.mode) ? route.query.mode : 'login')
 const step = ref(1)
 const email = ref('')
 const password = ref('')
@@ -46,11 +61,29 @@ const note = ref('')
 /** Set once the sky is entered: the card dissolves and the star stays for the cabinet. */
 const leaving = ref(false)
 
+/**
+ * The confirmation screen: the address the letter went to, the seconds before another one may
+ * leave, the flight's number (a new letter flies off again), the address being corrected.
+ */
+const letter = reactive({ email: '', wait: 0, flight: 0, editing: false, value: '' })
+
 const registering = computed(() => mode.value === 'register')
 const onSky = computed(() => registering.value && step.value === 2)
 const forgot = computed(() => mode.value === 'forgot')
 const resetting = computed(() => mode.value === 'reset')
+const confirming = computed(() => mode.value === 'confirm' || mode.value === 'confirming')
 const headKey = computed(() => (registering.value ? `step-${step.value}` : mode.value))
+
+/** Where the cabinet opens: the page asked for, never another site or the login itself. */
+const target = computed(() => {
+  const next = typeof route.query.next === 'string' ? route.query.next : '/cabinet'
+  return next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/login') ? next : '/cabinet'
+})
+
+/** The person's mail service ({ label, url }) and a likely slip in the address. */
+const box = computed(() => mailbox(letter.email))
+const slip = computed(() => likelyMeant(letter.email))
+const waitText = computed(() => `${Math.floor(letter.wait / 60)}:${String(letter.wait % 60).padStart(2, '0')}`)
 
 const sky = skyOn(new Date())
 const today = `Сегодня Луна ${sky.moon.in}, ${sky.phase}`
@@ -84,16 +117,28 @@ function settleStar() {
   mark.flash += 1
 }
 
-const TITLES = { register: 'Регистрация', forgot: 'Новый пароль', reset: 'Новый пароль' }
+const TITLES = {
+  register: 'Регистрация',
+  forgot: 'Новый пароль',
+  reset: 'Новый пароль',
+  confirm: 'Подтверждение почты',
+  confirming: 'Подтверждение почты',
+}
+// Sync, so a note set right after the switch of the mode stays.
 watch(mode, (value) => {
   message.value = ''
   note.value = ''
   step.value = 1
+  letter.editing = false
   useHead({ title: TITLES[value] || 'Вход', noindex: true })
-}, { immediate: true })
+}, { immediate: true, flush: 'sync' })
 watch(step, () => { message.value = '' })
 // The header leads here as well, to the login side.
-watch(() => route.query.mode, (value) => { mode.value = value === 'register' ? 'register' : 'login' })
+watch(() => route.query.mode, (value) => {
+  if (!confirmToken || value) mode.value = QUERY_MODES.includes(value) ? value : 'login'
+})
+// The steps of the sign-up, for the path from the first visit to the cabinet.
+watch(registering, (on) => { if (on) queue('act', 'reg:open') }, { immediate: true })
 
 /** The API's codes in the voice of the page; the rest falls back to the common texts. */
 function say(error) {
@@ -125,6 +170,17 @@ function toSky() {
   if (message.value) return
   settleStar()
   step.value = 2
+  queue('act', 'reg:who')
+}
+
+/** The card dissolves first, then the sky flies on to the cabinet with the person's star. */
+async function fly(user, to) {
+  leaving.value = true
+  markUser(user)
+  mark.flash += 1
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  await new Promise((resolve) => setTimeout(resolve, reduce ? 0 : 320))
+  router.push(to)
 }
 
 async function enter(request, { registered = false } = {}) {
@@ -140,20 +196,212 @@ async function enter(request, { registered = false } = {}) {
     }
     if (registered) reachGoal('astra.registration@success')
     if (registered && result.user?.birth) reachGoal('astra.birth@save')
-    const next = typeof route.query.next === 'string' ? route.query.next : '/cabinet'
-    const target = next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/login')
-      ? next
-      : '/cabinet'
-    // The card dissolves first, then the sky flies on to the cabinet with the person's star.
-    leaving.value = true
-    markUser(result.user)
-    mark.flash += 1
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    await new Promise((resolve) => setTimeout(resolve, reduce ? 0 : 320))
-    router.push(target)
+    // The email waits for its letter: the sign-up has just sent one, a login asks for a fresh one.
+    if (result.user?.email_confirmed === false) openConfirm(result.user, { sent: registered })
+    else await fly(result.user, target.value)
   } catch (error) {
     if (error instanceof ApiError && error.code === 'exists') step.value = 1
     message.value = say(error)
+  } finally {
+    pending.value = false
+  }
+}
+
+// ---- The confirmation of the email ----
+
+function keepNext() {
+  try {
+    if (target.value === '/cabinet') localStorage.removeItem(NEXT_KEY)
+    else localStorage.setItem(NEXT_KEY, target.value)
+  } catch {
+    /* private mode: the link leads to the cabinet's start */
+  }
+}
+
+/** The page kept for the link opened on this device; it is spent once read. */
+function keptNext() {
+  try {
+    const kept = localStorage.getItem(NEXT_KEY) || ''
+    localStorage.removeItem(NEXT_KEY)
+    return kept.startsWith('/cabinet') && !kept.includes('//') ? kept : ''
+  } catch {
+    return ''
+  }
+}
+
+let waitTimer = 0
+function startWait(seconds) {
+  clearInterval(waitTimer)
+  letter.wait = seconds
+  waitTimer = setInterval(() => {
+    letter.wait = Math.max(0, letter.wait - 1)
+    if (!letter.wait) clearInterval(waitTimer)
+  }, 1000)
+}
+
+/** The screen of the flying letter; `sent` when the sign-up has just sent it, else a fresh one goes. */
+function openConfirm(user, { sent }) {
+  letter.email = user.email
+  letter.flight += 1
+  mode.value = 'confirm'
+  // The person's star stays on the sky while the letter flies (after the sign-up's own marks let go).
+  nextTick(() => markUser(user))
+  keepNext()
+  // A reload keeps the screen: the address says what it is.
+  if (route.query.mode !== 'confirm') router.replace({ query: { mode: 'confirm', next: target.value === '/cabinet' ? undefined : target.value } })
+  if (sent) startWait(60)
+  else resend({ quiet: true })
+}
+
+/** Another letter; `quiet` for the one sent on its own when the screen opens. */
+async function resend({ quiet = false } = {}) {
+  if (letter.wait > 0 || pending.value) return
+  message.value = ''
+  note.value = ''
+  pending.value = true
+  try {
+    const answer = await webApi.confirmSend({ next: target.value })
+    if (!answer.sent) {
+      // Confirmed meanwhile, in another tab or on another device.
+      await fly(answer.user, keptNext() || target.value)
+      return
+    }
+    letter.email = answer.user.email
+    if (!quiet) {
+      letter.flight += 1
+      note.value = 'Свежее письмо уже летит к вам'
+      queue('act', 'confirm:resend')
+    }
+    startWait(answer.pause || 60)
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'confirm_wait') startWait(60)
+    else if (error instanceof ApiError && error.status === 401) mode.value = 'login'
+    else if (!quiet) message.value = say(error)
+  } finally {
+    pending.value = false
+  }
+}
+
+function editAddress(value = letter.email) {
+  letter.value = value
+  letter.editing = true
+  message.value = ''
+  note.value = ''
+}
+
+/** The letter to a corrected address: the account is not open yet, so no password is asked. */
+async function changeAddress(value = letter.value) {
+  const address = value.trim()
+  message.value = ''
+  note.value = ''
+  if (!EMAIL.test(address)) {
+    message.value = 'Почта выглядит неполной'
+    return
+  }
+  if (address.toLowerCase() === letter.email.toLowerCase()) {
+    letter.editing = false
+    return
+  }
+  pending.value = true
+  try {
+    const answer = await webApi.confirmSend({ email: address, next: target.value })
+    if (!answer.sent) {
+      await fly(answer.user, keptNext() || target.value)
+      return
+    }
+    letter.email = answer.user.email
+    letter.editing = false
+    letter.flight += 1
+    note.value = 'Письмо летит на новый адрес'
+    queue('act', 'confirm:change')
+    startWait(answer.pause || 60)
+  } catch (error) {
+    message.value = error instanceof ApiError && error.code === 'exists'
+      ? 'С этой почтой кабинет уже открыт — войдите с ней'
+      : say(error)
+  } finally {
+    pending.value = false
+  }
+}
+
+/** The page checks by itself whether the link has been opened, and leads on once it is. */
+async function checkConfirmed({ loud = false } = {}) {
+  if (mode.value !== 'confirm' || leaving.value || !readSession('web')) return
+  if (loud) {
+    message.value = ''
+    note.value = ''
+  }
+  try {
+    const me = await webApi.me()
+    if (me.email_confirmed) {
+      if (mode.value === 'confirm' && !leaving.value) await fly(me, keptNext() || target.value)
+    } else if (loud) {
+      note.value = 'Письмо ещё в пути — ссылка в нём откроет кабинет'
+    }
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) mode.value = 'login'
+    else if (loud) message.value = say(error)
+  }
+}
+
+let watchTimer = 0
+watch(mode, (value) => {
+  clearInterval(watchTimer)
+  watchTimer = value === 'confirm' ? setInterval(() => {
+    if (document.visibilityState === 'visible') checkConfirmed()
+  }, WATCH_MS) : 0
+}, { immediate: true })
+
+/** Back from the mail in this tab: the confirmation is checked at once. */
+function onVisible() {
+  if (document.visibilityState === 'visible') checkConfirmed()
+}
+
+/** Opened by `?mode=confirm` (the cabinet sent here): the address is the account's own. */
+async function resumeConfirm() {
+  if (!readSession('web')) {
+    mode.value = 'login'
+    return
+  }
+  try {
+    const me = await webApi.me()
+    if (me.email_confirmed) await fly(me, keptNext() || target.value)
+    else openConfirm(me, { sent: false })
+  } catch (error) {
+    mode.value = 'login'
+    if (!(error instanceof ApiError && error.status === 401)) message.value = say(error)
+  }
+}
+
+/** The letter's link: the email is the person's, and the cabinet opens on this device. */
+async function confirmByLink() {
+  message.value = ''
+  pending.value = true
+  try {
+    const result = await webApi.confirm(confirmToken)
+    writeSession('web', result.token)
+    reachGoal('astra.email@confirm')
+    await fly(result.user, keptNext() || result.next || '/cabinet')
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status >= 500) {
+      // The link is still whole: the button tries it again.
+      message.value = say(error)
+      return
+    }
+    router.replace({ name: 'login' })
+    const known = readSession('web') ? await webApi.me().catch(() => null) : null
+    if (known?.email_confirmed) {
+      await fly(known, keptNext() || '/cabinet')
+      return
+    }
+    if (known) {
+      openConfirm(known, { sent: false })
+      note.value = 'Эта ссылка уже отслужила своё — свежая уже летит к вам'
+      return
+    }
+    mode.value = 'login'
+    if (error.code === 'confirm_link') note.value = 'Эта ссылка уже отслужила своё. Войдите — и, если почта ещё ждёт подтверждения, пришлём свежую'
+    else message.value = say(error)
   } finally {
     pending.value = false
   }
@@ -169,7 +417,8 @@ function finish(withBirth) {
     message.value = 'Укажите дату рождения — или заполните позже'
     return
   }
-  const body = { email: email.value.trim(), password: password.value, name: name.value.trim(), consent: true }
+  // The letter's link leads where the person was going: the cabinet or the page of it they came for.
+  const body = { email: email.value.trim(), password: password.value, name: name.value.trim(), consent: true, next: target.value }
   if (withBirth) {
     body.birth = { date: birth.date, time: timeKnown.value ? birth.time : null, place: birth.city.trim() || null }
     if (birth.place) Object.assign(body.birth, { lat: birth.place.lat, lon: birth.place.lon })
@@ -197,7 +446,11 @@ async function sendLink() {
 }
 
 function submit() {
-  if (forgot.value) sendLink()
+  if (mode.value === 'confirming') confirmByLink()
+  else if (mode.value === 'confirm') {
+    if (letter.editing) changeAddress()
+    else checkConfirmed({ loud: true })
+  } else if (forgot.value) sendLink()
   else if (resetting.value) {
     if (password.value.length < 8) message.value = 'Пароль — не короче 8 символов'
     else enter(() => webApi.resetPassword({ token: resetToken, password: password.value }))
@@ -208,6 +461,8 @@ function submit() {
 
 const cta = computed(() => {
   if (pending.value) return 'Минуту…'
+  if (mode.value === 'confirming') return 'Подтвердить почту'
+  if (mode.value === 'confirm') return letter.editing ? 'Отправить на этот адрес' : 'Проверить подтверждение'
   if (forgot.value) return 'Прислать ссылку'
   if (resetting.value) return 'Сохранить и войти'
   if (!registering.value) return 'Войти'
@@ -230,9 +485,15 @@ onMounted(() => {
   } catch {
     /* private mode or a broken value */
   }
+  document.addEventListener('visibilitychange', onVisible)
+  if (confirmToken) confirmByLink()
+  else if (mode.value === 'confirm') resumeConfirm()
 })
 
 onUnmounted(() => {
+  clearInterval(watchTimer)
+  clearInterval(waitTimer)
+  document.removeEventListener('visibilitychange', onVisible)
   if (!leaving.value) clearMark()
 })
 </script>
@@ -245,7 +506,7 @@ onUnmounted(() => {
         <form class="login-card" novalidate @submit.prevent="submit">
           <span class="card-sheen" aria-hidden="true" />
 
-          <div class="mode-toggle" role="group" aria-label="Вход или регистрация">
+          <div v-if="!confirming" class="mode-toggle" role="group" aria-label="Вход или регистрация">
             <span class="mode-thumb" :class="{ 'is-right': registering }" aria-hidden="true" />
             <button type="button" :aria-pressed="!registering" @click="mode = 'login'">Вход</button>
             <button type="button" :aria-pressed="registering" @click="mode = 'register'">Регистрация</button>
@@ -254,14 +515,22 @@ onUnmounted(() => {
           <Transition name="swap" mode="out-in">
             <div :key="headKey" class="card-head">
               <p v-if="registering" class="step-kicker">Шаг {{ step }} из 2</p>
+              <p v-else-if="confirming" class="step-kicker">Последний шаг</p>
               <h1>
-                <template v-if="forgot || resetting">Новый <em>пароль</em></template>
+                <template v-if="mode === 'confirming'">Открываем <em>небо</em></template>
+                <template v-else-if="mode === 'confirm'">Письмо <em>летит</em> к вам</template>
+                <template v-else-if="forgot || resetting">Новый <em>пароль</em></template>
                 <template v-else-if="!registering">С <em>возвращением</em></template>
                 <template v-else-if="step === 1">Откройте <em>своё</em> небо</template>
                 <template v-else>Ваше <em>небо</em></template>
               </h1>
               <p>
-                <template v-if="forgot">Назовите почту кабинета — пришлём ссылку, по которой можно задать новый пароль.</template>
+                <template v-if="mode === 'confirming'">Подтверждаем почту — ещё мгновение, и кабинет откроется.</template>
+                <template v-else-if="mode === 'confirm'">
+                  Ссылка ушла на <strong class="address">{{ letter.email || 'вашу почту' }}</strong>.
+                  Откройте письмо и нажмите «Подтвердить» — кабинет откроется сразу.
+                </template>
+                <template v-else-if="forgot">Назовите почту кабинета — пришлём ссылку, по которой можно задать новый пароль.</template>
                 <template v-else-if="resetting">Придумайте новый пароль — и небо откроется сразу.</template>
                 <template v-else-if="!registering">Ваше небо на месте. Войдите, чтобы продолжить.</template>
                 <template v-else-if="step === 1">Назовите себя — и на небе зажжётся ваша звезда.</template>
@@ -271,7 +540,84 @@ onUnmounted(() => {
           </Transition>
 
           <Transition name="swap" mode="out-in">
-            <div v-if="!onSky" key="who" class="fields">
+            <div v-if="confirming" key="letter" class="fields">
+              <div class="flight" :class="{ 'is-opening': mode === 'confirming' }">
+                <svg :key="letter.flight" class="flight-sky" viewBox="0 0 300 150" aria-hidden="true">
+                  <defs>
+                    <mask id="flight-reveal" maskUnits="userSpaceOnUse" x="0" y="0" width="300" height="150">
+                      <path class="trail-draw" d="M150 92C190 96 236 70 268 22" pathLength="1" />
+                    </mask>
+                    <clipPath id="flight-pocket">
+                      <rect x="2" y="-40" width="116" height="122" rx="10" />
+                    </clipPath>
+                    <linearGradient id="flight-gold" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stop-color="#f4dba6" />
+                      <stop offset=".55" stop-color="#e3bd78" />
+                      <stop offset="1" stop-color="#cf9f55" />
+                    </linearGradient>
+                    <linearGradient id="flight-flap" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stop-color="#fbe9c4" />
+                      <stop offset="1" stop-color="#e6c07c" />
+                    </linearGradient>
+                    <radialGradient id="flight-glow">
+                      <stop offset="0" stop-color="#ffe2a8" stop-opacity="0.75" />
+                      <stop offset="1" stop-color="#ffe2a8" stop-opacity="0" />
+                    </radialGradient>
+                  </defs>
+                  <path class="trail" d="M150 92C190 96 236 70 268 22" mask="url(#flight-reveal)" />
+                  <g class="trail-stars">
+                    <path d="M193 80.5q.6 4.4 5 5-4.4.6-5 5-.6-4.4-5-5 4.4-.6 5-5Z" />
+                    <path d="M224 63.5q.5 4.5 4.5 5-4 .5-4.5 4.5-.5-4-4.5-4.5 4-.5 4.5-5Z" />
+                    <path d="M249.5 41q.5 4.2 4 4.6-3.5.5-4 4-.5-3.5-4-4 3.5-.4 4-4.6Z" />
+                  </g>
+                  <g class="arrival">
+                    <circle cx="268" cy="22" r="18" fill="url(#flight-glow)" />
+                    <path d="M268 10q1.2 10.8 12 12-10.8 1.2-12 12-1.2-10.8-12-12 10.8-1.2 12-12Z" />
+                  </g>
+                  <ellipse class="env-glow" cx="150" cy="132" rx="62" ry="9" fill="url(#flight-glow)" />
+                  <g class="env-fly">
+                    <g transform="translate(98 56) scale(.87)">
+                      <g class="env-in">
+                        <rect class="env-back" x="2" y="2" width="116" height="80" rx="10" />
+                        <path class="env-flap-back" d="M2 12A10 10 0 0 1 12 2h96a10 10 0 0 1 10 10L60 56Z" />
+                        <g clip-path="url(#flight-pocket)">
+                          <g class="env-paper">
+                            <rect x="14" y="8" width="92" height="62" rx="5" />
+                            <path d="M28 24h64M28 34h64M28 44h40" />
+                          </g>
+                        </g>
+                        <path class="env-front" d="M2 26 60 52 118 26V72a10 10 0 0 1-10 10H12A10 10 0 0 1 2 72Z" />
+                        <path class="env-flap" d="M2 12A10 10 0 0 1 12 2h96a10 10 0 0 1 10 10L60 56Z" />
+                        <g class="env-seal">
+                          <circle cx="60" cy="54" r="10" />
+                          <path d="M60 47q.8 6.2 7 7-6.2.8-7 7-.8-6.2-7-7 6.2-.8 7-7Z" />
+                        </g>
+                        <g class="env-sparks">
+                          <circle v-for="n in 8" :key="n" cx="60" cy="54" r="1.6" :style="{ '--a': `${n * 45 - 20}deg` }" />
+                        </g>
+                      </g>
+                    </g>
+                  </g>
+                </svg>
+                <p v-if="mode === 'confirm'" class="flight-status" role="status">
+                  <span class="pulse" aria-hidden="true" />
+                  Ждём подтверждения — кабинет откроется сам
+                </p>
+              </div>
+
+              <template v-if="mode === 'confirm'">
+                <p v-if="slip && !letter.editing" class="slip">
+                  Может быть, почта —
+                  <button type="button" class="forgot-link" :disabled="pending" @click="changeAddress(slip)">{{ slip }}</button>?
+                </p>
+                <label v-if="letter.editing" class="field">
+                  <span class="field-label">Почта для письма</span>
+                  <input v-model="letter.value" type="email" autocomplete="email" inputmode="email" required />
+                </label>
+              </template>
+            </div>
+
+            <div v-else-if="!onSky" key="who" class="fields">
               <div class="reveal" :class="{ 'is-open': registering }" :inert="!registering">
                 <label class="field">
                   <span class="field-label">Как вас зовут</span>
@@ -364,10 +710,40 @@ onUnmounted(() => {
             <p v-else-if="note" class="note" role="status">✦ {{ note }}</p>
           </Transition>
 
-          <button class="gold-cta" type="submit" :disabled="pending">
+          <a
+            v-if="mode === 'confirm' && box && !letter.editing"
+            class="gold-cta"
+            :href="box.url"
+            target="_blank"
+            rel="noopener"
+            @click="queue('act', 'confirm:mailbox')"
+          >
+            <span>Открыть {{ box.label }}</span>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3h7v7M13 3 4 12" /></svg>
+          </a>
+          <button v-else class="gold-cta" type="submit" :disabled="pending">
             <span>{{ cta }}</span>
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4" /></svg>
           </button>
+          <template v-if="mode === 'confirm'">
+            <div v-if="letter.editing" class="step-actions">
+              <button type="button" class="quiet" :disabled="pending" @click="letter.editing = false">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 8H3M7 4 3 8l4 4" /></svg>
+                Отмена
+              </button>
+            </div>
+            <template v-else>
+              <div class="step-actions">
+                <button type="button" class="quiet" :disabled="pending || letter.wait > 0" @click="resend()">
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8A5.5 5.5 0 1 1 11.9 4M12.5 1.5v3h-3" /></svg>
+                  <template v-if="letter.wait > 0">Ещё раз — через {{ waitText }}</template>
+                  <template v-else>Отправить ещё раз</template>
+                </button>
+                <button type="button" class="quiet" :disabled="pending" @click="editAddress()">Изменить почту</button>
+              </div>
+              <p class="mail-tip">Если письма нет во «Входящих», загляните в «Спам» или «Промоакции» — иногда оно прячется там.</p>
+            </template>
+          </template>
           <div v-if="forgot || resetting" class="step-actions">
             <button type="button" class="quiet" :disabled="pending" @click="mode = 'login'">
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 8H3M7 4 3 8l4 4" /></svg>
@@ -704,6 +1080,105 @@ onUnmounted(() => {
 }
 .sky-now svg { width: 9px; height: 9px; fill: #f0cd8a; filter: drop-shadow(0 0 5px rgba(255, 200, 110, 0.8)); }
 
+a.gold-cta { box-sizing: border-box; text-decoration: none; }
+
+/* ---- The letter: slides into the envelope, the flap closes, the seal lands, it flies off to a star. ---- */
+.card-head .address { font-weight: 600; color: #f6efe2; overflow-wrap: anywhere; }
+.flight { position: relative; margin: -4px 0 -2px; }
+.flight-sky { display: block; width: 100%; max-width: 320px; height: auto; margin: 0 auto; overflow: visible; }
+
+.env-in { transform-box: fill-box; transform-origin: 50% 100%; animation: env-in 0.5s cubic-bezier(0.3, 0.7, 0.2, 1) 0.1s both; }
+.env-back { fill: #9a6d33; }
+.env-flap-back { fill: #b4843f; transform-box: fill-box; transform-origin: 50% 0; transform: scaleY(0); animation: flap-fold 0.17s ease-in 0.86s both; }
+.env-paper { transform: translateY(26px); animation: paper-in 0.62s cubic-bezier(0.5, 0, 0.3, 1) 0.28s both; }
+.env-paper rect { fill: #fff8ea; }
+.env-paper path { fill: none; stroke: rgba(150, 110, 50, 0.42); stroke-width: 3.4; stroke-linecap: round; }
+.env-front, .env-flap { stroke: rgba(110, 72, 25, 0.35); stroke-width: 1.2; stroke-linejoin: round; }
+.env-front { fill: url(#flight-gold); }
+.env-flap { fill: url(#flight-flap); transform-box: fill-box; transform-origin: 50% 0; animation: flap-close 0.2s ease-out 1.03s both; }
+.env-seal { transform-box: fill-box; transform-origin: center; animation: seal-in 0.42s cubic-bezier(0.3, 1.6, 0.5, 1) 1.22s both; }
+.env-seal circle { fill: #1c1610; stroke: #f0cd8a; stroke-width: 1.4; }
+.env-seal path { fill: #f0cd8a; }
+.env-sparks circle { fill: #ffe2a8; opacity: 0; transform-box: fill-box; transform-origin: center; animation: spark 0.65s ease-out 1.3s both; }
+.env-glow { transform-box: fill-box; transform-origin: center; animation: glow-out 0.9s ease 1.8s both; }
+.env-fly { transform-box: view-box; transform-origin: 150px 92px; animation: env-fly 1.15s cubic-bezier(0.45, 0, 0.35, 1) 1.75s both; }
+
+.trail { fill: none; stroke: rgba(240, 205, 138, 0.75); stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 0.1 6; opacity: 0.6; }
+.trail-draw { fill: none; stroke: #fff; stroke-width: 16; stroke-dasharray: 1; stroke-dashoffset: 0; animation: trail-draw 1.05s cubic-bezier(0.45, 0, 0.35, 1) 1.85s both; }
+.trail-stars path { fill: #f6dfae; opacity: 0.55; transform-box: fill-box; transform-origin: center; animation: star-pop 0.55s ease-out both, twinkle 2.8s ease-in-out infinite; }
+.trail-stars path:nth-child(1) { animation-delay: 2.1s, 2.7s; }
+.trail-stars path:nth-child(2) { animation-delay: 2.35s, 3.3s; }
+.trail-stars path:nth-child(3) { animation-delay: 2.6s, 3.9s; }
+.arrival { transform-box: fill-box; transform-origin: center; animation: arrive 0.7s cubic-bezier(0.3, 1.6, 0.5, 1) 2.8s both, glimmer 2.6s ease-in-out 3.6s infinite; }
+.arrival path { fill: #ffe9bd; }
+
+.flight-status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  text-align: center;
+  color: rgba(243, 220, 174, 0.85);
+  animation: card-in 0.7s ease 2.95s both;
+}
+.pulse { position: relative; flex: none; width: 7px; height: 7px; border-radius: 50%; background: #f0cd8a; box-shadow: 0 0 8px rgba(255, 200, 110, 0.8); }
+.pulse::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; border: 1px solid rgba(240, 205, 138, 0.6); animation: pulse 2s ease-out infinite; }
+
+/* The letter's link is being opened: the sealed envelope waits, its seal breathing. */
+.flight.is-opening .env-in,
+.flight.is-opening .env-paper,
+.flight.is-opening .env-flap-back,
+.flight.is-opening .env-flap,
+.flight.is-opening .env-sparks circle,
+.flight.is-opening .env-glow,
+.flight.is-opening .env-fly { animation: none; }
+.flight.is-opening .env-seal { animation: seal-breathe 1.4s ease-in-out infinite; }
+.flight.is-opening .trail,
+.flight.is-opening .trail-stars,
+.flight.is-opening .arrival { display: none; }
+
+.slip { margin: 0; font-size: 13.5px; line-height: 1.5; text-align: center; color: rgba(226, 220, 210, 0.75); }
+.slip .forgot-link { font-size: inherit; overflow-wrap: anywhere; }
+.mail-tip { margin: -6px 0 0; font-size: 12.5px; line-height: 1.5; text-align: center; color: rgba(226, 220, 210, 0.55); }
+
+@keyframes env-in { from { opacity: 0; transform: translateY(12px) scale(0.9); } }
+@keyframes paper-in { from { transform: translateY(-28px); } }
+@keyframes flap-fold { from { transform: scaleY(-0.6); } }
+@keyframes flap-close { from { transform: scaleY(0); } }
+@keyframes seal-in { from { opacity: 0; transform: scale(0); } }
+@keyframes seal-breathe { 50% { transform: scale(1.14); } }
+@keyframes spark {
+  0% { opacity: 0; transform: rotate(var(--a)) translateX(0); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--a)) translateX(24px) scale(0.4); }
+}
+@keyframes glow-out { to { opacity: 0; transform: scale(0.4); } }
+@keyframes env-fly {
+  0% { transform: translate(0, 0) rotate(0deg) scale(1); }
+  12% { transform: translate(-6px, 5px) rotate(5deg) scale(1); }
+  40% { transform: translate(43px, -6px) rotate(-6deg) scale(0.82); }
+  62% { transform: translate(74px, -23px) rotate(-14deg) scale(0.6); opacity: 1; }
+  82% { transform: translate(99px, -46px) rotate(-20deg) scale(0.38); opacity: 0.9; }
+  100% { transform: translate(118px, -70px) rotate(-26deg) scale(0.12); opacity: 0; }
+}
+@keyframes trail-draw { from { stroke-dashoffset: 1; } }
+@keyframes star-pop {
+  0% { opacity: 0; transform: scale(0) rotate(-45deg); }
+  60% { opacity: 1; transform: scale(1.3); }
+  100% { opacity: 0.55; transform: scale(1); }
+}
+@keyframes twinkle { 0%, 100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 0.95; transform: scale(1.18); } }
+@keyframes arrive { from { opacity: 0; transform: scale(0) rotate(-90deg); } }
+@keyframes glimmer { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.75; transform: scale(0.88); } }
+@keyframes pulse { from { opacity: 1; transform: scale(0.6); } to { opacity: 0; transform: scale(1.6); } }
+
 .swap-enter-active, .swap-leave-active { transition: opacity 0.25s ease, transform 0.25s ease; }
 .swap-enter-from { opacity: 0; transform: translateY(6px); }
 .swap-leave-to { opacity: 0; transform: translateY(-6px); }
@@ -724,15 +1199,26 @@ onUnmounted(() => {
   .quiet { min-height: 40px; }
   .check { padding-block: 8px; margin-block: -8px; }
   .field-head .check { gap: 7px; white-space: nowrap; }
-  /* Native date fields are wide; on a 320px screen both halves get equal room. */
-  .form-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .field-head { gap: 6px; }
   .field-head .field-label { letter-spacing: 0.18em; }
+  /* Phones draw date and time fields by their own rules, wider than the card: they keep to its width. */
+  .field input[type='date'],
+  .field input[type='time'] { display: block; -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; text-align: left; }
+  .field input::-webkit-date-and-time-value { text-align: left; }
+}
+
+/* Narrow phones: the date above the time, each the full width of the card. */
+@media (max-width: 560px) {
+  .form-row { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .login-card, .card-sheen, .sky-now { animation: none; }
   .reveal, .mode-thumb { transition: none; }
   .login-side.is-leaving { filter: none; transform: none; }
+  /* The letter is already on its way: the trail and the star, without the flight. */
+  .flight *, .flight-status, .pulse::after { animation: none !important; }
+  .flight:not(.is-opening) .env-fly,
+  .flight:not(.is-opening) .env-glow { display: none; }
 }
 </style>

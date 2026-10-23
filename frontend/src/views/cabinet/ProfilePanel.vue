@@ -28,8 +28,8 @@ async function send(target, action, doneText) {
   target.error = ''
   target.done = ''
   try {
-    await action()
-    target.done = doneText
+    const answer = await action()
+    target.done = typeof doneText === 'function' ? doneText(answer) : doneText
   } catch (error) {
     target.error = errorText(error)
   } finally {
@@ -48,12 +48,14 @@ function saveName() {
 }
 
 const email = form({ open: false, value: '', password: '' })
+/** The new address takes the old one's place once the link in the letter to it is opened. */
 function saveEmail() {
   send(email, async () => {
-    const next = await webApi.setEmail({ email: email.value.trim(), password: email.password })
+    const answer = await webApi.setEmail({ email: email.value.trim(), password: email.password })
     Object.assign(email, { open: false, value: '', password: '' })
-    emit('updated', next)
-  }, 'Почта изменена: входите с новой')
+    emit('updated', answer.user)
+    return answer.pending
+  }, (pending) => `Письмо ушло на ${pending}: откройте ссылку в нём — и входите с новой почтой. До тех пор вход — с прежней.`)
 }
 
 const password = form({ open: false, current: '', value: '' })

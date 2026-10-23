@@ -153,7 +153,13 @@ onBeforeRouteUpdate((to, from) => {
 
 onMounted(async () => {
   try {
-    user.value = await webApi.me()
+    const me = await webApi.me()
+    // The cabinet opens once the email is confirmed: the letter's screen waits for it, then comes back here.
+    if (!me.email_confirmed) {
+      router.replace({ name: 'login', query: { mode: 'confirm', next: route.fullPath } })
+      return
+    }
+    user.value = me
     markUser(user.value)
     if (pendingInvite()) await joinPending()
     // Back from ЮKassa: wait for the notification, refresh the cabinet, fire the Metrika goal once.

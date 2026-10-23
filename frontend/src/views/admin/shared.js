@@ -307,6 +307,14 @@ const GAME_ACTS = {
   finale: 'Игра: финал',
   fail: 'Игра: не запустилась на устройстве',
 }
+/** The steps on the way into the cabinet: registration and the confirmation letter. */
+const WAY_ACTS = {
+  'reg:open': 'Открыл регистрацию',
+  'reg:who': 'Прошёл первый шаг регистрации',
+  'confirm:resend': 'Попросил письмо ещё раз',
+  'confirm:change': 'Исправил почту для письма',
+  'confirm:mailbox': 'Перешёл в свою почту',
+}
 const GAME_STEP_ACTS = { found: 'нашёл', miss: 'промах', hint: 'подсказка', quit: 'вышел на шаге' }
 const TOUR_STEPS = { start: 'показан', done: 'пройден', skip: 'закрыт' }
 const GOALS = { calc: 'расчёт', cta: 'переход в кабинет' }
@@ -319,6 +327,7 @@ export function eventText(item) {
     case 'visit': return `Новый визит — ${pageName(name)}`
     case 'ref': return 'Пришёл по рекламной ссылке'
     case 'signup': return 'Зарегистрировался'
+    case 'confirm': return 'Подтвердил почту'
     case 'birth': return 'Указал дату рождения'
     case 'tour': {
       const [tour, step] = name.split(':')
@@ -334,6 +343,7 @@ export function eventText(item) {
     case 'scroll': return `Долистал до ${item.value}%`
     case 'time': return `Провёл на странице ${duration(item.value)}`
     case 'act': {
+      if (WAY_ACTS[name]) return WAY_ACTS[name]
       const [, act, step] = name.split(':')
       if (act === 'land') return `Игра: собрал карту за ${duration(item.value)}`
       if (step) return `Игра: ${GAME_STEP_ACTS[act] || act} — ${GAME_STEPS[step] || step}`

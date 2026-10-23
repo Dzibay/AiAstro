@@ -358,7 +358,7 @@ h1 :deep(em) { font-style: italic; color: #f0cd8a; }
 .who { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .who + .who { padding-top: 14px; border-top: 1px solid rgba(240, 210, 150, 0.12); }
 .who-title { padding: 0; margin-bottom: 2px; font-family: var(--serif); font-size: 19px; color: #f6efe2; }
-.form-row { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; }
+.form-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 12px; }
 .field { display: grid; gap: 7px; min-width: 0; }
 .field-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .field-label { line-height: 16px; font-size: 10.5px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(226, 214, 192, 0.66); }
@@ -500,6 +500,12 @@ h1 :deep(em) { font-style: italic; color: #f0cd8a; }
 .others b { font-family: var(--serif); font-size: 20px; font-weight: 500; color: #f6efe2; }
 .others span { font-size: 13.5px; line-height: 1.5; color: rgba(226, 220, 210, 0.66); }
 
+@media (max-width: 760px) {
+  /* Phones draw date and time fields by their own rules, wider than the card: they keep to its width. */
+  .field input[type='date'],
+  .field input[type='time'] { display: block; width: 100%; -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; text-align: left; }
+  .field input::-webkit-date-and-time-value { text-align: left; }
+}
 @media (max-width: 900px) {
   .hero { grid-template-columns: 1fr; gap: 28px; }
   .hero-copy { padding-top: 0; }
@@ -510,7 +516,8 @@ h1 :deep(em) { font-style: italic; color: #f0cd8a; }
   .landing { padding-top: 88px; }
   .lead { font-size: 16px; }
   .calc { padding: 18px 16px 14px; }
-  .form-row { grid-template-columns: 1fr 1fr; gap: 10px; }
+  /* Narrow phones: the date above the time, each the full width of the card. */
+  .form-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .day-spheres { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .copy { gap: 48px; margin-top: 72px; }
   .result { margin-top: 56px; }

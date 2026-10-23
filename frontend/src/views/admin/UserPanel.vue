@@ -76,7 +76,7 @@ async function showMore() {
 /** Where it happened, when the line itself does not say. */
 function where(item) {
   if (item.kind === 'payment') return item.page ? offerName(item.page) : ''
-  if (['view', 'visit', 'scroll', 'time', 'goal', 'signup', 'birth', 'ref'].includes(item.kind) || !item.page) return ''
+  if (['view', 'visit', 'scroll', 'time', 'goal', 'signup', 'confirm', 'birth', 'ref'].includes(item.kind) || !item.page) return ''
   return pageName(item.page)
 }
 
@@ -121,6 +121,16 @@ async function extend(days) {
 async function setUntil() {
   const saved = await act('skyDate', () => adminApi.setSky(user.value.id, { until: skyDate.value }))
   if (saved) applied(saved, saved.sky ? `«Небосвод» до ${fmt.long(saved.sky_until)}` : '«Небосвод» закрыт')
+}
+
+/* ---- The email: confirmed by hand when the letter went astray ---- */
+
+async function confirmEmail() {
+  const saved = await act('email', () => adminApi.confirmUser(user.value.id))
+  if (!saved) return
+  user.value = saved
+  list.update(saved)
+  push(`Почта подтверждена: ${saved.email}`)
 }
 
 /* ---- Confirmations: closing «Небосвод», taking a reading back, deleting ---- */
@@ -264,6 +274,20 @@ function remove() {
         <p v-else-if="!timeline.error" class="up-empty">Действий пока нет.</p>
         <p v-if="timeline.error" class="error">{{ timeline.error }}</p>
         <button v-if="timelineShown.length && timelineMore" type="button" class="adm-btn" :disabled="timeline.loading" @click="showMore">Показать ещё</button>
+      </section>
+
+      <section class="up-block">
+        <div class="up-block-head">
+          <h2>Почта</h2>
+          <span v-if="user.email_confirmed_at" class="adm-badge is-ok">подтверждена {{ fmt.day(user.email_confirmed_at) }}</span>
+          <span v-else class="adm-badge is-warn">не подтверждена</span>
+        </div>
+        <template v-if="!user.email_confirmed_at">
+          <p class="up-note">Кабинет откроется после подтверждения. Если письмо не дошло, а человек написал с этого адреса, подтвердите вручную.</p>
+          <div class="adm-actions">
+            <button type="button" class="adm-btn is-gold" :disabled="Boolean(busy)" @click="confirmEmail">Подтвердить почту</button>
+          </div>
+        </template>
       </section>
 
       <section class="up-block">

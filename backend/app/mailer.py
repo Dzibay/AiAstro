@@ -1,7 +1,8 @@
-"""Letters: the new password link, the end of «Небосвод», the partner's answer.
+"""Letters: the email confirmation, the new password link, the end of «Небосвод», the partner's answer.
 
-Plain text through the SMTP server set in the admin panel. A letter never holds up a request:
-the routes hand it to the background, and a server that does not answer is only written to the log.
+Through the SMTP server set in the admin panel: plain text, and the site's look in HTML beside it
+(app.letters lays both out). A letter never holds up a request: the routes hand it to the
+background, and a server that does not answer is only written to the log.
 """
 
 import logging
@@ -30,7 +31,7 @@ def link(path: str) -> str:
     return f"{settings.public_base_url.rstrip('/')}{path}"
 
 
-def _letter(to: str, subject: str, text: str, data: dict[str, str]) -> EmailMessage:
+def _letter(to: str, subject: str, text: str, data: dict[str, str], html: str | None = None) -> EmailMessage:
     site = setting("site_name")
     message = EmailMessage()
     message["From"] = formataddr((site, _sender(data)))
@@ -41,15 +42,17 @@ def _letter(to: str, subject: str, text: str, data: dict[str, str]) -> EmailMess
     if support:
         message["Reply-To"] = support
     message.set_content(f"{text.strip()}\n\n— {site}\n{link('/')}\n")
+    if html:
+        message.add_alternative(html, subtype="html")
     return message
 
 
-def send(to: str, subject: str, text: str) -> None:
+def send(to: str, subject: str, text: str, html: str | None = None) -> None:
     """Sends now and raises on failure: for the admin's test letter, which wants to know why."""
     data = get_settings()
     if not mail_on(data):
         raise RuntimeError("SMTP не настроен")
-    message = _letter(to, subject, text, data)
+    message = _letter(to, subject, text, data, html)
     host = data["smtp_host"]
     port = int(data.get("smtp_port") or 465)
     if port == 465:
@@ -64,10 +67,10 @@ def send(to: str, subject: str, text: str) -> None:
         server.send_message(message)
 
 
-def send_quietly(to: str, subject: str, text: str) -> bool:
+def send_quietly(to: str, subject: str, text: str, html: str | None = None) -> bool:
     """For the background: a letter that did not leave is logged, never raised."""
     try:
-        send(to, subject, text)
+        send(to, subject, text, html)
         return True
     except Exception as exc:  # noqa: BLE001 — any SMTP or network failure is the same to the person
         log.warning("Письмо «%s» не ушло: %s", subject, exc)

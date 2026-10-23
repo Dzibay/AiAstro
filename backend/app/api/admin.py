@@ -4,14 +4,16 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel, Field
 
 from app import notes
-from app.analytics import analytics, create_link, delete_link, link_detail, list_links, update_link, user_events
+from app.analytics import analytics, create_link, delete_link, link_detail, list_links, path, update_link, user_events
 from app.accounts import (
-    SKY_MAX_DAYS, admin_delete, list_users, operator_user, set_birth, set_sky, set_sky_until, user_activity,
+    SKY_MAX_DAYS, admin_delete, list_users, operator_confirm, operator_user, set_birth, set_sky, set_sky_until,
+    user_activity,
 )
 from app.api.deps import as_http, require_admin
 from app.config import settings
 from app.errors import DomainError
-from app.mailer import mail_on, send
+from app.letters import Letter, html, text
+from app.mailer import link, mail_on, send
 from app.partners import admin_pairs, admin_partners, mine_changed, set_bought, set_pair_bought
 from app.payments import list_payments
 from app.security import check_admin_password, make_admin_session
@@ -107,7 +109,15 @@ def mail_test(body: TestMailIn) -> dict:
     if not mail_on():
         raise as_http(DomainError("mail_off", 409))
     try:
-        send(body.email.strip(), "Пробное письмо", "Почта настроена: письма о новом пароле и напоминания будут уходить с этого адреса.")
+        letter = Letter(
+            subject="Пробное письмо",
+            title="Почта настроена",
+            hello="Здравствуйте!",
+            lines=["Письма с подтверждением почты, новым паролем и напоминаниями будут уходить с этого адреса — и выглядеть так."],
+            button="Открыть сайт",
+            url=link("/"),
+        )
+        send(body.email.strip(), letter.subject, text(letter), html(letter))
     except Exception as exc:  # noqa: BLE001 — whatever the server said goes back to the operator
         return {"ok": False, "error": str(exc)[:300]}
     return {"ok": True}
@@ -127,6 +137,15 @@ def analytics_view(days: int = Query(default=30)) -> dict:
     """Visitors, the funnel, where people stop, the tours, the sources and the devices."""
     try:
         return analytics(days)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/analytics/path", dependencies=[Depends(require_admin)])
+def analytics_path(days: int = Query(default=30), entry: str = Query(default=""), device: str = Query(default="")) -> dict:
+    """The way from the first visit to a payment; entry: '' | home | landings | other, device: '' | phone | desktop."""
+    try:
+        return path(days, entry, device)
     except DomainError as exc:
         raise as_http(exc) from exc
 
@@ -245,6 +264,15 @@ def users_delete(user_id: int, body: DeleteIn, background: BackgroundTasks) -> d
         raise as_http(exc) from exc
     background.add_task(notes.pair_left, told)
     return {"ok": True}
+
+
+@router.post("/users/{user_id}/confirm", dependencies=[Depends(require_admin)])
+def users_confirm(user_id: int) -> dict:
+    """Confirms the email by hand, when the letter went astray and the person wrote from this address."""
+    try:
+        return operator_confirm(user_id)
+    except DomainError as exc:
+        raise as_http(exc) from exc
 
 
 @router.put("/users/{user_id}/sky", dependencies=[Depends(require_admin)])

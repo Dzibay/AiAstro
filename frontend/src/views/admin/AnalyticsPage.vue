@@ -68,10 +68,83 @@ const tiles = computed(() => {
   ]
 })
 
+/* ---- The whole way: the browsers that first came in the period, from the first page to a payment ---- */
+
+const ENTRIES = [
+  { key: '', label: 'Все входы' },
+  { key: 'home', label: 'Главная' },
+  { key: 'landings', label: 'Лендинги' },
+  { key: 'other', label: 'Другие страницы' },
+]
+const PATH_DEVICES = [
+  { key: '', label: 'Все устройства' },
+  { key: 'phone', label: 'Телефон' },
+  { key: 'desktop', label: 'Компьютер' },
+]
+const VISIT = { '': 'Зашли на сайт', home: 'Зашли на главную', landings: 'Зашли на лендинг', other: 'Зашли на другую страницу' }
+const PATH = [
+  { key: 'visit', hint: 'впервые за срок' },
+  { key: 'reg_open', label: 'Открыли регистрацию', hint: 'форма «Открыть небо»' },
+  { key: 'reg_who', label: 'Прошли первый шаг', hint: 'имя, почта и пароль' },
+  { key: 'signup', label: 'Прошли второй шаг', hint: 'кабинет заведён' },
+  { key: 'confirm', label: 'Подтвердили почту', hint: 'открыли ссылку из письма' },
+  { key: 'cabinet', label: 'Вошли в кабинет', hint: 'после подтверждения' },
+  { key: 'checkout', label: 'Начали оплату', hint: 'перешли в ЮKassa' },
+  { key: 'paid', label: 'Оплатили', hint: 'хоть что-нибудь' },
+]
+
+const pathEntry = ref('')
+const pathDevice = ref('')
+const pathData = ref(null)
+const pathLoading = ref(false)
+const pathError = ref('')
+
+async function loadPath() {
+  const asked = { days: days.value, entry: pathEntry.value, device: pathDevice.value }
+  pathLoading.value = true
+  pathError.value = ''
+  try {
+    const answer = await adminApi.path(asked)
+    if (asked.days === days.value && asked.entry === pathEntry.value && asked.device === pathDevice.value) pathData.value = answer
+  } catch (caught) {
+    pathError.value = failed(caught)
+  } finally {
+    pathLoading.value = false
+  }
+}
+watch([days, pathEntry, pathDevice], loadPath)
+onMounted(loadPath)
+
+const pathRows = computed(() => {
+  const d = pathData.value
+  if (!d) return []
+  const top = Math.max(d.steps.visit, 1)
+  return PATH.map((item, index) => {
+    const value = d.steps[item.key]
+    const previous = index ? d.steps[PATH[index - 1].key] : value
+    const note = { signup: `с датой рождения ${fmt.count(d.birth)}`, cabinet: `открыли карту ${fmt.count(d.chart)}` }[item.key]
+    return {
+      ...item,
+      label: item.label || VISIT[d.entry],
+      hint: note ? `${item.hint} · ${note}` : item.hint,
+      value,
+      width: (value / top) * 100,
+      ofFirst: index ? pct(value, d.steps.visit) : '',
+      ofPrev: index ? pct(value, previous) : '',
+      lost: Math.max(previous - value, 0),
+      after: index ? after(d.hours[item.key]) : '',
+      paid: ['checkout', 'paid'].includes(item.key),
+    }
+  })
+})
+/** The two steps the most people fall off at. */
+const pathDrops = computed(() => pathRows.value.filter((row) => row.lost > 0).sort((a, b) => b.lost - a.lost).slice(0, 2).map((row) => row.key))
+
 /* ---- The funnel: the period's new visitors, then the people registered in it and how far they went ---- */
 
 const FUNNEL = [
   { key: 'signup', label: 'Регистрация', hint: 'кабинет заведён' },
+  { key: 'confirm', label: 'Подтвердил почту', hint: 'открыл ссылку из письма' },
   { key: 'birth', label: 'Дата рождения', hint: 'небо нарисовало знак' },
   { key: 'intro', label: 'Знакомство', hint: 'тур по кабинету пройден или закрыт' },
   { key: 'section', label: 'Открыл раздел', hint: 'карта, прогноз, пара, астролог или «Небосвод»' },
@@ -106,14 +179,14 @@ const funnel = computed(() => {
       // The checkout and the purchases are not one after another: each counts from the registrations.
       paid: ['checkout', 'paid', 'sky', 'pair_bought'].includes(item.key),
     })
-    if (!['sky', 'pair_bought'].includes(item.key)) previous = value
+    if (!['confirm', 'sky', 'pair_bought'].includes(item.key)) previous = value
   }
   return rows
 })
 
 /** The steps the most people fall off at, among the ones in order. */
 const drops = computed(() => {
-  const ordered = funnel.value.filter((row) => !['sky', 'pair_bought'].includes(row.key) && row.key !== 'visitors')
+  const ordered = funnel.value.filter((row) => !['confirm', 'sky', 'pair_bought'].includes(row.key) && row.key !== 'visitors')
   return ordered.slice(1).map((row, index) => ({ key: row.key, lost: ordered[index].value - row.value }))
     .filter((row) => row.lost > 0)
     .sort((a, b) => b.lost - a.lost)
@@ -262,6 +335,47 @@ const gameSteps = computed(() => (data.value?.game?.steps || []).map((row) => ({
     </nav>
 
     <template v-if="tab === 'funnel'">
+    <section class="adm-panel">
+      <div class="adm-panel-head">
+        <h2>Путь от первого визита</h2>
+        <p>браузеры, впервые открывшие сайт за срок, — и докуда каждый дошёл к сегодняшнему дню</p>
+      </div>
+      <div class="an-path-filters">
+        <div class="adm-seg" role="group" aria-label="Страница входа">
+          <button v-for="item in ENTRIES" :key="item.key" type="button" :aria-pressed="pathEntry === item.key" @click="pathEntry = item.key">{{ item.label }}</button>
+        </div>
+        <div class="adm-seg" role="group" aria-label="Устройство">
+          <button v-for="item in PATH_DEVICES" :key="item.key" type="button" :aria-pressed="pathDevice === item.key" @click="pathDevice = item.key">{{ item.label }}</button>
+        </div>
+      </div>
+      <p v-if="pathError" class="error">{{ pathError }}</p>
+      <ol v-if="pathRows.length" class="an-funnel" :class="{ 'adm-loading': pathLoading }">
+        <li v-for="row in pathRows" :key="row.key" :class="{ 'is-paid': row.paid, 'is-drop': pathDrops.includes(row.key) }">
+          <span class="an-funnel-name">
+            <strong>{{ row.label }}</strong>
+            <span>{{ row.hint }}</span>
+          </span>
+          <span class="an-funnel-track"><i :style="{ width: `${Math.max(row.width, row.value ? 0.6 : 0)}%` }" /></span>
+          <span class="an-funnel-value num">{{ fmt.count(row.value) }}</span>
+          <span class="an-funnel-share num" title="от зашедших">{{ row.ofFirst }}</span>
+          <span class="an-funnel-prev num" :title="row.lost ? `от предыдущего шага; не дошли ${fmt.count(row.lost)}` : 'от предыдущего шага'">
+            <template v-if="row.ofPrev">→ {{ row.ofPrev }}</template>
+          </span>
+          <span class="an-funnel-time num" title="медиана: сколько прошло от первого визита до шага">{{ row.after }}</span>
+        </li>
+      </ol>
+      <p class="adm-note an-legend">
+        <span><i class="an-dot" /> шаги по порядку: доля от зашедших и → от предыдущего шага</span>
+        <span><i class="an-dot is-paid" /> оплата</span>
+        <span><i class="an-dot is-drop" /> больше всего теряем здесь</span>
+        <span>справа — медиана времени от первого визита</span>
+      </p>
+      <p class="adm-note an-foot">
+        Шаги регистрации записываются с этой версии сайта: аккаунт, заведённый раньше, прошёл их в любом случае.
+        Кто зарегистрировался с другого браузера, здесь не виден — он есть в воронке ниже.
+      </p>
+    </section>
+
     <section class="adm-panel">
       <div class="adm-panel-head">
         <h2>Воронка</h2>
@@ -690,6 +804,9 @@ const gameSteps = computed(() => (data.value?.game?.steps || []).map((row) => ({
 .an-funnel-prev { color: var(--soft); font-size: 13px; }
 .an-funnel-time { color: var(--soft); font-size: 12px; }
 .an-funnel li:first-child { padding-bottom: 12px; margin-bottom: 6px; border-bottom: 1px dashed var(--panel-line); }
+
+.an-path-filters { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 10px; }
+.an-path-filters .adm-seg { flex-wrap: wrap; }
 
 .an-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 12px 0 0; }
 .an-legend span { display: inline-flex; align-items: center; gap: 6px; }

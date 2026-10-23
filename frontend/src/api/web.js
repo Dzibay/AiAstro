@@ -5,6 +5,10 @@ export const webApi = {
   register: (body) => request('/api/web/register', { method: 'POST', body: { ...body, visitor: visitorId() || null }, audience: 'web' }),
   login: (body) => request('/api/web/login', { method: 'POST', body: { ...body, visitor: visitorId() || null }, audience: 'web' }),
   me: () => request('/api/web/me', { audience: 'web', auth: true }),
+  /** Another confirmation letter ({ email?, next }): { user, sent, pause }; email corrects a slip in the address. */
+  confirmSend: (body) => request('/api/web/confirm/send', { method: 'POST', body, audience: 'web', auth: true }),
+  /** The letter's link: { token, user, next }, the person signed in on this device. */
+  confirm: (token) => request('/api/web/confirm', { method: 'POST', body: { token, visitor: visitorId() || null }, audience: 'web' }),
   setBirth: (body) => request('/api/web/me/birth', { method: 'PUT', body, audience: 'web', auth: true }),
   chart: () => request('/api/web/me/chart', { audience: 'web', auth: true }),
   portrait: () => request('/api/web/me/chart/portrait', { audience: 'web', auth: true }),

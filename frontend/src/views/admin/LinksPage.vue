@@ -148,6 +148,7 @@ const signupPoints = computed(() => buckets(detail.value?.series || [], 'signups
 
 const FUNNEL = [
   ['signup', 'Регистрация'],
+  ['confirm', 'Подтвердил почту'],
   ['birth', 'Дата рождения'],
   ['section', 'Открыл раздел'],
   ['pair', 'Добавил пару'],
