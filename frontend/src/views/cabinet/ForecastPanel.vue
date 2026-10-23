@@ -162,7 +162,7 @@ function setHot(key) {
       <StarCalendar :month="data" />
       <div v-if="data.locked" class="unlock">
         <p class="unlock-note">Открыта первая неделя. Остальные дни месяца и главный транзит каждого — в «Небосводе».</p>
-        <RouterLink class="unlock-cta" :to="{ name: 'cabinet-sky' }">
+        <RouterLink class="unlock-cta" v-seen="'sky:month'" data-track="sky:month" :to="{ name: 'cabinet-sky' }">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
           Рассеять туман — {{ skyPrice }}
         </RouterLink>
@@ -182,7 +182,7 @@ function setHot(key) {
           <template #locked>
             <div class="unlock in-stories">
               <p class="unlock-note">Каждый экран — с советом, что делать, а у дня ещё и свой чек-лист.</p>
-              <RouterLink class="unlock-cta" :to="{ name: 'cabinet-sky' }">
+              <RouterLink class="unlock-cta" v-seen="'sky:forecast-stories'" data-track="sky:forecast-stories" :to="{ name: 'cabinet-sky' }">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
                 Зажечь Небосвод — {{ skyPrice }}
               </RouterLink>
@@ -192,7 +192,7 @@ function setHot(key) {
       </div>
       <div v-if="data.locked" class="unlock">
         <p class="unlock-note">Транзиты открыты всем. Все экраны дня и недели с советами «что делать» и чек-лист дня — в «Небосводе».</p>
-        <RouterLink class="unlock-cta" :to="{ name: 'cabinet-sky' }">
+        <RouterLink class="unlock-cta" v-seen="'sky:forecast'" data-track="sky:forecast" :to="{ name: 'cabinet-sky' }">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
           Зажечь Небосвод — {{ skyPrice }}
         </RouterLink>

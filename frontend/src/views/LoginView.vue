@@ -139,6 +139,7 @@ async function enter(request, { registered = false } = {}) {
       /* private mode */
     }
     if (registered) reachGoal('astra.registration@success')
+    if (registered && result.user?.birth) reachGoal('astra.birth@save')
     const next = typeof route.query.next === 'string' ? route.query.next : '/cabinet'
     const target = next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/login')
       ? next

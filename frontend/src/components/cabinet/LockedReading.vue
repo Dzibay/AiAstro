@@ -24,7 +24,7 @@ const { sky: skyPrice } = usePrices()
     </div>
     <div v-if="locked" class="unlock">
       <p v-if="note" class="unlock-note">{{ note }}</p>
-      <RouterLink class="unlock-cta" :to="{ name: 'cabinet-sky' }">
+      <RouterLink class="unlock-cta" v-seen="'sky:portrait'" data-track="sky:portrait" :to="{ name: 'cabinet-sky' }">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
         Зажечь Небосвод — {{ skyPrice }}
       </RouterLink>

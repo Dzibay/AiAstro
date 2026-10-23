@@ -11,6 +11,7 @@ There is no auto-renewal: every payment is one charge for one term, as the offer
 import base64
 import json
 import logging
+import re
 import threading
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -37,6 +38,8 @@ PLANS = {
 PRODUCTS = (*PLANS, PAIR)
 
 _COLUMNS = "id, user_id, email, product, partner_id, pair_id, days, amount, title, status, yookassa_id, created_at, paid_at"
+# An offer of the site: «sky:chat», «pair:stories».
+PLACE = re.compile(r"^(sky|pair):[a-z0-9-]{1,40}$")
 
 
 def _call(method: str, url: str, body: dict | None = None, key: str = "") -> dict:
@@ -116,11 +119,14 @@ def _price(key: str) -> int:
     return int(value)
 
 
-def create_payment(user_id: int, product: str, partner_id: int | None = None, origin: str | None = None) -> dict:
+def create_payment(
+    user_id: int, product: str, partner_id: int | None = None, origin: str | None = None, place: str = ""
+) -> dict:
     """Writes the payment, creates it at ЮKassa and gives the page of ЮKassa to send the person to.
 
     The way back is the cabinet; the purchase opens when ЮKassa's notification arrives
-    (`origin` — the site the person pays from, see _return_base).
+    (`origin` — the site the person pays from, see _return_base). `place` — the offer the person
+    came from («sky:chat», «pair:panel»), for the figures of where the money comes from.
     """
     if not payments_on():
         raise DomainError("pay_off", 409)
@@ -151,11 +157,12 @@ def create_payment(user_id: int, product: str, partner_id: int | None = None, or
     with pool.connection() as conn:
         row = conn.execute(
             f"""
-            INSERT INTO payments (user_id, email, product, partner_id, pair_id, days, amount, title, ref_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, (SELECT ref_id FROM users WHERE id = %s))
+            INSERT INTO payments (user_id, email, product, partner_id, pair_id, days, amount, title, ref_id, place)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, (SELECT ref_id FROM users WHERE id = %s), %s)
             RETURNING {_COLUMNS}
             """,
-            (user_id, user["email"], product, partner_id, pair_id, days, amount, title, user_id),
+            (user_id, user["email"], product, partner_id, pair_id, days, amount, title, user_id,
+             place if PLACE.match(place or "") else ""),
         ).fetchone()
 
     receipt = {

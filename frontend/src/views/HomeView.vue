@@ -287,7 +287,7 @@ onMounted(async () => {
               <span class="field-label">Город рождения</span>
               <input v-model="birth.city" type="text" placeholder="Например, Казань" autocomplete="off" />
             </label>
-            <button class="gold-cta form-cta" type="submit">Построить карту — бесплатно</button>
+            <button class="gold-cta form-cta" type="submit" data-track="home:form">Построить карту — бесплатно</button>
             <p class="form-note">
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
               Натальная карта бесплатна навсегда
@@ -350,7 +350,7 @@ onMounted(async () => {
                 <p class="compat-text">Две карты рядом: где ваши ритмы совпадают, а где спорят.</p>
                 <div class="compat-foot">
                   <span class="compat-price">{{ prices.synastry.value }}</span>
-                  <RouterLink class="line-cta" :to="chartTo">
+                  <RouterLink class="line-cta" :to="chartTo" data-track="home:sample">
                     Проверить совместимость
                     <span aria-hidden="true">→</span>
                   </RouterLink>
@@ -389,8 +389,8 @@ onMounted(async () => {
                 <span class="card-kicker">Пример прогноза</span>
                 <div class="span-toggle" role="group" aria-label="Период прогноза">
                   <span class="span-thumb" :class="{ 'is-week': span === 'week' }" aria-hidden="true" />
-                  <button type="button" :aria-pressed="span === 'day'" @click="showSpan('day')">День</button>
-                  <button type="button" :aria-pressed="span === 'week'" @click="showSpan('week')">Неделя</button>
+                  <button type="button" :aria-pressed="span === 'day'" data-track="home:span-day" @click="showSpan('day')">День</button>
+                  <button type="button" :aria-pressed="span === 'week'" data-track="home:span-week" @click="showSpan('week')">Неделя</button>
                 </div>
               </div>
               <Transition name="swap" mode="out-in">
@@ -454,6 +454,7 @@ onMounted(async () => {
                 class="faq-q"
                 :aria-expanded="openFaq === index"
                 :aria-controls="`faq-a-${index}`"
+                :data-track="`home:faq-${index + 1}`"
                 @click="openFaq = openFaq === index ? -1 : index"
               >
                 <span class="faq-glyph" aria-hidden="true">{{ item.glyph }}</span>
@@ -489,7 +490,7 @@ onMounted(async () => {
         <p data-reveal style="--r: 3">
           Год прошёл за один вдох. Теперь — ваше небо: каким оно было в день, когда вы пришли в мир?
         </p>
-        <RouterLink class="gold-cta" :to="chartTo" data-reveal style="--r: 4">Построить карту — бесплатно</RouterLink>
+        <RouterLink class="gold-cta" :to="chartTo" data-track="home:final" data-reveal style="--r: 4">Построить карту — бесплатно</RouterLink>
       </div>
     </section>
   </SiteFrame>

@@ -226,3 +226,120 @@ export function pct(part, whole) {
   const value = (part / whole) * 100
   return `${value.toLocaleString('ru-RU', { maximumFractionDigits: value < 10 ? 1 : 0 })}%`
 }
+
+/* ---- What a page gathers (track.js): the offers, the buttons, the game, one person's actions ---- */
+
+const OFFER_NAMES = {
+  'sky:portrait': 'Портрет за замком',
+  'sky:chart': 'Карта: строка про «Небосвод»',
+  'sky:chat': 'Астролог: замок',
+  'sky:chat-hint': 'Астролог: подсказка про счёт',
+  'sky:month': 'Прогноз на месяц',
+  'sky:forecast-stories': 'Прогноз: истории дня',
+  'sky:forecast': 'Прогноз: замок',
+  'sky:overview': 'Обзор: строка «Небосвода»',
+  'sky:profile': 'Профиль: «Зажечь» / «Продлить»',
+  'sky:pair-price': 'Пара: дешевле с «Небосводом»',
+  'sky:pair-day': 'Пара: день пары',
+  'sky:panel': 'Раздел «Небосвод» напрямую',
+  'pair:stories': 'Пара: кнопка в историях',
+  'pair:panel': 'Пара: кнопка разбора',
+}
+
+/** Where a payment came from: the offer last pressed before it; '' — the payments before the places were kept. */
+export function offerName(name) {
+  if (!name) return 'Без места (раньше учёта)'
+  return OFFER_NAMES[name] || name
+}
+
+const CLICK_NAMES = {
+  'home:form': 'Главная: форма даты',
+  'home:sample': 'Главная: пример карты',
+  'home:span-day': 'Главная: прогноз на день',
+  'home:span-week': 'Главная: прогноз на неделю',
+  'home:final': 'Главная: последняя кнопка',
+  'header:login': 'Шапка: вход',
+  'header:menu': 'Шапка: меню',
+  'menu:login': 'Меню: вход',
+  'landing:calc': 'Посадочная: расчёт',
+  'landing:cta': 'Посадочная: в кабинет',
+  'pay:sky': '«Небосвод»: оплатить',
+  'out:mail': 'Письмо на почту',
+  'out:phone': 'Звонок',
+}
+
+/** A pressed button or link: its own name, an offer, a page it leads to (to:…), another site (out:…). */
+export function clickName(name) {
+  if (CLICK_NAMES[name]) return CLICK_NAMES[name]
+  if (OFFER_NAMES[name]) return OFFER_NAMES[name]
+  if (name.startsWith('home:faq-')) return `Главная: вопрос ${name.slice(9)}`
+  if (name.startsWith('to:')) return `→ ${pageName(name.slice(3))}`
+  if (name.startsWith('out:')) return `↗ ${name.slice(4)}`
+  return name
+}
+
+export const GAME_STEPS = {
+  intro: 'Заставка',
+  sun: 'Солнце',
+  moon: 'Луна',
+  asc: 'Асцендент',
+  mercury: 'Меркурий',
+  venus: 'Венера',
+  mars: 'Марс',
+  finale: 'Финал',
+}
+
+/** Seconds of attention: «45 с», «2 мин 10 с». */
+export function duration(seconds) {
+  const s = Math.round(Number(seconds) || 0)
+  if (!s) return '—'
+  if (s < 60) return `${s} с`
+  const m = Math.floor(s / 60)
+  return s % 60 ? `${m} мин ${s % 60} с` : `${m} мин`
+}
+
+const GAME_ACTS = {
+  offer: 'Игра: предложена',
+  play: 'Игра: согласился сыграть',
+  skip: 'Игра: отложил',
+  replay: 'Игра: сыграть ещё раз',
+  begin: 'Игра: началась',
+  finale: 'Игра: финал',
+  fail: 'Игра: не запустилась на устройстве',
+}
+const GAME_STEP_ACTS = { found: 'нашёл', miss: 'промах', hint: 'подсказка', quit: 'вышел на шаге' }
+const TOUR_STEPS = { start: 'показан', done: 'пройден', skip: 'закрыт' }
+const GOALS = { calc: 'расчёт', cta: 'переход в кабинет' }
+
+/** One line of a person's actions in their card. */
+export function eventText(item) {
+  const name = item.name || ''
+  switch (item.kind) {
+    case 'view': return `Открыл: ${pageName(name)}`
+    case 'visit': return `Новый визит — ${pageName(name)}`
+    case 'ref': return 'Пришёл по рекламной ссылке'
+    case 'signup': return 'Зарегистрировался'
+    case 'birth': return 'Указал дату рождения'
+    case 'tour': {
+      const [tour, step] = name.split(':')
+      return `Тур «${tourName(tour).replace(/[«»]/g, '')}»: ${TOUR_STEPS[step] || step}`
+    }
+    case 'goal': {
+      const [page, goal] = name.split(':')
+      return `${pageName(page)}: ${GOALS[goal] || goal}`
+    }
+    case 'click': return `Нажал: ${clickName(name)}`
+    case 'offer': return `Увидел предложение: ${offerName(name)}`
+    case 'pick': return `Выбрал срок: ${PRODUCTS[name] || name}`
+    case 'scroll': return `Долистал до ${item.value}%`
+    case 'time': return `Провёл на странице ${duration(item.value)}`
+    case 'act': {
+      const [, act, step] = name.split(':')
+      if (act === 'land') return `Игра: собрал карту за ${duration(item.value)}`
+      if (step) return `Игра: ${GAME_STEP_ACTS[act] || act} — ${GAME_STEPS[step] || step}`
+      return GAME_ACTS[act] || name
+    }
+    case 'payment': return `Платёж: ${PRODUCTS[name] || name} · ${fmt.rub(item.value)} · ${PAYMENT_STATUS[item.status] || item.status}`
+    default: return `${item.kind}: ${name}`
+  }
+}

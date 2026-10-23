@@ -7,6 +7,7 @@ import LockedReading from '../../components/cabinet/LockedReading.vue'
 import SkyNudge from '../../components/sky/SkyNudge.vue'
 import { markStep } from '../../utils/newcomer.js'
 import { gameSupported, startGame } from '../../components/game/state.js'
+import { queue } from '../../utils/track.js'
 import { useChart } from '../../composables/useChart.js'
 import { errorText } from '../../api/http.js'
 import { formatDate } from '../../utils/format.js'
@@ -73,6 +74,10 @@ const linkTo = (id) => ({ name: 'cabinet-chart', params: { item: id } })
 
 /** The natal sky game (NatalGame) once more, or for the first time if it was declined. */
 const canPlay = gameSupported()
+function replay() {
+  queue('act', 'game:replay')
+  startGame()
+}
 
 /** «в Весах, 18°24′» */
 const where = (point) => `${SIGN_BY_ID[point.sign].in}, ${degrees(point.deg)}`
@@ -237,7 +242,7 @@ const nudge = computed(() => {
           <p v-else class="quiet-text">Мажорных аспектов нет: эта точка говорит сама за себя.</p>
           <p v-if="aspects.length && aspectsLocked" class="note">
             Что значит каждый из этих аспектов для вас, читайте в
-            <RouterLink class="inline" :to="{ name: 'cabinet-sky' }">«Небосводе»</RouterLink>.
+            <RouterLink class="inline" v-seen="'sky:chart'" data-track="sky:chart" :to="{ name: 'cabinet-sky' }">«Небосводе»</RouterLink>.
           </p>
         </section>
 
@@ -250,7 +255,7 @@ const nudge = computed(() => {
     <template v-else>
       <PanelHead :lead="birthLine">Натальная <em>карта</em></PanelHead>
 
-      <button v-if="canPlay" type="button" class="replay" @click="startGame">
+      <button v-if="canPlay" type="button" class="replay" @click="replay">
         <svg viewBox="-12 -12 24 24" aria-hidden="true">
           <circle class="replay-orbit" r="7" />
           <path class="replay-ray" d="M0 7V-11" />

@@ -1,12 +1,15 @@
 """The operator's analytics: visitors, the funnel from a first view to a payment, where people stop,
-the tours, the sources — and the campaign links with everything that came by each.
+how soon they get to each step and whether they come back, the tours, the sources, what the pages
+hold (time, scroll, buttons, the game), which offers bring the money — and the campaign links with
+everything that came by each.
 
 Days are Moscow days, as on the overview. A funnel counts the people who registered in the period
 and how far each of them has gone by now; a campaign gets its people's registrations and payments
-for good (the first link a browser came by).
+for good (the first link a browser came by). A deleted account takes its whole trail with it.
 """
 
 import secrets
+from datetime import datetime
 
 from psycopg.errors import UniqueViolation
 
@@ -43,6 +46,8 @@ FUNNEL = (
     ("birth", "u.birth_date IS NOT NULL"),
     ("intro", "'tour:intro' = ANY(u.marks)"),
     ("section", "EXISTS (SELECT 1 FROM events e WHERE e.user_id = u.id AND e.kind = 'view' AND e.name IN ('cabinet-chart', 'cabinet-forecast', 'cabinet-pair', 'cabinet-chat', 'cabinet-sky'))"),
+    ("chart", "EXISTS (SELECT 1 FROM events e WHERE e.user_id = u.id AND e.kind = 'view' AND e.name = 'cabinet-chart')"),
+    ("game", "EXISTS (SELECT 1 FROM events e WHERE e.user_id = u.id AND e.kind = 'act' AND e.name = 'game:land')"),
     ("pair", "EXISTS (SELECT 1 FROM partners p WHERE p.user_id = u.id)"),
     ("chat", "EXISTS (SELECT 1 FROM chat_messages c WHERE c.user_id = u.id AND c.role = 'user')"),
     ("checkout", "EXISTS (SELECT 1 FROM payments pa WHERE pa.user_id = u.id)"),
@@ -56,6 +61,88 @@ def _funnel(conn, where: str, params: dict) -> dict:
     columns = ", ".join(f"count(*) FILTER (WHERE {condition}) AS {key}" for key, condition in FUNNEL)
     row = conn.execute(f"SELECT {columns} FROM users u WHERE {where}", params).fetchone()
     return {key: int(row[key]) for key, _ in FUNNEL}
+
+
+def _first_event(where: str) -> str:
+    return f"(SELECT min(e.created_at) FROM events e WHERE e.user_id = u.id AND {where})"
+
+
+def _first_paid(where: str = "TRUE") -> str:
+    return f"(SELECT min(pa.paid_at) FROM payments pa WHERE pa.user_id = u.id AND pa.status = 'succeeded' AND {where})"
+
+
+# When each step of the funnel first happened, for the hours from the registration to it. The date
+# of birth has its moment only since the birth events are written (older accounts have none).
+FIRST = (
+    ("birth", _first_event("e.kind = 'birth'")),
+    ("intro", _first_event("e.kind = 'tour' AND e.name IN ('intro:done', 'intro:skip')")),
+    ("section", _first_event("e.kind = 'view' AND e.name IN ('cabinet-chart', 'cabinet-forecast', 'cabinet-pair', 'cabinet-chat', 'cabinet-sky')")),
+    ("chart", _first_event("e.kind = 'view' AND e.name = 'cabinet-chart'")),
+    ("game", _first_event("e.kind = 'act' AND e.name = 'game:land'")),
+    ("pair", "(SELECT min(p.created_at) FROM partners p WHERE p.user_id = u.id)"),
+    ("chat", "(SELECT min(c.created_at) FROM chat_messages c WHERE c.user_id = u.id AND c.role = 'user')"),
+    ("checkout", "(SELECT min(pa.created_at) FROM payments pa WHERE pa.user_id = u.id)"),
+    ("paid", _first_paid()),
+    ("sky", _first_paid("pa.product LIKE 'sky%%'")),
+    ("pair_bought", _first_paid(f"pa.product = '{PAIR}'")),
+)
+
+
+def _step_hours(conn, where: str, params: dict) -> dict:
+    """The median hours from the registration to each step, among those who made it."""
+    firsts = ", ".join(f"{first} AS {key}" for key, first in FIRST)
+    # GREATEST takes a missing moment for 0: those who have not made the step are filtered out first.
+    columns = ", ".join(
+        f"percentile_cont(0.5) WITHIN GROUP (ORDER BY GREATEST(0, extract(epoch FROM f.{key} - f.created_at)) / 3600)"
+        f" FILTER (WHERE f.{key} IS NOT NULL) AS {key}"
+        for key, _ in FIRST
+    )
+    row = conn.execute(f"SELECT {columns} FROM (SELECT u.created_at, {firsts} FROM users u WHERE {where}) f", params).fetchone()
+    return {key: (None if row[key] is None else round(float(row[key]), 2)) for key, _ in FIRST}
+
+
+COHORT_WEEKS = 8
+
+
+def _retention(conn) -> dict:
+    """Who comes back: the accounts active in the last day, week and month, and the registrations
+    of the last eight Moscow weeks with how many of each were seen again a week, two… after signing
+    up (a week that has not come yet for the cohort stays empty). Active is anything the person did
+    on the site signed in."""
+    active = conn.execute(
+        """
+        SELECT count(DISTINCT user_id) FILTER (WHERE created_at >= now() - interval '1 day') AS d1,
+               count(DISTINCT user_id) FILTER (WHERE created_at >= now() - interval '7 days') AS d7,
+               count(DISTINCT user_id) AS d30
+        FROM events WHERE user_id IS NOT NULL AND kind NOT IN ('signup', 'birth') AND created_at >= now() - interval '30 days'
+        """
+    ).fetchone()
+    weeks = ", ".join(f"count(DISTINCT a.user_id) FILTER (WHERE a.n = {n}) AS w{n}" for n in range(1, COHORT_WEEKS))
+    rows = conn.execute(
+        f"""
+        WITH c AS (
+            SELECT id, created_at, date_trunc('week', created_at AT TIME ZONE '{TZ}')::date AS week FROM users
+            WHERE created_at >= (date_trunc('week', now() AT TIME ZONE '{TZ}') - interval '{COHORT_WEEKS - 1} weeks') AT TIME ZONE '{TZ}'
+        ),
+        a AS (
+            SELECT DISTINCT e.user_id, floor(extract(epoch FROM e.created_at - c.created_at) / 604800)::int AS n
+            FROM events e JOIN c ON c.id = e.user_id
+            WHERE e.kind NOT IN ('signup', 'birth') AND e.created_at > c.created_at
+        )
+        SELECT c.week, ((now() AT TIME ZONE '{TZ}')::date - c.week) / 7 AS passed, count(DISTINCT c.id) AS people, {weeks}
+        FROM c LEFT JOIN a ON a.user_id = c.id
+        GROUP BY c.week ORDER BY c.week DESC
+        """
+    ).fetchall()
+    cohorts = [
+        {
+            "week": row["week"].isoformat(),
+            "people": int(row["people"]),
+            "weeks": [int(row[f"w{n}"]) if n < row["passed"] else None for n in range(1, COHORT_WEEKS)],
+        }
+        for row in rows
+    ]
+    return {"active": {key: int(value) for key, value in active.items()}, "cohorts": cohorts}
 
 
 def analytics(days: int) -> dict:
@@ -138,15 +225,103 @@ def analytics(days: int) -> dict:
             p,
         )
 
+        # Each page: its views, the seconds of attention a view holds on average, how many views got
+        # through a quarter, half and all of the page (track.js: time, scroll).
         pages = _rows(
             conn,
             f"""
-            SELECT name, count(*) AS views, count(DISTINCT visitor_id) AS visitors, count(DISTINCT user_id) AS users
-            FROM events WHERE kind = 'view' AND created_at >= {SINCE}
-            GROUP BY name ORDER BY views DESC LIMIT 24
+            WITH v AS (
+                SELECT name, count(*) AS views, count(DISTINCT visitor_id) AS visitors, count(DISTINCT user_id) AS users
+                FROM events WHERE kind = 'view' AND created_at >= {SINCE} GROUP BY name
+            ),
+            t AS (SELECT name, sum(value) AS seconds FROM events WHERE kind = 'time' AND created_at >= {SINCE} GROUP BY name),
+            s AS (
+                SELECT name, count(*) FILTER (WHERE value = 25) AS scrolled, count(*) FILTER (WHERE value = 50) AS half,
+                       count(*) FILTER (WHERE value = 100) AS whole
+                FROM events WHERE kind = 'scroll' AND created_at >= {SINCE} GROUP BY name
+            )
+            SELECT v.name, v.views, v.visitors, v.users, COALESCE(t.seconds, 0)::float / v.views AS seconds,
+                   COALESCE(s.scrolled, 0) AS scrolled, COALESCE(s.half, 0) AS half, COALESCE(s.whole, 0) AS whole
+            FROM v LEFT JOIN t USING (name) LEFT JOIN s USING (name)
+            ORDER BY v.views DESC LIMIT 24
             """,
             p,
         )
+
+        # The buttons and links pressed (data-track, links by where they lead), with the page they are on.
+        clicks = _rows(
+            conn,
+            f"""
+            SELECT name, page, count(*) AS times, count(DISTINCT COALESCE(user_id::text, visitor_id)) AS people
+            FROM events WHERE kind = 'click' AND created_at >= {SINCE}
+            GROUP BY 1, 2 ORDER BY times DESC LIMIT 40
+            """,
+            p,
+        )
+
+        # The natal sky game: each of its actions, how often and by how many, and by its step (the
+        # planet, the intro, the finale: game:found:moon, the value its number) — found (people),
+        # missed, hints taken, left there.
+        game_acts = _rows(
+            conn,
+            f"""
+            SELECT split_part(name, ':', 2) AS act, count(*) AS times,
+                   count(DISTINCT COALESCE(user_id::text, visitor_id)) AS people, avg(value) AS mean
+            FROM events WHERE kind = 'act' AND name LIKE 'game:%%' AND created_at >= {SINCE}
+            GROUP BY 1
+            """,
+            p,
+        )
+        game_steps = _rows(
+            conn,
+            f"""
+            SELECT split_part(name, ':', 3) AS step, min(value) AS n,
+                   count(DISTINCT COALESCE(user_id::text, visitor_id)) FILTER (WHERE split_part(name, ':', 2) = 'found') AS found,
+                   count(*) FILTER (WHERE split_part(name, ':', 2) = 'miss') AS missed,
+                   count(*) FILTER (WHERE split_part(name, ':', 2) = 'hint') AS hints,
+                   count(*) FILTER (WHERE split_part(name, ':', 2) = 'quit') AS quit
+            FROM events
+            WHERE kind = 'act' AND name LIKE 'game:%%:%%' AND created_at >= {SINCE}
+            GROUP BY 1 ORDER BY 2, 1
+            """,
+            p,
+        )
+
+        # Where the money comes from: each offer of the site — seen and pressed (people), the payments
+        # started from it, paid, the revenue (payments.place, written at the checkout; '' — before it).
+        offers = _rows(
+            conn,
+            f"""
+            WITH shown AS (
+                SELECT name AS place, count(DISTINCT COALESCE(user_id::text, visitor_id)) AS shown
+                FROM events WHERE kind = 'offer' AND created_at >= {SINCE} GROUP BY 1
+            ),
+            pressed AS (
+                SELECT name AS place, count(DISTINCT COALESCE(user_id::text, visitor_id)) AS pressed
+                FROM events WHERE kind = 'click' AND (name LIKE 'sky:%%' OR name LIKE 'pair:%%') AND created_at >= {SINCE} GROUP BY 1
+            ),
+            bought AS (
+                SELECT place, count(*) AS checkouts, count(*) FILTER (WHERE status = 'succeeded') AS paid,
+                       COALESCE(sum(amount) FILTER (WHERE status = 'succeeded'), 0) AS revenue
+                FROM payments WHERE created_at >= {SINCE} GROUP BY 1
+            )
+            SELECT place, COALESCE(shown.shown, 0) AS shown, COALESCE(pressed.pressed, 0) AS pressed,
+                   COALESCE(bought.checkouts, 0) AS checkouts, COALESCE(bought.paid, 0) AS paid, COALESCE(bought.revenue, 0) AS revenue
+            FROM shown FULL JOIN pressed USING (place) FULL JOIN bought USING (place)
+            ORDER BY 6 DESC, 4 DESC, 2 DESC LIMIT 30
+            """,
+            p,
+        )
+        sky_page = conn.execute(
+            f"""
+            SELECT count(DISTINCT COALESCE(user_id::text, visitor_id)) AS people FROM events
+            WHERE kind = 'view' AND name = 'cabinet-sky' AND created_at >= {SINCE}
+            """,
+            p,
+        ).fetchone()["people"]
+
+        step_hours = _step_hours(conn, cohort, p)
+        retention = _retention(conn)
 
         # The first page of each visitor; the landing pages' goals (track.py: `<page>:calc`, `<page>:cta`) beside it.
         landings = _rows(
@@ -229,13 +404,25 @@ def analytics(days: int) -> dict:
             p,
         ).fetchone()
 
+        # Each product: the people who picked its term in «Небосвод» (pick), the payments started,
+        # paid and not gone through, the revenue.
         products = _rows(
             conn,
             f"""
-            SELECT product, count(*) FILTER (WHERE status = 'succeeded') AS paid, count(*) AS started,
-                   COALESCE(sum(amount) FILTER (WHERE status = 'succeeded'), 0) AS revenue
-            FROM payments WHERE created_at >= {SINCE}
-            GROUP BY product ORDER BY revenue DESC
+            WITH picks AS (
+                SELECT name AS product, count(DISTINCT COALESCE(user_id::text, visitor_id)) AS picked
+                FROM events WHERE kind = 'pick' AND created_at >= {SINCE} GROUP BY 1
+            ),
+            pays AS (
+                SELECT product, count(*) FILTER (WHERE status = 'succeeded') AS paid, count(*) AS started,
+                       count(*) FILTER (WHERE status IN ('canceled', 'failed')) AS canceled,
+                       COALESCE(sum(amount) FILTER (WHERE status = 'succeeded'), 0) AS revenue
+                FROM payments WHERE created_at >= {SINCE} GROUP BY product
+            )
+            SELECT product, COALESCE(picks.picked, 0) AS picked, COALESCE(pays.started, 0) AS started,
+                   COALESCE(pays.paid, 0) AS paid, COALESCE(pays.canceled, 0) AS canceled, COALESCE(pays.revenue, 0) AS revenue
+            FROM pays FULL JOIN picks USING (product)
+            ORDER BY 6 DESC, 3 DESC
             """,
             p,
         )
@@ -254,7 +441,52 @@ def analytics(days: int) -> dict:
         "marks": _clean(marks),
         "actions": {key: int(value) for key, value in actions.items()},
         "products": _clean(products),
+        "step_hours": step_hours,
+        "retention": retention,
+        "clicks": _clean(clicks),
+        "game": {"acts": {row["act"]: row for row in _clean(game_acts)}, "steps": _clean(game_steps)},
+        "offers": _clean(offers),
+        "sky_page": int(sky_page),
     }
+
+
+# ---- One person's actions, for their card ----
+
+TIMELINE = 150
+
+
+def user_events(user_id: int, before: str = "") -> dict:
+    """The latest actions of this account, newest first: what it did signed in, what its browsers did
+    before (the pages that led to the registration) and its payments. `before` — the moment of the
+    last action shown, for the earlier ones."""
+    try:
+        until = datetime.fromisoformat(before) if before else None
+    except ValueError:
+        raise DomainError("state") from None
+    p = {"id": user_id, "until": until, "limit": TIMELINE + 1}
+    with pool.connection() as conn:
+        if conn.execute("SELECT 1 FROM users WHERE id = %s", (user_id,)).fetchone() is None:
+            raise DomainError("missing", 404)
+        rows = _rows(
+            conn,
+            """
+            SELECT e.created_at AS at, e.kind, e.name, e.value, e.page, '' AS status
+            FROM events e
+            WHERE (e.user_id = %(id)s OR (e.user_id IS NULL AND e.visitor_id IN (
+                      SELECT v.id FROM visitors v WHERE v.user_id = %(id)s
+                      UNION SELECT u.visitor_id FROM users u WHERE u.id = %(id)s
+                  )))
+              AND (%(until)s::timestamptz IS NULL OR e.created_at < %(until)s::timestamptz)
+            UNION ALL
+            SELECT pa.created_at, 'payment', pa.product, pa.amount, pa.place, pa.status
+            FROM payments pa
+            WHERE pa.user_id = %(id)s AND (%(until)s::timestamptz IS NULL OR pa.created_at < %(until)s::timestamptz)
+            ORDER BY at DESC LIMIT %(limit)s
+            """,
+            p,
+        )
+    items = [{**row, "at": row["at"].isoformat()} for row in _clean(rows[:TIMELINE])]
+    return {"items": items, "more": len(rows) > TIMELINE}
 
 
 # ---- Campaign links ----

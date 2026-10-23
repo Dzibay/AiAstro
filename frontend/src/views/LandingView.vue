@@ -185,7 +185,7 @@ watch(page, (next) => {
             </div>
           </fieldset>
           <p v-if="message" class="calc-message" role="alert">{{ message }}</p>
-          <button class="gold-cta calc-cta" type="submit" :disabled="pending">
+          <button class="gold-cta calc-cta" type="submit" :disabled="pending" data-track="landing:calc">
             {{ pending ? 'Читаем небо…' : page.form === 'pair' ? 'Рассчитать совместимость' : page.form === 'forecast' ? 'Показать мой день' : 'Рассчитать' }}
           </button>
           <p class="calc-note">Город уточняет дома и Асцендент. Без времени карта верна в главном.</p>
@@ -248,7 +248,7 @@ watch(page, (next) => {
         <div class="result-next">
           <p v-if="page.form === 'natal'">В кабинете — колесо карты, все планеты в знаках и домах, аспекты и стихии.</p>
           <p v-else-if="more">Ещё {{ more }} {{ more === 1 ? 'глава' : more < 5 ? 'главы' : 'глав' }} — в полном разборе.</p>
-          <button class="gold-cta" type="button" @click="goOn">{{ page.cta }}</button>
+          <button class="gold-cta" type="button" data-track="landing:cta" @click="goOn">{{ page.cta }}</button>
         </div>
       </section>
 

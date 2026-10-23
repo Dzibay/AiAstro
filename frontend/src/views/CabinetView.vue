@@ -21,6 +21,7 @@ import { settlePendingPayment } from '../composables/usePayment.js'
 import { useChat } from '../composables/useChat.js'
 import { useHead } from '../utils/useHead.js'
 import { markTourSeen, startTour, stopTour, tour, tourSeen } from '../utils/tour.js'
+import { queue, reachGoal } from '../utils/track.js'
 import { takeMarks } from '../utils/marks.js'
 
 // three.js comes with the game only, in its own chunk.
@@ -68,11 +69,17 @@ const gameOffer = computed(() => Boolean(
 const gameAway = computed(() => game.open && !game.landing)
 function playGame() {
   markTourSeen(user.value.id, 'game')
+  queue('act', 'game:play')
+  reachGoal('astra.game@play')
   startGame()
 }
 function skipGame() {
   markTourSeen(user.value.id, 'game')
+  queue('act', 'game:skip')
 }
+watch(gameOffer, (up) => {
+  if (up) queue('act', 'game:offer')
+})
 watch(section, (id) => {
   if (id !== 'chart' && game.open) closeGame()
 })
@@ -470,7 +477,7 @@ const sheetStyle = computed(() => {
           </RouterLink>
         </div>
 
-        <div class="panel-scroll">
+        <div class="panel-scroll" data-scroll-depth>
           <p v-if="message" class="error">{{ message }}</p>
           <RouterView v-else-if="user" v-slot="{ Component, route: current }">
             <Transition :name="motion" mode="out-in" @after-enter="focusTitle">

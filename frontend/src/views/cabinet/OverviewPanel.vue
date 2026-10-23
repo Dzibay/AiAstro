@@ -105,7 +105,7 @@ const unplaced = computed(() => Boolean(props.user.birth?.place && props.user.bi
       </ul>
     </section>
 
-    <RouterLink class="today sky-line" :class="{ 'is-lit': user.sky, 'is-ending': user.sky && skyMore === 'Продлить' }" :to="{ name: 'cabinet-sky' }">
+    <RouterLink class="today sky-line" v-seen="'sky:overview'" data-track="sky:overview" :class="{ 'is-lit': user.sky, 'is-ending': user.sky && skyMore === 'Продлить' }" :to="{ name: 'cabinet-sky' }">
       <svg class="sky-crown" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
       <span>{{ skyState }}</span>
       <span class="today-more">{{ skyMore }}</span>

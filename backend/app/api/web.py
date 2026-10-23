@@ -94,6 +94,8 @@ class PaymentIn(BaseModel):
     partner: int | None = None
     # The browser's own origin: kept for a local dev server; production uses PUBLIC_BASE_URL.
     origin: str | None = Field(default=None, max_length=200)
+    # The offer the person came from: «sky:chat», «pair:panel».
+    place: str = Field(default="", max_length=48)
 
 
 class LoginIn(BaseModel):
@@ -442,6 +444,7 @@ def pay(body: PaymentIn, request: Request, user_id: int = Depends(require_web_us
             body.product,
             body.partner,
             origin=body.origin or request.headers.get("origin"),
+            place=body.place,
         )
     except DomainError as exc:
         raise as_http(exc) from exc

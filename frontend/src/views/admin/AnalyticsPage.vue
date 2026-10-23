@@ -1,13 +1,31 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import ColumnChart from '../../components/admin/ColumnChart.vue'
 import { adminApi } from '../../api/admin.js'
-import { PERIODS, PRODUCTS, STEP_NAMES, buckets, failed, fmt, pageName, pct, stepOf, tourName } from './shared.js'
+import {
+  GAME_STEPS, PERIODS, PRODUCTS, STEP_NAMES, buckets, clickName, duration, failed, fmt, offerName, pageName, pct, stepOf, tourName,
+} from './shared.js'
 
 /**
  * The site's own figures: who came, from where, how far the people registered in the period have
- * gone by now, where they stopped, which tours they walked, what they bought.
+ * gone by now and how soon, whether they come back, where they stopped, which tours they walked,
+ * which offers bring the money, what the pages hold (time, scroll, buttons, the game).
  */
+
+const route = useRoute()
+const router = useRouter()
+const TABS = [
+  { key: 'funnel', label: 'Воронка и возвраты' },
+  { key: 'money', label: 'Деньги' },
+  { key: 'pages', label: 'Поведение' },
+  { key: 'sources', label: 'Источники' },
+]
+// The tab lives in the address: a reload or a shared link opens the same one.
+const tab = computed({
+  get: () => (TABS.some((item) => item.key === route.query.tab) ? route.query.tab : 'funnel'),
+  set: (key) => router.replace({ query: { ...route.query, tab: key === 'funnel' ? undefined : key } }),
+})
 
 const days = ref(30)
 const data = ref(null)
@@ -35,6 +53,8 @@ const step = computed(() => stepOf(days.value))
 const visitors = computed(() => buckets(data.value?.series || [], 'visitors', days.value))
 const signups = computed(() => buckets(data.value?.series || [], 'signups', days.value))
 const hours = (value) => (!value ? '—' : value < 1 ? `${Math.max(1, Math.round(value * 60))} мин` : value < 48 ? `${Math.round(value)} ч` : `${Math.round(value / 24)} дн`)
+/** The median time from the registration to a step: «сразу» within a minute, nothing if nobody made it. */
+const after = (value) => (value == null ? '' : value < 1 / 60 ? 'сразу' : hours(value))
 
 const tiles = computed(() => {
   const x = t.value
@@ -55,6 +75,8 @@ const FUNNEL = [
   { key: 'birth', label: 'Дата рождения', hint: 'небо нарисовало знак' },
   { key: 'intro', label: 'Знакомство', hint: 'тур по кабинету пройден или закрыт' },
   { key: 'section', label: 'Открыл раздел', hint: 'карта, прогноз, пара, астролог или «Небосвод»' },
+  { key: 'chart', label: 'Открыл карту', hint: 'раздел «Карта»' },
+  { key: 'game', label: 'Собрал карту в игре', hint: 'прошёл игру до финала' },
   { key: 'pair', label: 'Добавил пару', hint: 'сам или приглашением' },
   { key: 'chat', label: 'Спросил астролога', hint: 'хотя бы один вопрос' },
   { key: 'checkout', label: 'Начал оплату', hint: 'перешёл в ЮKassa' },
@@ -66,6 +88,7 @@ const FUNNEL = [
 const funnel = computed(() => {
   const f = data.value?.funnel
   if (!f) return []
+  const when = data.value.step_hours || {}
   const top = Math.max(f.signup, 1)
   // Accounts made before the counting began have no visitor: the bars measure against the larger.
   const visitorsTop = Math.max(t.value.new_visitors, top)
@@ -79,6 +102,7 @@ const funnel = computed(() => {
       width: (value / visitorsTop) * 100,
       ofFirst: item.key === 'signup' ? pct(t.value.fresh_signups, t.value.new_visitors) : pct(value, f.signup),
       ofPrev: item.key === 'signup' ? '' : pct(value, previous),
+      after: after(when[item.key]),
       // The checkout and the purchases are not one after another: each counts from the registrations.
       paid: ['checkout', 'paid', 'sky', 'pair_bought'].includes(item.key),
     })
@@ -162,13 +186,60 @@ const actions = computed(() => {
   ]
 })
 const products = computed(() => (data.value?.products || []).map((row) => ({ ...row, label: PRODUCTS[row.product] || row.product })))
+const pickedAll = computed(() => products.value.reduce((sum, row) => sum + row.picked, 0))
+const offers = computed(() => (data.value?.offers || []).map((row) => ({ ...row, label: offerName(row.place) })))
+
+/* ---- Who comes back ---- */
+
+const retention = computed(() => data.value?.retention || { active: {}, cohorts: [] })
+const active = computed(() => {
+  const a = retention.value.active
+  return [
+    { label: 'За сутки', value: a.d1 },
+    { label: 'За неделю', value: a.d7 },
+    { label: 'За 30 дней', value: a.d30 },
+  ]
+})
+const weekDay = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' })
+const WEEKS = 7
+const cohorts = computed(() => retention.value.cohorts.map((row) => ({
+  ...row,
+  label: `с ${weekDay.format(new Date(`${row.week}T12:00:00`)).replace('.', '')}`,
+  cells: row.weeks.map((value, index) => ({
+    key: index + 1,
+    value,
+    share: value == null || !row.people ? 0 : value / row.people,
+  })),
+})))
+
+/* ---- What the pages hold ---- */
+
+const scrollShare = (row, field) => (row.scrolled || row.half || row.whole ? pct(row[field], row.views) : '—')
+const clicks = computed(() => (data.value?.clicks || []).map((row) => ({ ...row, label: clickName(row.name) })))
+
+const game = computed(() => {
+  const acts = data.value?.game?.acts || {}
+  const people = (key) => acts[key]?.people || 0
+  const rows = [
+    { label: 'Предложили сыграть', value: people('offer'), hint: 'после первого открытия карты' },
+    { label: 'Согласились', value: people('play'), hint: `${pct(people('play'), people('offer'))} предложенных` },
+    { label: 'Отложили', value: people('skip'), hint: 'кнопка «Позже»' },
+    { label: 'Начали', value: people('begin'), hint: 'нажали «Начать»' },
+    { label: 'Дошли до финала', value: people('finale'), hint: `${pct(people('finale'), people('begin'))} начавших` },
+    { label: 'Собрали карту', value: people('land'), hint: `в среднем за ${duration(acts.land?.mean)}` },
+    { label: 'Сыграли ещё раз', value: acts.replay?.times || 0, hint: 'кнопка на странице карты' },
+  ]
+  if (people('fail')) rows.push({ label: 'Не запустилась', value: people('fail'), hint: 'сцена не создалась на устройстве' })
+  return rows
+})
+const gameSteps = computed(() => (data.value?.game?.steps || []).map((row) => ({ ...row, label: GAME_STEPS[row.step] || row.step })))
 </script>
 
 <template>
   <header class="adm-head">
     <div>
       <h1>Аналитика</h1>
-      <p>Посетители, воронка и поведение за выбранный срок. Дни — по Москве; посетитель — один браузер.</p>
+      <p>Посетители, воронка, деньги и поведение за выбранный срок. Дни — по Москве; посетитель — один браузер. Удалённые аккаунты не считаются, их платежи — да.</p>
     </div>
     <div class="adm-seg" role="group" aria-label="Период">
       <button v-for="p in PERIODS" :key="p.days" type="button" :aria-pressed="days === p.days" @click="days = p.days">{{ p.label }}</button>
@@ -186,6 +257,11 @@ const products = computed(() => (data.value?.products || []).map((row) => ({ ...
       </div>
     </div>
 
+    <nav class="adm-seg an-tabs" aria-label="Разделы аналитики">
+      <button v-for="item in TABS" :key="item.key" type="button" :aria-pressed="tab === item.key" @click="tab = item.key">{{ item.label }}</button>
+    </nav>
+
+    <template v-if="tab === 'funnel'">
     <section class="adm-panel">
       <div class="adm-panel-head">
         <h2>Воронка</h2>
@@ -203,13 +279,60 @@ const products = computed(() => (data.value?.products || []).map((row) => ({ ...
           <span class="an-funnel-prev num" :title="'от предыдущего шага'">
             <template v-if="row.ofPrev">→ {{ row.ofPrev }}</template>
           </span>
+          <span class="an-funnel-time num" title="медиана: сколько прошло от регистрации до шага">{{ row.after }}</span>
         </li>
       </ol>
       <p class="adm-note an-legend">
         <span><i class="an-dot" /> шаги по порядку</span>
         <span><i class="an-dot is-paid" /> покупки — доля от регистраций</span>
         <span><i class="an-dot is-drop" /> больше всего теряем здесь</span>
+        <span>справа — медиана времени от регистрации до шага</span>
       </p>
+    </section>
+
+    <section class="adm-panel">
+      <div class="adm-panel-head">
+        <h2>Возвращаются</h2>
+        <p>аккаунты, которые что-то делали на сайте; не зависит от срока</p>
+      </div>
+      <div class="an-active">
+        <div v-for="item in active" :key="item.label" class="an-action">
+          <strong class="num">{{ fmt.count(item.value) }}</strong>
+          <span>{{ item.label }}</span>
+          <span class="adm-dim">{{ pct(item.value, t.users) }} всех аккаунтов</span>
+        </div>
+      </div>
+      <div class="adm-panel-head an-sub">
+        <h2>Недели после регистрации</h2>
+        <p>кто из зарегистрированных за неделю заходил снова через неделю, две…</p>
+      </div>
+      <div v-if="cohorts.length" class="an-scroll">
+        <table class="adm-table an-table an-cohorts">
+          <thead>
+            <tr>
+              <th>Регистрация</th><th class="num">Людей</th>
+              <th v-for="n in WEEKS" :key="n" class="num">{{ n }}-я</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in cohorts" :key="row.week">
+              <td>{{ row.label }}</td>
+              <td class="num">{{ fmt.count(row.people) }}</td>
+              <td
+                v-for="cell in row.cells"
+                :key="cell.key"
+                class="num an-cell"
+                :class="{ 'is-empty': cell.value == null }"
+                :style="cell.value == null ? null : { '--share': cell.share }"
+                :title="cell.value == null ? 'эта неделя ещё не наступила' : `${fmt.count(cell.value)} из ${fmt.count(row.people)}`"
+              >
+                <template v-if="cell.value != null">{{ pct(cell.value, row.people) }}</template>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p v-else class="adm-empty">За последние восемь недель регистраций не было.</p>
     </section>
 
     <div class="an-pair">
@@ -247,22 +370,16 @@ const products = computed(() => (data.value?.products || []).map((row) => ({ ...
 
       <section class="adm-panel">
         <div class="adm-panel-head">
-          <h2>Покупки</h2>
-          <p>начато оплат {{ fmt.count(t.checkouts) }} · брошено {{ pct(t.abandoned, t.checkouts) }}</p>
+          <h2>Действия</h2>
+          <p>за срок</p>
         </div>
-        <table v-if="products.length" class="adm-table an-table">
-          <thead><tr><th>Продукт</th><th class="num">Начали</th><th class="num">Оплатили</th><th class="num">Доходимость</th><th class="num">Выручка</th></tr></thead>
-          <tbody>
-            <tr v-for="row in products" :key="row.product">
-              <td>{{ row.label }}</td>
-              <td class="num">{{ fmt.count(row.started) }}</td>
-              <td class="num">{{ fmt.count(row.paid) }}</td>
-              <td class="num">{{ pct(row.paid, row.started) }}</td>
-              <td class="num"><strong>{{ fmt.rub(row.revenue) }}</strong></td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-else class="adm-empty">За этот срок никто не начинал оплату.</p>
+        <div class="an-actions">
+          <div v-for="item in actions" :key="item.label" class="an-action">
+            <strong class="num">{{ fmt.count(item.value) }}</strong>
+            <span>{{ item.label }}</span>
+            <span class="adm-dim">{{ item.hint }}</span>
+          </div>
+        </div>
       </section>
     </div>
 
@@ -303,21 +420,154 @@ const products = computed(() => (data.value?.products || []).map((row) => ({ ...
         <span v-for="row in steps" :key="row.mark">{{ row.label }} — <strong>{{ fmt.count(row.users) }}</strong></span>
       </p>
     </section>
+    </template>
+
+    <template v-else-if="tab === 'money'">
+    <section class="adm-panel">
+      <div class="adm-panel-head">
+        <h2>Покупки</h2>
+        <p>начато оплат {{ fmt.count(t.checkouts) }} · брошено {{ pct(t.abandoned, t.checkouts) }} · открывали «Небосвод» {{ fmt.count(data.sky_page) }} чел., выбирали срок {{ fmt.count(pickedAll) }}</p>
+      </div>
+      <table v-if="products.length" class="adm-table an-table">
+        <thead>
+          <tr>
+            <th>Продукт</th><th class="num" title="люди, которые выбрали этот срок в разделе «Небосвод»">Выбрали</th><th class="num">Начали</th>
+            <th class="num">Оплатили</th><th class="num" title="отменены в ЮKassa или не созданы">Не прошли</th><th class="num">Доходимость</th><th class="num">Выручка</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in products" :key="row.product">
+            <td>{{ row.label }}</td>
+            <td class="num">{{ row.product.startsWith('sky') ? fmt.count(row.picked) : '—' }}</td>
+            <td class="num">{{ fmt.count(row.started) }}</td>
+            <td class="num">{{ fmt.count(row.paid) }}</td>
+            <td class="num">{{ fmt.count(row.canceled) }}</td>
+            <td class="num">{{ pct(row.paid, row.started) }}</td>
+            <td class="num"><strong>{{ fmt.rub(row.revenue) }}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="adm-empty">За этот срок никто не начинал оплату.</p>
+    </section>
 
     <section class="adm-panel">
       <div class="adm-panel-head">
-        <h2>Действия</h2>
-        <p>за срок</p>
+        <h2>Откуда деньги</h2>
+        <p>предложения на сайте: сколько людей увидели, нажали, начали оплату и оплатили</p>
       </div>
-      <div class="an-actions">
-        <div v-for="item in actions" :key="item.label" class="an-action">
-          <strong class="num">{{ fmt.count(item.value) }}</strong>
-          <span>{{ item.label }}</span>
-          <span class="adm-dim">{{ item.hint }}</span>
-        </div>
+      <div class="an-scroll">
+        <table v-if="offers.length" class="adm-table an-table">
+          <thead>
+            <tr>
+              <th>Место</th><th class="num">Увидели</th><th class="num">Нажали</th><th class="num">Начали оплату</th>
+              <th class="num">Оплатили</th><th class="num" title="оплатили от увидевших">Конверсия</th><th class="num">Выручка</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in offers" :key="row.place">
+              <td>{{ row.label }}</td>
+              <td class="num">{{ fmt.count(row.shown) }}</td>
+              <td class="num">{{ fmt.count(row.pressed) }} <span class="adm-dim">· {{ pct(row.pressed, row.shown) }}</span></td>
+              <td class="num">{{ fmt.count(row.checkouts) }}</td>
+              <td class="num">{{ fmt.count(row.paid) }}</td>
+              <td class="num">{{ pct(row.paid, row.shown) }}</td>
+              <td class="num"><strong>{{ fmt.rub(row.revenue) }}</strong></td>
+            </tr>
+          </tbody>
+        </table>
       </div>
+      <p v-if="!offers.length" class="adm-empty">За этот срок предложения никому не показывались.</p>
+      <p class="adm-note an-foot">Оплата засчитывается месту, где человек последним нажал на предложение в этой вкладке (в пределах получаса); без такого нажатия — разделу, где он платил.</p>
+    </section>
+    </template>
+
+    <template v-else-if="tab === 'pages'">
+    <section class="adm-panel">
+      <div class="adm-panel-head">
+        <h2>Страницы</h2>
+        <p>просмотры за срок · время — пока вкладка открыта и человек что-то делает · докуда долистывают</p>
+      </div>
+      <div class="an-scroll">
+        <table v-if="pages.length" class="adm-table an-table">
+          <thead>
+            <tr>
+              <th>Страница</th><th class="num">Просмотры</th><th class="num">Посетители</th><th class="num">Из них вошли</th>
+              <th class="num">На посетителя</th><th class="num" title="в среднем на один просмотр">Время</th>
+              <th class="num" title="доля просмотров, долистанных до середины">До половины</th><th class="num" title="доля просмотров, долистанных до конца">До конца</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in pages" :key="row.name">
+              <td>{{ pageName(row.name) }}</td>
+              <td class="num">{{ fmt.count(row.views) }}</td>
+              <td class="num">{{ fmt.count(row.visitors) }}</td>
+              <td class="num">{{ fmt.count(row.users) }}</td>
+              <td class="num">{{ row.visitors ? (row.views / row.visitors).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) : '—' }}</td>
+              <td class="num">{{ duration(row.seconds) }}</td>
+              <td class="num">{{ scrollShare(row, 'half') }}</td>
+              <td class="num">{{ scrollShare(row, 'whole') }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p v-if="!pages.length" class="adm-empty">Просмотров за этот срок не было.</p>
+      <p v-else class="adm-note an-foot">«—» в прокрутке — страница целиком помещается на экран или за срок её никто не листал.</p>
     </section>
 
+    <div class="an-pair">
+      <section class="adm-panel">
+        <div class="adm-panel-head">
+          <h2>Кнопки и ссылки</h2>
+          <p>что нажимают, и на какой странице</p>
+        </div>
+        <table v-if="clicks.length" class="adm-table an-table">
+          <thead><tr><th>Что</th><th>Где</th><th class="num">Нажатий</th><th class="num">Людей</th></tr></thead>
+          <tbody>
+            <tr v-for="row in clicks" :key="`${row.name}@${row.page}`">
+              <td>{{ row.label }}</td>
+              <td class="adm-dim">{{ pageName(row.page) }}</td>
+              <td class="num">{{ fmt.count(row.times) }}</td>
+              <td class="num">{{ fmt.count(row.people) }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-else class="adm-empty">За этот срок нажатий не было.</p>
+      </section>
+
+      <section class="adm-panel">
+        <div class="adm-panel-head">
+          <h2>Игра на странице карты</h2>
+          <p>люди за срок</p>
+        </div>
+        <div class="an-actions">
+          <div v-for="item in game" :key="item.label" class="an-action">
+            <strong class="num">{{ fmt.count(item.value) }}</strong>
+            <span>{{ item.label }}</span>
+            <span class="adm-dim">{{ item.hint }}</span>
+          </div>
+        </div>
+        <div class="adm-panel-head an-sub">
+          <h2>По шагам</h2>
+          <p>где находят, ошибаются, берут подсказку и выходят</p>
+        </div>
+        <table v-if="gameSteps.length" class="adm-table an-table">
+          <thead><tr><th>Шаг</th><th class="num">Нашли</th><th class="num">Промахов</th><th class="num">Подсказок</th><th class="num">Вышли здесь</th></tr></thead>
+          <tbody>
+            <tr v-for="row in gameSteps" :key="row.step">
+              <td>{{ row.label }}</td>
+              <td class="num">{{ row.step === 'intro' || row.step === 'finale' ? '—' : fmt.count(row.found) }}</td>
+              <td class="num">{{ fmt.count(row.missed) }}</td>
+              <td class="num">{{ fmt.count(row.hints) }}</td>
+              <td class="num">{{ fmt.count(row.quit) }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-else class="adm-empty">За этот срок в игру не играли.</p>
+      </section>
+    </div>
+    </template>
+
+    <template v-else>
     <div class="an-pair">
       <section class="adm-panel">
         <div class="adm-panel-head">
@@ -398,26 +648,7 @@ const products = computed(() => (data.value?.products || []).map((row) => ({ ...
       </table>
       <p v-else class="adm-empty">На посадочные за этот срок не заходили.</p>
     </section>
-
-    <section class="adm-panel">
-      <div class="adm-panel-head">
-        <h2>Страницы</h2>
-        <p>просмотры за срок</p>
-      </div>
-      <table v-if="pages.length" class="adm-table an-table">
-        <thead><tr><th>Страница</th><th class="num">Просмотры</th><th class="num">Посетители</th><th class="num">Из них вошли</th><th class="num">На посетителя</th></tr></thead>
-        <tbody>
-          <tr v-for="row in pages" :key="row.name">
-            <td>{{ pageName(row.name) }}</td>
-            <td class="num">{{ fmt.count(row.views) }}</td>
-            <td class="num">{{ fmt.count(row.visitors) }}</td>
-            <td class="num">{{ fmt.count(row.users) }}</td>
-            <td class="num">{{ row.visitors ? (row.views / row.visitors).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) : '—' }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else class="adm-empty">Просмотров за этот срок не было.</p>
-    </section>
+    </template>
   </div>
 </template>
 
@@ -432,12 +663,16 @@ const products = computed(() => (data.value?.products || []).map((row) => ({ ...
 .an-tile-hint { color: var(--soft); font-size: 13px; }
 
 .an-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+.an-tabs { justify-self: start; }
+.an-tabs button { padding: 8px 18px; font-size: 15px; }
+.an-scroll { overflow-x: auto; }
+.an-foot { margin: 12px 0 0; font-size: 13px; }
 
 /* The funnel: one row a step, the bar against the period's new visitors. */
 .an-funnel { display: grid; gap: 2px; margin: 4px 0 0; padding: 0; list-style: none; }
 .an-funnel li {
   display: grid;
-  grid-template-columns: minmax(170px, 15em) minmax(0, 1fr) 4.5em 4.5em 5em;
+  grid-template-columns: minmax(170px, 15em) minmax(0, 1fr) 4.5em 4.5em 5em 4.5em;
   align-items: center;
   gap: 14px;
   padding: 7px 0;
@@ -453,6 +688,7 @@ const products = computed(() => (data.value?.products || []).map((row) => ({ ...
 .an-funnel-value { font-size: 16px; font-weight: 600; }
 .an-funnel-share { color: var(--ink); font-size: 14px; }
 .an-funnel-prev { color: var(--soft); font-size: 13px; }
+.an-funnel-time { color: var(--soft); font-size: 12px; }
 .an-funnel li:first-child { padding-bottom: 12px; margin-bottom: 6px; border-bottom: 1px dashed var(--panel-line); }
 
 .an-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 12px 0 0; }
@@ -494,6 +730,12 @@ const products = computed(() => (data.value?.products || []).map((row) => ({ ...
 .an-devices li { display: grid; grid-template-columns: auto auto auto 1fr; align-items: center; gap: 8px; }
 .an-devices .adm-dim { font-size: 13px; }
 .an-sub { margin-top: 22px; }
+
+/* Who comes back: three counts, then a week-by-week table tinted by the share. */
+.an-active { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 20px; }
+.an-cohorts th, .an-cohorts td { white-space: nowrap; }
+.an-cell { background: rgba(57, 135, 229, calc(0.06 + var(--share, 0) * 0.6)); font-size: 13px; }
+.an-cell.is-empty { background: transparent; }
 .an-list { display: grid; margin: 0; padding: 0; list-style: none; font-size: 14px; }
 .an-list li { display: grid; grid-template-columns: minmax(0, 1fr) 4em 6em; gap: 10px; padding: 7px 0; border-top: 1px solid var(--panel-line); }
 .an-list li:first-child { border-top: 0; }
@@ -507,7 +749,8 @@ const products = computed(() => (data.value?.products || []).map((row) => ({ ...
   .an-tile-value { font-size: 22px; }
   .an-funnel li { grid-template-columns: minmax(0, 1fr) 3.5em 4em; gap: 4px 10px; }
   .an-funnel-track { grid-column: 1 / -1; grid-row: 2; }
-  .an-funnel-prev { display: none; }
+  .an-funnel-prev, .an-funnel-time { display: none; }
+  .an-active { grid-template-columns: minmax(0, 1fr); }
   .an-bars li { grid-template-columns: minmax(0, 1fr) 6em; }
   .an-bars-track { grid-column: 1 / -1; grid-row: 2; }
 }

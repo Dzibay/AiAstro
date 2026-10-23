@@ -21,6 +21,8 @@ export const adminApi = {
   user: (userId) => get(`/api/admin/users/${id(userId)}`),
   /** Days of one Moscow month (YYYY-MM) this person opened the site, and the pages of each day. */
   activity: (userId, month) => get(`/api/admin/users/${id(userId)}/activity?${query({ month })}`),
+  /** This person's latest actions and payments, newest first; before — the moment of the last one shown, for the earlier ones. */
+  events: (userId, before = '') => get(`/api/admin/users/${id(userId)}/events?${query({ before })}`),
   /** Deletes the account for good; the email typed again is the confirmation. */
   deleteUser: (userId, email) => send(`/api/admin/users/${id(userId)}/delete`, 'POST', { email }),
   /** { days } extends «Небосвод» (0 closes it), { until: 'YYYY-MM-DD' } sets its last day. */
@@ -33,7 +35,7 @@ export const adminApi = {
   partners: (userId) => get(`/api/admin/users/${id(userId)}/partners`),
   setBought: (userId, partnerId, bought) =>
     send(`/api/admin/users/${id(userId)}/partners/${id(partnerId)}/purchase`, 'PUT', { bought }),
-  /** Visits, the funnel, the pages, the tours and the sources for 7, 30, 90 or 365 days. */
+  /** Visits, the funnel and the returns, the money by offer, what the pages hold, the tours and the sources for 7, 30, 90 or 365 days. */
   analytics: (days) => get(`/api/admin/analytics?${query({ days })}`),
   /** The campaign links with what came by each; days 0 is all time. */
   links: (days) => get(`/api/admin/links?${query({ days })}`),

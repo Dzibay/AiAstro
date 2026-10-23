@@ -1,4 +1,6 @@
-"""What the site's pages tell about their visitors: views, visits, arrivals by a campaign link, tours.
+"""What the site's pages tell about their visitors: views, visits, arrivals by a campaign link, tours,
+and what people do on a page: how far they scroll, how long it holds them, the buttons they press,
+the offers they see, the game's steps.
 
 A visitor is an anonymous id the browser keeps (localStorage); nothing here names a person until
 they register or sign in, and then only their own account id is written next to it.
@@ -11,9 +13,15 @@ from app.db import pool
 VISITOR = re.compile(r"^[a-z0-9-]{16,40}$")
 NAME = re.compile(r"^[a-z0-9][a-z0-9:_-]{0,47}$")
 TOKEN = re.compile(r"^[a-z0-9][a-z0-9_-]{1,39}$")
-# What a page may report; signup is written by the server itself. A goal is a landing's step:
+# What a page may report; signup and birth are written by the server itself. A goal is a landing's step:
 # «lp-natal:calc» (the calculation shown), «lp-natal:cta» (on to the registration).
 KINDS = {"view", "tour", "goal"}
+# What a page gathers and sends in batches (track_many), each with the page it happened on:
+# click — a button or a link («home:hero», «to:cabinet-sky»); scroll — the page reached 25/50/75/100 %;
+# time — seconds of attention on the page; act — a step of the game («game:found», value — the planet's
+# number); offer — an offer seen («sky:chat»); pick — a plan chosen in «Небосвод» (value — months).
+QUEUED = {"tour", "goal", "click", "scroll", "time", "act", "offer", "pick"}
+BATCH = 40
 DEVICES = {"phone", "desktop"}
 # Silence after which the next view opens a new visit.
 VISIT_GAP = "30 minutes"
@@ -85,11 +93,19 @@ def track(
 
 def attach(user_id: int, visitor: str | None, signup: bool = False) -> None:
     """The browser and the account meet: at the registration the account takes the browser's
-    campaign link (the first one, for good); at a sign-in only the browser learns whose it is."""
+    campaign link (the first one, for good); at a sign-in only the browser learns whose it is.
+    A registration that came with the date of birth is its first saving too (birth)."""
     if not visitor or not VISITOR.match(visitor):
         if signup:
             with pool.connection() as conn:
-                conn.execute("INSERT INTO events (user_id, kind) VALUES (%s, 'signup')", (user_id,))
+                conn.execute(
+                    """
+                    INSERT INTO events (user_id, kind)
+                    SELECT id, k FROM users, unnest(ARRAY['signup', 'birth']) AS k
+                    WHERE id = %s AND (k = 'signup' OR birth_date IS NOT NULL)
+                    """,
+                    (user_id,),
+                )
         return
     with pool.connection() as conn:
         conn.execute(
@@ -107,7 +123,47 @@ def attach(user_id: int, visitor: str | None, signup: bool = False) -> None:
             conn.execute(
                 """
                 INSERT INTO events (visitor_id, user_id, ref_id, kind)
-                SELECT id, %s, ref_id, 'signup' FROM visitors WHERE id = %s
+                SELECT v.id, u.id, v.ref_id, k FROM visitors v, users u, unnest(ARRAY['signup', 'birth']) AS k
+                WHERE v.id = %s AND u.id = %s AND (k = 'signup' OR u.birth_date IS NOT NULL)
                 """,
-                (user_id, visitor),
+                (visitor, user_id),
             )
+
+
+def track_many(visitor: str, items: list[tuple[str, str, int | None, str]], user_id: int | None = None) -> None:
+    """Writes a page's gathered events: (kind, name, value, page). Only for a browser that has
+    already shown a page; it keeps the visit open, as a view does."""
+    if not VISITOR.match(visitor):
+        return
+    rows = [
+        (visitor, user_id, kind, name, value, page if NAME.match(page) else "")
+        for kind, name, value, page in items[:BATCH]
+        if kind in QUEUED and NAME.match(name)
+    ]
+    if not rows:
+        return
+    with pool.connection() as conn:
+        known = conn.execute(
+            "UPDATE visitors SET last_at = now(), user_id = COALESCE(%s, user_id) WHERE id = %s RETURNING id",
+            (user_id, visitor),
+        ).fetchone()
+        if known is None:
+            return
+        with conn.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO events (visitor_id, user_id, kind, name, value, page) VALUES (%s, %s, %s, %s, %s, %s)",
+                rows,
+            )
+
+
+def server_event(user_id: int, kind: str, name: str = "") -> None:
+    """A step the server sees for itself (birth — the date of birth saved the first time), with the
+    browser the account signed up on."""
+    with pool.connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO events (visitor_id, user_id, kind, name)
+            SELECT (SELECT v.id FROM visitors v WHERE v.id = u.visitor_id), u.id, %s, %s FROM users u WHERE u.id = %s
+            """,
+            (kind, name, user_id),
+        )

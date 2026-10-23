@@ -198,6 +198,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ref_links_token_key ON ref_links (token);
 -- Посетители: анонимный id, который браузер хранит в localStorage (не cookie). ref_id — первая
 -- реферальная ссылка, по которой он пришёл: ей навсегда засчитываются его регистрация и оплаты.
 -- visits — визиты: новый начинается после получаса тишины или с переходом по ссылке.
+-- Удаление кабинета уносит его браузеры и все его события (accounts._remove): счётчики пересчитываются.
 CREATE TABLE IF NOT EXISTS visitors (
     id TEXT PRIMARY KEY,
     ref_id BIGINT REFERENCES ref_links (id) ON DELETE SET NULL,
@@ -215,7 +216,11 @@ CREATE INDEX IF NOT EXISTS visitors_ref_idx ON visitors (ref_id);
 CREATE INDEX IF NOT EXISTS visitors_user_idx ON visitors (user_id);
 
 -- События для статистики: visit (начало визита), view (страница — имя маршрута), ref (переход по
--- реферальной ссылке), signup, tour (name — тур и исход: section-chart:done, intro:skip; value — шаг).
+-- реферальной ссылке), signup, birth (дата рождения сохранена впервые), tour (name — тур и исход:
+-- section-chart:done, intro:skip; value — шаг), goal (цель лендинга), click (кнопка с data-track),
+-- scroll (name — страница, value — глубина 25/50/75/100), time (name — страница, value — секунды
+-- внимания), act (действие: game:play, game:land; value — шаг или секунды), offer (показ предложения
+-- <продукт>:<место>), pick (выбор срока «Небосвода», value — месяцы).
 CREATE TABLE IF NOT EXISTS events (
     id BIGSERIAL PRIMARY KEY,
     visitor_id TEXT REFERENCES visitors (id) ON DELETE CASCADE,
@@ -232,15 +237,26 @@ CREATE INDEX IF NOT EXISTS events_user_idx ON events (user_id, created_at);
 -- Календарь активности в карточке: страницы браузера, уже привязанного к аккаунту.
 CREATE INDEX IF NOT EXISTS events_visitor_idx ON events (visitor_id, created_at) WHERE visitor_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS events_ref_idx ON events (ref_id, created_at) WHERE ref_id IS NOT NULL;
+-- Страница, на которой случилось действие (click, scroll, offer…): у view она в name.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS page TEXT NOT NULL DEFAULT '';
 
 -- Откуда пришёл человек: его браузер при регистрации и реферальная ссылка этого браузера.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS visitor_id TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS ref_id BIGINT REFERENCES ref_links (id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS users_ref_idx ON users (ref_id);
+CREATE INDEX IF NOT EXISTS users_visitor_idx ON users (visitor_id) WHERE visitor_id IS NOT NULL;
+
+-- Разовая уборка следов кабинетов, удалённых до того, как удаление стало уносить статистику:
+-- регистрация без аккаунта отмечает браузер удалённого — он уходит со своими страницами и переходами,
+-- если им не пользуется живой аккаунт. Туры бывают только в кабинете, без аккаунта они тоже чужие.
+DELETE FROM visitors v USING events e WHERE e.kind = 'signup' AND e.user_id IS NULL AND e.visitor_id = v.id AND v.user_id IS NULL AND NOT EXISTS (SELECT 1 FROM users u WHERE u.visitor_id = v.id) AND NOT EXISTS (SELECT 1 FROM events o WHERE o.visitor_id = v.id AND o.user_id IS NOT NULL);
+DELETE FROM events WHERE user_id IS NULL AND kind IN ('signup', 'tour');
 -- Кампания платежа — ссылка плательщика в момент оплаты: доход остаётся за ней и после удаления кабинета.
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS ref_id BIGINT REFERENCES ref_links (id) ON DELETE SET NULL;
 UPDATE payments p SET ref_id = u.ref_id FROM users u WHERE p.user_id = u.id AND p.ref_id IS NULL AND u.ref_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS payments_ref_idx ON payments (ref_id) WHERE ref_id IS NOT NULL;
+-- Предложение, с которого человек пришёл к оплате: sky:chat, sky:forecast, pair:panel… (пусто — неизвестно).
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS place TEXT NOT NULL DEFAULT '';
 
 -- Отметки чек-листа дня: какие задачи прогноза человек выполнил в этот день.
 CREATE TABLE IF NOT EXISTS day_tasks (

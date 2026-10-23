@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel, Field
 
 from app import notes
-from app.analytics import analytics, create_link, delete_link, link_detail, list_links, update_link
+from app.analytics import analytics, create_link, delete_link, link_detail, list_links, update_link, user_events
 from app.accounts import (
     SKY_MAX_DAYS, admin_delete, list_users, operator_user, set_birth, set_sky, set_sky_until, user_activity,
 )
@@ -220,6 +220,15 @@ def users_activity(user_id: int, month: str = Query(default="", max_length=7)) -
     """Days of one Moscow month this person opened the site, with the pages of each day."""
     try:
         return user_activity(user_id, month)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/users/{user_id}/events", dependencies=[Depends(require_admin)])
+def users_events(user_id: int, before: str = Query(default="", max_length=40)) -> dict:
+    """This person's latest actions on the site and payments, newest first."""
+    try:
+        return user_events(user_id, before)
     except DomainError as exc:
         raise as_http(exc) from exc
 

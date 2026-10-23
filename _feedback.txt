@@ -1,0 +1,2962 @@
+{
+  "dns" : {
+    "disableCache" : false,
+    "disableFallback" : false,
+    "disableFallbackIfMatch" : true,
+    "enableParallelQuery" : false,
+    "queryStrategy" : "UseIPv4",
+    "serveExpiredTTL" : 0,
+    "servers" : [
+      {
+        "address" : "https:\/\/1.1.1.1\/dns-query",
+        "timeoutMs" : 1000,
+        "unexpectedIPs" : [
+          "geoip:ru"
+        ]
+      },
+      {
+        "address" : "udp+local:\/\/77.88.8.8",
+        "domain" : [
+          "geosite:category-direct",
+          "geosite:category-ru"
+        ],
+        "timeoutMs" : 1000
+      }
+    ],
+    "serveStale" : true,
+    "tag" : "dns-in",
+    "useSystemHosts" : false
+  },
+  "inbounds" : [
+    {
+      "listen" : "127.0.0.1",
+      "port" : 10808,
+      "protocol" : "socks",
+      "settings" : {
+        "auth" : "noauth",
+        "udp" : true
+      },
+      "sniffing" : {
+        "destOverride" : [
+          "http",
+          "tls",
+          "quic"
+        ],
+        "enabled" : true,
+        "routeOnly" : false
+      },
+      "tag" : "socks"
+    },
+    {
+      "listen" : "127.0.0.1",
+      "port" : 10809,
+      "protocol" : "http",
+      "settings" : {
+        "allowTransparent" : false
+      },
+      "sniffing" : {
+        "destOverride" : [
+          "http",
+          "tls",
+          "quic"
+        ],
+        "enabled" : true,
+        "routeOnly" : false
+      },
+      "tag" : "http"
+    }
+  ],
+  "log" : {
+    "access" : "\/private\/var\/mobile\/Containers\/Shared\/AppGroup\/03D0DF2B-7080-4547-9951-75F1D53A814E\/Library\/Application Support\/Xray\/logs\/access.log",
+    "dnsLog" : true,
+    "loglevel" : "Warning"
+  },
+  "observatory" : {
+    "enableConcurrency" : true,
+    "probeInterval" : "10m",
+    "probeUrl" : "http:\/\/cp.cloudflare.com\/generate_204",
+    "subjectSelector" : [
+      "mobile-low",
+      "mobile-midl",
+      "mobile-high",
+      "germany"
+    ]
+  },
+  "outbounds" : [
+    {
+      "mux" : {
+        "enabled" : false
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "158.160.196.187",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "grpcSettings" : {
+          "authority" : "144.31.237.6.vhub.pro",
+          "mode" : false,
+          "serviceName" : "\/sequre\/grpc"
+        },
+        "network" : "grpc",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "h2"
+          ],
+          "fingerprint" : "randomized",
+          "serverName" : "144.31.237.6.vhub.pro"
+        }
+      },
+      "tag" : "mobile-low"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s1.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-high"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s2.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-high-2"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s3.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-high-3"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s4.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-high-4"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s5.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-high-5"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s6.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-high-6"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s7.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-high-7"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s8.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-high-8"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s9.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-high-9"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s10.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-high-10"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "194.238.79.150.fwqfw783rg2dad.website",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "alpn" : [
+            "h2"
+          ],
+          "fingerprint" : "edge",
+          "serverName" : "194.238.79.150.fwqfw783rg2dad.website"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "germany"
+    },
+    {
+      "mux" : {
+        "concurrency" : 16,
+        "enabled" : true,
+        "xudpConcurrency" : 0,
+        "xudpProxyUDP443" : "reject"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s7.cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "germany-2"
+    },
+    {
+      "mux" : {
+        "concurrency" : 16,
+        "enabled" : true,
+        "xudpConcurrency" : 0,
+        "xudpProxyUDP443" : "reject"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s8.cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "germany-3"
+    },
+    {
+      "mux" : {
+        "concurrency" : 16,
+        "enabled" : true,
+        "xudpConcurrency" : 0,
+        "xudpProxyUDP443" : "reject"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s9.cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "germany-4"
+    },
+    {
+      "mux" : {
+        "concurrency" : 16,
+        "enabled" : true,
+        "xudpConcurrency" : 0,
+        "xudpProxyUDP443" : "reject"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s10.cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "germany-5"
+    },
+    {
+      "mux" : {
+        "concurrency" : 16,
+        "enabled" : true,
+        "xudpConcurrency" : 0,
+        "xudpProxyUDP443" : "reject"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s1.cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "germany-6"
+    },
+    {
+      "mux" : {
+        "concurrency" : 16,
+        "enabled" : true,
+        "xudpConcurrency" : 0,
+        "xudpProxyUDP443" : "reject"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s2.cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "germany-7"
+    },
+    {
+      "mux" : {
+        "concurrency" : 16,
+        "enabled" : true,
+        "xudpConcurrency" : 0,
+        "xudpProxyUDP443" : "reject"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s3.cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "germany-8"
+    },
+    {
+      "mux" : {
+        "concurrency" : 16,
+        "enabled" : true,
+        "xudpConcurrency" : 0,
+        "xudpProxyUDP443" : "reject"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s4.cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "germany-9"
+    },
+    {
+      "mux" : {
+        "concurrency" : 16,
+        "enabled" : true,
+        "xudpConcurrency" : 0,
+        "xudpProxyUDP443" : "reject"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s5.cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "germany-10"
+    },
+    {
+      "mux" : {
+        "concurrency" : 16,
+        "enabled" : true,
+        "xudpConcurrency" : 0,
+        "xudpProxyUDP443" : "reject"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s6.cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "germany-11"
+    },
+    {
+      "mux" : {
+        "enabled" : false
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "5.188.114.44",
+            "port" : 13443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "grpcSettings" : {
+          "authority" : "grpc.vhub.pro",
+          "mode" : false,
+          "serviceName" : "\/sequre\/grpc"
+        },
+        "network" : "grpc",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "alpn" : [
+            "h2"
+          ],
+          "fingerprint" : "ios",
+          "serverName" : "144.31.237.6.vhub.pro"
+        }
+      },
+      "tag" : "mobile-midl"
+    },
+    {
+      "mux" : {
+        "enabled" : false
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "84.201.153.213",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "grpcSettings" : {
+          "authority" : "144.31.237.6.vhub.pro",
+          "mode" : false,
+          "serviceName" : "\/sequre\/grpc"
+        },
+        "network" : "grpc",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "h2"
+          ],
+          "fingerprint" : "safari",
+          "serverName" : "144.31.237.6.vhub.pro"
+        }
+      },
+      "tag" : "mobile-midl-2"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "84.201.166.160",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "edge",
+          "serverName" : "144.31.237.6.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "144.31.237.6.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-midl-3"
+    },
+    {
+      "mux" : {
+        "enabled" : false
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "158.160.196.187",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "grpcSettings" : {
+          "authority" : "144.31.237.6.vhub.pro",
+          "mode" : false,
+          "serviceName" : "\/sequre\/grpc"
+        },
+        "network" : "grpc",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "h2"
+          ],
+          "fingerprint" : "randomized",
+          "serverName" : "144.31.237.6.vhub.pro"
+        }
+      },
+      "tag" : "mobile-midl-4"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "78.159.240.81",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "edge",
+          "serverName" : "144.31.237.6.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "144.31.237.6.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-midl-5"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s1.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-midl-6"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s2.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-midl-7"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s3.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-midl-8"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s4.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-midl-9"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s5.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-midl-10"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s6.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-midl-11"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s7.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-midl-12"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s8.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-midl-13"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s9.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-midl-14"
+    },
+    {
+      "mux" : {
+        "concurrency" : 8,
+        "enabled" : true,
+        "xudpConcurrency" : 16,
+        "xudpProxyUDP443" : "skip"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "s10.whitelists-cloudflare.ips-list.vhub.pro",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "allowInsecure" : true,
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "cloudflare.vhub.pro"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "cloudflare.vhub.pro",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-midl-15"
+    },
+    {
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "njivxdsw19.a.trbcdn.net",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "xhttp",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "alpn" : [
+            "h2",
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "njivxdsw19.a.trbcdn.net"
+        },
+        "xhttpSettings" : {
+          "extra" : {
+            "headers" : {
+              "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+              "accept-encoding" : "gzip, deflate, br, zstd",
+              "accept-language" : "en-US,en;q=0.9",
+              "priority" : "u=0, i",
+              "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+              "sec-ch-ua-arch" : "x86",
+              "sec-ch-ua-bitness" : "64",
+              "sec-ch-ua-full-version" : "148.0.7778.167",
+              "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+              "sec-ch-ua-mobile" : "?0",
+              "sec-ch-ua-model" : "",
+              "sec-ch-ua-platform" : "Linux",
+              "sec-ch-ua-platform-version" : "",
+              "sec-fetch-dest" : "document",
+              "sec-fetch-mode" : "navigate",
+              "sec-fetch-site" : "same-origin",
+              "sec-fetch-user" : "?1",
+              "upgrade-insecure-requests" : "1",
+              "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+            },
+            "noGRPCHeader" : true,
+            "seqKey" : "X-Content-Id",
+            "seqPlacement" : "header",
+            "sessionKey" : "X-Session-Id",
+            "sessionPlacement" : "header",
+            "uplinkHTTPMethod" : "GET",
+            "xmux" : {
+              "cMaxLifetimeMs" : 300000,
+              "cMaxReuseTimes" : 100,
+              "maxConcurrency" : "16-32",
+              "maxConnections" : 0
+            },
+            "xPaddingHeader" : "X-Api-Key",
+            "xPaddingMethod" : "tokenish",
+            "xPaddingObfsMode" : true,
+            "xPaddingPlacement" : "header"
+          },
+          "host" : "njivxdsw19.a.trbcdn.net",
+          "mode" : "packet-up",
+          "path" : "\/sequre\/http\/"
+        }
+      },
+      "tag" : "mobile-midl-16"
+    },
+    {
+      "mux" : {
+        "concurrency" : 16,
+        "enabled" : true,
+        "xudpConcurrency" : 0,
+        "xudpProxyUDP443" : "reject"
+      },
+      "protocol" : "vless",
+      "settings" : {
+        "vnext" : [
+          {
+            "address" : "top605221047.mwscdn.ru",
+            "port" : 443,
+            "users" : [
+              {
+                "encryption" : "none",
+                "flow" : "",
+                "id" : "35839ead-b107-431a-bf6a-da39a2f6e7ac"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings" : {
+        "network" : "ws",
+        "security" : "tls",
+        "sockopt" : {
+          "happyEyeballs" : {
+            "interleave" : 1,
+            "maxConcurrentTry" : 4,
+            "prioritizeIPv6" : false,
+            "tryDelayMs" : 250
+          },
+          "tcpcongestion" : "bbr",
+          "tcpFastOpen" : true
+        },
+        "tlsSettings" : {
+          "alpn" : [
+            "http\/1.1"
+          ],
+          "fingerprint" : "chrome",
+          "serverName" : "top605221047.mwscdn.ru"
+        },
+        "wsSettings" : {
+          "headers" : {
+            "accept" : "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+            "accept-encoding" : "gzip, deflate, br, zstd",
+            "accept-language" : "en-US,en;q=0.9",
+            "Host" : "top605221047.mwscdn.ru",
+            "priority" : "u=0, i",
+            "sec-ch-ua" : "Not\/A)Brand;v=99, Chromium;v=148",
+            "sec-ch-ua-arch" : "x86",
+            "sec-ch-ua-bitness" : "64",
+            "sec-ch-ua-full-version" : "148.0.7778.167",
+            "sec-ch-ua-full-version-list" : "Not\/A)Brand;v=99.0.0.0, Chromium;v=148.0.7778.167",
+            "sec-ch-ua-mobile" : "?0",
+            "sec-ch-ua-model" : "",
+            "sec-ch-ua-platform" : "Linux",
+            "sec-ch-ua-platform-version" : "",
+            "sec-fetch-dest" : "document",
+            "sec-fetch-mode" : "navigate",
+            "sec-fetch-site" : "same-origin",
+            "sec-fetch-user" : "?1",
+            "upgrade-insecure-requests" : "1",
+            "user-agent" : "Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/148.0.0.0 Safari\/537.36"
+          },
+          "heartbeatPeriod" : 10,
+          "path" : "\/sequre\/ws?ed=2560"
+        }
+      },
+      "tag" : "mobile-midl-17"
+    },
+    {
+      "protocol" : "blackhole",
+      "tag" : "block"
+    },
+    {
+      "protocol" : "freedom",
+      "tag" : "direct"
+    },
+    {
+      "protocol" : "freedom",
+      "settings" : {
+        "fragment" : {
+          "interval" : "5-10",
+          "length" : "10-20",
+          "packets" : "tlshello"
+        }
+      },
+      "tag" : "direct-fragment"
+    }
+  ],
+  "policy" : {
+    "levels" : {
+      "0" : {
+        "bufferSize" : 8,
+        "connIdle" : 30,
+        "downlinkOnly" : 2,
+        "handshake" : 8,
+        "uplinkOnly" : 2
+      }
+    }
+  },
+  "remarks" : "🇪🇺 AUTO — Обход БС",
+  "routing" : {
+    "balancers" : [
+      {
+        "fallbackTag" : "mobile-high",
+        "selector" : [
+          "mobile-low",
+          "mobile-midl",
+          "mobile-high",
+          "germany"
+        ],
+        "strategy" : {
+          "settings" : {
+            "costs" : [
+              {
+                "match" : "mobile-low.*",
+                "regexp" : true,
+                "value" : 4
+              },
+              {
+                "match" : "mobile-midl.*",
+                "regexp" : true,
+                "value" : 3
+              },
+              {
+                "match" : "mobile-high.*",
+                "regexp" : true,
+                "value" : 2
+              },
+              {
+                "match" : "germany.*",
+                "regexp" : true,
+                "value" : 1
+              }
+            ],
+            "expected" : 1,
+            "maxRTT" : "10s"
+          },
+          "type" : "leastLoad"
+        },
+        "tag" : "Balance"
+      }
+    ],
+    "domainMatcher" : "hybrid",
+    "domainStrategy" : "IPIfNonMatch",
+    "rules" : [
+      {
+        "outboundTag" : "direct",
+        "port" : "22,25,135-139,465,587,593,2525,3306,3389,5432,6379,11211,1900"
+      },
+      {
+        "domain" : [
+          "geosite:category-block"
+        ],
+        "outboundTag" : "block",
+        "type" : "field"
+      },
+      {
+        "balancerTag" : "Balance",
+        "domain" : [
+          "geosite:category-proxy"
+        ],
+        "type" : "field"
+      },
+      {
+        "domain" : [
+          "geosite:category-direct"
+        ],
+        "outboundTag" : "direct",
+        "type" : "field"
+      },
+      {
+        "ip" : [
+          "geoip:private"
+        ],
+        "outboundTag" : "direct",
+        "type" : "field"
+      },
+      {
+        "balancerTag" : "Balance",
+        "network" : "tcp,udp",
+        "type" : "field"
+      }
+    ]
+  }
+}

@@ -164,7 +164,7 @@ const showPassword = ref(false)
       <h3 id="sky-title" class="block-title">Небосвод</h3>
       <div class="row">
         <span class="value" :class="{ 'is-gold': user.sky }">{{ skyLine }}</span>
-        <RouterLink class="link" :to="{ name: 'cabinet-sky' }">{{ user.sky ? 'Продлить' : 'Зажечь' }}</RouterLink>
+        <RouterLink class="link" v-seen="'sky:profile'" data-track="sky:profile" :to="{ name: 'cabinet-sky' }">{{ user.sky ? 'Продлить' : 'Зажечь' }}</RouterLink>
       </div>
       <p class="hint">
         {{ user.sky

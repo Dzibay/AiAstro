@@ -11,6 +11,7 @@ from app.db import pool
 from app.errors import DomainError
 from app.places import timezone_at
 from app.security import hash_password, verify_password
+from app.track import server_event
 
 _DUMMY_HASH = hash_password("not-a-real-password")
 _EARLIEST_BIRTH = date(1900, 1, 1)
@@ -214,6 +215,8 @@ def set_birth(
         ).fetchone()
     if row is None:
         raise DomainError("unauthorized", 401)
+    if current is None and not operator:
+        server_event(user_id, "birth")
     return _public(row)
 
 
@@ -368,6 +371,7 @@ def delete_account(user_id: int, password: str) -> list[dict]:
 
     A pair bought by the person stays bought for the partner who has it too: the purchase loses
     only its payer. The session is a signed token with no table behind it: once the row is gone it opens nothing.
+    The statistics forget the person too (see _remove); the payments stay for the books.
     Gives the partners to write to: [{user_id, partner_id}].
     """
     _checked(user_id, password)
@@ -375,7 +379,23 @@ def delete_account(user_id: int, password: str) -> list[dict]:
 
 
 def _remove(user_id: int) -> list[dict]:
+    """Deletes the account with its whole trail in the statistics, as if the person never came.
+
+    Their browsers go with every event of them (pages, link clicks, tours): the counters recount
+    without them. A browser another account signed up on or acted in stays, only this person's
+    events leave it. Payments stay with their campaign, so the revenue of a link does not change.
+    """
     with pool.connection() as conn:
+        conn.execute(
+            """
+            DELETE FROM visitors v USING users u
+            WHERE u.id = %s AND (v.user_id = u.id OR (v.id = u.visitor_id AND v.user_id IS NULL))
+              AND NOT EXISTS (SELECT 1 FROM users o WHERE o.visitor_id = v.id AND o.id <> u.id)
+              AND NOT EXISTS (SELECT 1 FROM events e WHERE e.visitor_id = v.id AND e.user_id <> u.id)
+            """,
+            (user_id,),
+        )
+        conn.execute("DELETE FROM events WHERE user_id = %s", (user_id,))
         others = conn.execute(
             """
             UPDATE partners o SET news = 'left', news_at = now()

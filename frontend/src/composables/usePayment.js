@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { webApi } from '../api/web.js'
 import { errorText } from '../api/http.js'
-import { reachGoal } from '../utils/track.js'
+import { offerPlace, reachGoal } from '../utils/track.js'
 
 /**
  * A payment at ЮKassa from a panel: `start` sends the person to ЮKassa's page. The way back is
@@ -91,7 +91,12 @@ export function usePayment() {
     busy.value = true
     message.value = ''
     try {
-      const { url, id } = await webApi.pay(body)
+      // Where the person came from: the last offer pressed for this kind of purchase, or the panel itself.
+      const kind = body.product === 'synastry' ? 'pair' : 'sky'
+      const last = offerPlace('')
+      const place = last.startsWith(`${kind}:`) ? last : `${kind}:panel`
+      reachGoal('astra.pay@start')
+      const { url, id } = await webApi.pay({ ...body, place })
       rememberPending({
         id,
         product: body.product,

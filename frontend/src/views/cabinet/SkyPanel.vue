@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
 import { FEATURES } from '../../components/sky/features.js'
@@ -8,6 +8,7 @@ import { usePrices } from '../../utils/prices.js'
 import { skyEnding, skyLine } from '../../utils/skyTerm.js'
 import { usePayment } from '../../composables/usePayment.js'
 import { startTour } from '../../utils/tour.js'
+import { queue } from '../../utils/track.js'
 
 /**
  * «Небосвод»: what the subscription lights, for how long and the way to pay for it. The list of
@@ -51,6 +52,8 @@ const plans = computed(() => {
 })
 const best = computed(() => plans.value.reduce((top, item) => (item.saving > (top?.saving || 0) ? item : top), null)?.id || '')
 const chosen = computed(() => plans.value.find((item) => item.id === plan.value))
+// Another term picked, for the figures (pick, value — months).
+watch(plan, (id) => queue('pick', id, PLANS.find((item) => item.id === id)?.months))
 
 const ending = computed(() => skyEnding(props.user))
 const state = computed(() => (props.user.sky ? `Небосвод ${skyLine(props.user)}.` : ''))
@@ -184,6 +187,7 @@ onUnmounted(() => {
       <button
         type="button"
         class="pay-cta"
+        data-track="pay:sky"
         :class="{ 'is-quiet': user.sky && !ending }"
         :disabled="busy || !payOn || !chosen?.price"
         @click="pay"

@@ -11,7 +11,7 @@ from app.api.deps import as_http, optional_web_user
 from app.errors import DomainError
 from app.config import settings
 from app.settings_store import public_config
-from app.track import track
+from app.track import BATCH, track, track_many
 
 router = APIRouter(prefix="/site")
 
@@ -59,7 +59,7 @@ class TrackIn(BaseModel):
     visitor: str = Field(max_length=40)
     kind: str = Field(max_length=16)
     name: str = Field(max_length=48)
-    value: int | None = Field(default=None, ge=0, le=1000)
+    value: int | None = Field(default=None, ge=0, le=3600)
     ref: str = Field(default="", max_length=40)
     source: str = Field(default="", max_length=300)
     device: str = Field(default="", max_length=16)
@@ -75,6 +75,31 @@ def _track_quietly(body: TrackIn, user_id: int | None) -> None:
     try:
         track(body.visitor, body.kind, body.name, body.value, body.ref, body.source, body.device, user_id)
     except Exception:  # noqa: BLE001 — a lost view is better than a noisy log on every page
+        pass
+
+
+class TrackItem(BaseModel):
+    kind: str = Field(max_length=16)
+    name: str = Field(max_length=48)
+    value: int | None = Field(default=None, ge=0, le=3600)
+    page: str = Field(default="", max_length=48)
+
+
+class TrackManyIn(BaseModel):
+    visitor: str = Field(max_length=40)
+    items: list[TrackItem] = Field(max_length=BATCH)
+
+
+@router.post("/track/many", status_code=204)
+def site_track_many(body: TrackManyIn, background: BackgroundTasks, user_id: int | None = Depends(optional_web_user)) -> None:
+    """What a page gathered over a few seconds (scroll, attention, buttons, offers, the game), in one go."""
+    background.add_task(_track_many_quietly, body, user_id)
+
+
+def _track_many_quietly(body: TrackManyIn, user_id: int | None) -> None:
+    try:
+        track_many(body.visitor, [(i.kind, i.name, i.value, i.page) for i in body.items], user_id)
+    except Exception:  # noqa: BLE001 — as with a view: the page never hears of it
         pass
 
 

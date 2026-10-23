@@ -26,6 +26,7 @@ import { useChart } from '../../composables/useChart.js'
 import { quality } from '../../utils/quality.js'
 import { LITE } from '../../utils/device.js'
 import { formatDate } from '../../utils/format.js'
+import { queue, reachGoal } from '../../utils/track.js'
 
 /**
  * «Соберите своё небо»: the natal chart built by hand, over the chart page (CabinetView). The Sun
@@ -594,7 +595,18 @@ function placeTags(pos, s) {
 
 /* ---- The steps ---- */
 
+/* What the figures learn of a game (admin → «Аналитика»): its start, every planet found or missed
+   (game:found:moon, its number for the order), the hints, the finale, the landing with the seconds
+   it took, or where it was left (game:quit:intro … game:quit:finale). */
+let began = 0
+let landed = false
+const stepNo = () => (ui.phase === 'intro' ? 0 : ui.phase === 'finale' ? steps.length + 1 : ui.index + 1)
+const stepId = () => (ui.phase === 'intro' || ui.phase === 'finale' ? ui.phase : steps[ui.index]?.id || 'other')
+const stepAct = (act) => queue('act', `game:${act}:${stepId()}`, stepNo())
+
 function begin() {
+  began = performance.now()
+  queue('act', 'game:begin')
   startStep(0)
 }
 
@@ -697,6 +709,7 @@ function check() {
   const k = (s.sign - now + 12) % 12
   const n = k <= 6 ? k : 12 - k
   const way = k <= 6 ? 'против часовой стрелки' : 'по часовой стрелке'
+  stepAct('miss')
   ui.hint = `${n === 1 ? 'Совсем рядом. ' : ''}Луч сейчас ${SIGN_LIST[now].in}. До ${SIGN_LIST[s.sign].of} — ${NUMBERS[n]} ${way}.`
 }
 
@@ -742,6 +755,7 @@ function celebrate(s) {
   liveUntil = clock + 2.5
   if (LITE) navigator.vibrate?.(12)
   ui.phase = 'found'
+  stepAct('found')
 }
 
 function next() {
@@ -751,6 +765,7 @@ function next() {
 
 function showHint() {
   const s = step.value
+  stepAct('hint')
   Object.assign(ui, { helped: true, grabbed: false, hint: '' })
   hint.target = targetOf(s)
   hint.sign = s.sign
@@ -803,6 +818,7 @@ const dateFormat = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' })
 
 async function finale() {
   Object.assign(ui, { phase: 'finale', finale: 'flight' })
+  queue('act', 'game:finale')
   live = null
   aimCamera()
   await Promise.all(OUTER.map((id, i) => fly(id, i * 0.45)))
@@ -879,6 +895,9 @@ async function finale() {
   if (!alive) return
 
   ui.finale = 'land'
+  landed = true
+  queue('act', 'game:land', (performance.now() - began) / 1000)
+  reachGoal('astra.game@done')
   emit('land')
   ui.leaving = true
   document.documentElement.classList.remove('game-on')
@@ -900,6 +919,7 @@ function done() {
 function close() {
   if (ui.closing) return
   ui.closing = true
+  if (!landed) stepAct('quit')
   alive = false
   tweens.clear()
   document.documentElement.classList.remove('game-on')
@@ -942,6 +962,7 @@ watch(quality, measure)
 onMounted(() => {
   scene = createScene(canvas.value, { lite: LITE, onLost: close })
   if (!scene) {
+    queue('act', 'game:fail')
     done()
     return
   }

@@ -565,7 +565,7 @@ const rows = computed(() => partners.value.map((item) => {
                       Разбор открывается один раз и остаётся с этой парой навсегда<template v-if="linked">
                       — у вас обоих</template>.
                     </p>
-                    <button type="button" class="unlock-cta" :disabled="paying || !payOn || !priceSet" @click="buy">
+                    <button type="button" class="unlock-cta" v-seen="'pair:stories'" data-track="pair:stories" :disabled="paying || !payOn || !priceSet" @click="buy">
                       <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
                       <template v-if="paying">Открываем ЮKassa…</template>
                       <template v-else>Открыть разбор — {{ user.sky ? pairSkyPrice : pairPrice }}</template>
@@ -588,7 +588,7 @@ const rows = computed(() => partners.value.map((item) => {
                 <div :class="{ 'is-mine': !user.sky }"><dt>Отдельно</dt><dd>{{ pairPrice }}</dd></div>
                 <div class="with-sky" :class="{ 'is-mine': user.sky }"><dt>С Небосводом</dt><dd>{{ pairSkyPrice }}</dd></div>
               </dl>
-              <button type="button" class="unlock-cta" :disabled="paying || !payOn || !priceSet" @click="buy">
+              <button type="button" class="unlock-cta" v-seen="'pair:panel'" data-track="pair:panel" :disabled="paying || !payOn || !priceSet" @click="buy">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
                 <template v-if="paying">Открываем ЮKassa…</template>
                 <template v-else-if="linked">Открыть разбор для нас обоих — {{ user.sky ? pairSkyPrice : pairPrice }}</template>
@@ -596,7 +596,7 @@ const rows = computed(() => partners.value.map((item) => {
               </button>
               <p v-if="payMessage" class="pay-error" role="alert">{{ payMessage }}</p>
               <p v-else-if="!payOn" class="unlock-note">Оплата откроется совсем скоро.</p>
-              <RouterLink v-if="!user.sky" class="sky-link" :to="{ name: 'cabinet-sky' }">
+              <RouterLink v-if="!user.sky" class="sky-link" v-seen="'sky:pair-price'" data-track="sky:pair-price" :to="{ name: 'cabinet-sky' }">
                 С «Небосводом» каждый разбор пары дешевле →
               </RouterLink>
             </div>
@@ -616,7 +616,7 @@ const rows = computed(() => partners.value.map((item) => {
                   Как сегодняшнее небо проходит по связям ваших карт и какой день недели для вас двоих самый лёгкий —
                   это прогноз пары, он открыт с «Небосводом».
                 </p>
-                <RouterLink class="sky-link" :to="{ name: 'cabinet-sky' }">Открыть «Небосвод» →</RouterLink>
+                <RouterLink class="sky-link" v-seen="'sky:pair-day'" data-track="sky:pair-day" :to="{ name: 'cabinet-sky' }">Открыть «Небосвод» →</RouterLink>
               </template>
               <template v-else-if="forecast">
                 <p class="day-text">{{ forecast.text }}</p>

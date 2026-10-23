@@ -2,6 +2,7 @@
 import { computed, onMounted } from 'vue'
 import BirthForm from '../../components/cabinet/BirthForm.vue'
 import { useSiteConfig } from '../../composables/useSiteConfig.js'
+import { reachGoal } from '../../utils/track.js'
 
 /**
  * The birth data, opened from the person's star or the overview. CabinetView leads back.
@@ -22,11 +23,17 @@ const locked = computed(() => Boolean(props.user.birth_locked))
 /** Locked, the form stays only to add the time, if it was unknown. */
 const timeOnly = computed(() => locked.value && !props.user.birth?.time)
 const mail = computed(() => config.value?.support_email || '')
+
+/** The first date of birth is a Metrika goal: the chart can be built from here. */
+function saved(user) {
+  if (!props.user.birth && user?.birth) reachGoal('astra.birth@save')
+  emit('saved', user)
+}
 </script>
 
 <template>
   <div class="birth-panel">
-    <BirthForm v-if="!locked || timeOnly" :birth="user.birth" @saved="emit('saved', $event)" @cancel="emit('done')">
+    <BirthForm v-if="!locked || timeOnly" :birth="user.birth" @saved="saved" @cancel="emit('done')">
       <template v-if="timeOnly" #head>
         <header class="form-head">
           <h2>Данные <em>рождения</em></h2>

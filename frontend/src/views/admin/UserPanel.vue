@@ -5,7 +5,7 @@ import ActivityCalendar from '../../components/admin/ActivityCalendar.vue'
 import ConfirmDialog from '../../components/admin/ConfirmDialog.vue'
 import { adminApi } from '../../api/admin.js'
 import { useToast } from '../../composables/useToast.js'
-import { PAYMENT_STATUS, PRODUCTS, failed, fmt, moscowDay, seen } from './shared.js'
+import { PAYMENT_STATUS, PRODUCTS, eventText, failed, fmt, moscowDay, offerName, pageName, seen } from './shared.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -35,6 +35,50 @@ async function load() {
 }
 watch(() => route.params.id, (id) => id && load())
 onMounted(load)
+
+/* ---- What the person did on the site, newest first ---- */
+
+// Scroll marks, time on a page and visit starts crowd the list: shown only in the detailed view.
+const QUIET = ['scroll', 'time', 'visit']
+const PORTION = 25
+const timeline = reactive({ items: [], more: false, loading: false, detailed: false, shown: PORTION, error: '' })
+const timelineRows = computed(() => (timeline.detailed ? timeline.items : timeline.items.filter((item) => !QUIET.includes(item.kind))))
+const timelineShown = computed(() => timelineRows.value.slice(0, timeline.shown))
+const timelineMore = computed(() => timelineRows.value.length > timeline.shown || timeline.more)
+
+async function loadEvents(before = '') {
+  const id = route.params.id
+  timeline.loading = true
+  timeline.error = ''
+  try {
+    const answer = await adminApi.events(id, before)
+    if (id !== route.params.id) return
+    timeline.items = before ? [...timeline.items, ...answer.items] : answer.items
+    timeline.more = answer.more
+  } catch (caught) {
+    timeline.error = failed(caught)
+  } finally {
+    timeline.loading = false
+  }
+}
+function resetEvents() {
+  Object.assign(timeline, { items: [], more: false, shown: PORTION, error: '' })
+  loadEvents()
+}
+watch(() => route.params.id, (id) => id && resetEvents())
+onMounted(resetEvents)
+
+async function showMore() {
+  timeline.shown += PORTION
+  // Past what is loaded, the next portion comes from the server.
+  if (timelineRows.value.length < timeline.shown && timeline.more) await loadEvents(timeline.items.at(-1).at)
+}
+/** Where it happened, when the line itself does not say. */
+function where(item) {
+  if (item.kind === 'payment') return item.page ? offerName(item.page) : ''
+  if (['view', 'visit', 'scroll', 'time', 'goal', 'signup', 'birth', 'ref'].includes(item.kind) || !item.page) return ''
+  return pageName(item.page)
+}
 
 function close() {
   router.push({ name: 'admin-users' })
@@ -203,6 +247,27 @@ function remove() {
 
       <section class="up-block">
         <div class="up-block-head">
+          <h2>Действия на сайте</h2>
+          <div class="adm-seg up-seg" role="group" aria-label="Сколько показывать">
+            <button type="button" :aria-pressed="!timeline.detailed" @click="timeline.detailed = false">главное</button>
+            <button type="button" :aria-pressed="timeline.detailed" @click="timeline.detailed = true">подробно</button>
+          </div>
+        </div>
+        <p class="up-note">Новые сверху, вместе с тем, что браузер делал до регистрации. Подробно — ещё прокрутка, время на странице и начала визитов.</p>
+        <ul v-if="timelineShown.length" class="up-events">
+          <li v-for="(item, index) in timelineShown" :key="`${item.at}:${item.kind}:${item.name}:${index}`" :class="{ 'is-pay': item.kind === 'payment' }">
+            <span class="adm-dim">{{ fmt.moment(item.at) }}</span>
+            <span>{{ eventText(item) }}<span v-if="where(item)" class="adm-dim"> · {{ where(item) }}</span></span>
+          </li>
+        </ul>
+        <p v-else-if="timeline.loading" class="up-empty">Загружаем…</p>
+        <p v-else-if="!timeline.error" class="up-empty">Действий пока нет.</p>
+        <p v-if="timeline.error" class="error">{{ timeline.error }}</p>
+        <button v-if="timelineShown.length && timelineMore" type="button" class="adm-btn" :disabled="timeline.loading" @click="showMore">Показать ещё</button>
+      </section>
+
+      <section class="up-block">
+        <div class="up-block-head">
           <h2>«Небосвод»</h2>
           <span v-if="user.sky" class="adm-badge is-ok">до {{ fmt.long(user.sky_until) }}</span>
           <span v-else-if="skyEnded" class="adm-badge">закончился {{ fmt.day(user.sky_until) }}</span>
@@ -356,6 +421,11 @@ function remove() {
 .up-pays li { display: grid; grid-template-columns: 7.6em 1fr auto; align-items: center; gap: 2px 12px; padding: 8px 0; border-top: 1px solid rgba(244, 239, 230, 0.07); font-size: 14px; }
 .up-pays .adm-badge { grid-column: 2 / -1; justify-self: start; }
 .up-pay-what { min-width: 0; }
+.up-seg button { padding: 4px 11px; font-size: 13px; }
+.up-events { display: grid; margin: 0; padding: 0; list-style: none; font-size: 14px; }
+.up-events li { display: grid; grid-template-columns: 7.6em 1fr; gap: 12px; padding: 6px 0; border-top: 1px solid rgba(244, 239, 230, 0.07); }
+.up-events li:first-child { border-top: 0; }
+.up-events li.is-pay { color: #9fd3a8; }
 .num { font-variant-numeric: tabular-nums; }
 .up-block > .adm-btn { justify-self: start; }
 .up-danger { border-bottom: 0; }

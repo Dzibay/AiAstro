@@ -144,7 +144,7 @@ function fit() {
       <div class="composer-wrap">
         <div v-if="locked" class="unlock">
           <p class="unlock-note">Вопросы в подарок позади — надеемся, астролог был вам полезен. В «Небосводе» разговор идёт без счёта вопросов, а вместе с ним загораются полные прогнозы и звёздный календарь.</p>
-          <RouterLink class="unlock-cta" :to="{ name: 'cabinet-sky' }">
+          <RouterLink class="unlock-cta" v-seen="'sky:chat'" data-track="sky:chat" :to="{ name: 'cabinet-sky' }">
             <svg viewBox="0 0 20 20" aria-hidden="true"><path :d="STAR" /></svg>
             Зажечь Небосвод — {{ skyPrice }}
           </RouterLink>
@@ -176,7 +176,7 @@ function fit() {
           <p v-else-if="draft.length > LENGTH - 100" class="hint" :class="{ 'is-over': draft.length > LENGTH }">{{ draft.length }} / {{ LENGTH }}</p>
           <p v-else-if="trialNote" class="hint">
             {{ trialNote }}
-            <RouterLink class="hint-link" :to="{ name: 'cabinet-sky' }">Без счёта — в «Небосводе»</RouterLink>
+            <RouterLink class="hint-link" v-seen="'sky:chat-hint'" data-track="sky:chat-hint" :to="{ name: 'cabinet-sky' }">Без счёта — в «Небосводе»</RouterLink>
           </p>
         </template>
       </div>
