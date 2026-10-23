@@ -211,6 +211,8 @@ CREATE TABLE IF NOT EXISTS ref_links (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS ref_links_token_key ON ref_links (token);
+-- Сколько потрачено на кампанию всего, в рублях: для окупаемости в «Деньгах по источникам».
+ALTER TABLE ref_links ADD COLUMN IF NOT EXISTS spend INTEGER NOT NULL DEFAULT 0;
 
 -- Посетители: анонимный id, который браузер хранит в localStorage (не cookie). ref_id — первая
 -- реферальная ссылка, по которой он пришёл: ей навсегда засчитываются его регистрация и оплаты.

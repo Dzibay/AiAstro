@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel, Field
 
 from app import notes
-from app.analytics import analytics, create_link, delete_link, link_detail, list_links, path, update_link, user_events
+from app.analytics import analytics, create_link, delete_link, link_detail, list_links, update_link, user_events
 from app.accounts import (
     SKY_MAX_DAYS, admin_delete, list_users, operator_confirm, operator_user, set_birth, set_sky, set_sky_until,
     user_activity,
@@ -16,6 +16,7 @@ from app.letters import Letter, html, text
 from app.mailer import link, mail_on, send
 from app.partners import admin_pairs, admin_partners, mine_changed, set_bought, set_pair_bought
 from app.payments import list_payments
+from app.pulse import journey, money, pulse, segments, way, weeks
 from app.security import check_admin_password, make_admin_session
 from app.settings_store import list_editable, set_setting
 from app.stats import stats
@@ -62,8 +63,11 @@ class LinkIn(BaseModel):
 
 
 class LinkEditIn(BaseModel):
-    name: str = Field(default="", max_length=80)
-    note: str = Field(default="", max_length=300)
+    # Absent — left as it is: the spend is saved alone from the money table.
+    name: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=300)
+    # What the campaign has cost in all, roubles; absent — left as it is.
+    spend: int | None = Field(default=None, ge=0, le=100_000_000)
 
 
 class SettingIn(BaseModel):
@@ -141,11 +145,47 @@ def analytics_view(days: int = Query(default=30)) -> dict:
         raise as_http(exc) from exc
 
 
-@router.get("/analytics/path", dependencies=[Depends(require_admin)])
-def analytics_path(days: int = Query(default=30), entry: str = Query(default=""), device: str = Query(default="")) -> dict:
-    """The way from the first visit to a payment; entry: '' | home | landings | other, device: '' | phone | desktop."""
+@router.get("/pulse", dependencies=[Depends(require_admin)])
+def pulse_view(days: int = Query(default=30)) -> dict:
+    """The first screen: the period against the same span before, the way then and now, what stands out."""
     try:
-        return path(days, entry, device)
+        return pulse(days)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/analytics/way", dependencies=[Depends(require_admin)])
+def analytics_way(days: int = Query(default=30), entry: str = Query(default=""), device: str = Query(default="")) -> dict:
+    """The way from the first visit to a payment, now and before; entry: '' | home | landings | other, device: '' | phone | desktop."""
+    try:
+        return way(days, entry, device)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/analytics/weeks", dependencies=[Depends(require_admin)])
+def analytics_weeks(weeks_n: int = Query(default=12, alias="weeks"), device: str = Query(default="")) -> dict:
+    """The way of each week's new browsers, the steps made within a week of coming."""
+    try:
+        return weeks(weeks_n, device)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/analytics/segments", dependencies=[Depends(require_admin)])
+def analytics_segments(days: int = Query(default=30), by: str = Query(default="channel")) -> dict:
+    """The way split by channel, first page or device."""
+    try:
+        return segments(days, by)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/analytics/money", dependencies=[Depends(require_admin)])
+def analytics_money(days: int = Query(default=30)) -> dict:
+    """Visitors, accounts and money by channel, with the links' spend; days = 0 — all time."""
+    try:
+        return money(days)
     except DomainError as exc:
         raise as_http(exc) from exc
 
@@ -178,7 +218,7 @@ def links_one(link_id: int, days: int = Query(default=0)) -> dict:
 @router.put("/links/{link_id}", dependencies=[Depends(require_admin)])
 def links_update(link_id: int, body: LinkEditIn) -> dict:
     try:
-        return update_link(link_id, body.name, body.note)
+        return update_link(link_id, body.name, body.note, body.spend)
     except DomainError as exc:
         raise as_http(exc) from exc
 
@@ -239,6 +279,15 @@ def users_activity(user_id: int, month: str = Query(default="", max_length=7)) -
     """Days of one Moscow month this person opened the site, with the pages of each day."""
     try:
         return user_activity(user_id, month)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/users/{user_id}/journey", dependencies=[Depends(require_admin)])
+def users_journey(user_id: int) -> dict:
+    """Where this person came from and which steps and actions they have made, with the first moment of each."""
+    try:
+        return journey(user_id)
     except DomainError as exc:
         raise as_http(exc) from exc
 

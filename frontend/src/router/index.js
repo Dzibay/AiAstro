@@ -10,7 +10,7 @@ const LoginView = () => import('../views/LoginView.vue')
 const LandingView = () => import('../views/LandingView.vue')
 const CabinetView = () => import('../views/CabinetView.vue')
 const AdminView = () => import('../views/AdminView.vue')
-const AdminOverview = () => import('../views/admin/OverviewPage.vue')
+const AdminPulse = () => import('../views/admin/PulsePage.vue')
 const AdminUsers = () => import('../views/admin/UsersPage.vue')
 const AdminUser = () => import('../views/admin/UserPanel.vue')
 const AdminPayments = () => import('../views/admin/PaymentsPage.vue')
@@ -80,7 +80,7 @@ const router = createRouter({
       path: '/admin',
       component: AdminView,
       children: [
-        { path: '', name: 'admin', component: AdminOverview },
+        { path: '', name: 'admin', component: AdminPulse },
         { path: 'analytics', name: 'admin-analytics', component: AdminAnalytics },
         { path: 'links', name: 'admin-links', component: AdminLinks },
         {

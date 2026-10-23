@@ -15,5 +15,6 @@ const route = useRoute()
   <div class="toasts" aria-live="polite">
     <p v-for="item in items" :key="item.id" class="toast">{{ item.text }}</p>
   </div>
-  <CookieNote />
+  <!-- The operator's pages are not the visitor's site: no cookie note over the figures. -->
+  <CookieNote v-if="!route.path.startsWith('/admin')" />
 </template>

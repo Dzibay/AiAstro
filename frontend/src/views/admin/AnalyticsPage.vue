@@ -1,11 +1,15 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ColumnChart from '../../components/admin/ColumnChart.vue'
+import SegmentMatrix from '../../components/admin/SegmentMatrix.vue'
+import WayFunnel from '../../components/admin/WayFunnel.vue'
+import WeekLines from '../../components/admin/WeekLines.vue'
 import { adminApi } from '../../api/admin.js'
 import {
   GAME_STEPS, PERIODS, PRODUCTS, STEP_NAMES, buckets, clickName, duration, failed, fmt, offerName, pageName, pct, stepOf, tourName,
 } from './shared.js'
+import { MIN_BASE, periodName, points, share } from './way.js'
 
 /**
  * The site's own figures: who came, from where, how far the people registered in the period have
@@ -53,8 +57,6 @@ const step = computed(() => stepOf(days.value))
 const visitors = computed(() => buckets(data.value?.series || [], 'visitors', days.value))
 const signups = computed(() => buckets(data.value?.series || [], 'signups', days.value))
 const hours = (value) => (!value ? '—' : value < 1 ? `${Math.max(1, Math.round(value * 60))} мин` : value < 48 ? `${Math.round(value)} ч` : `${Math.round(value / 24)} дн`)
-/** The median time from the registration to a step: «сразу» within a minute, nothing if nobody made it. */
-const after = (value) => (value == null ? '' : value < 1 / 60 ? 'сразу' : hours(value))
 
 const tiles = computed(() => {
   const x = t.value
@@ -68,131 +70,111 @@ const tiles = computed(() => {
   ]
 })
 
-/* ---- The whole way: the browsers that first came in the period, from the first page to a payment ---- */
+/* ---- Parts with their own switches: each loads by itself and keeps only the latest answer ---- */
+
+function part(params, fetch) {
+  const state = reactive({ data: null, loading: false, error: '' })
+  let last = ''
+  state.load = async () => {
+    const asked = params()
+    const key = JSON.stringify(asked)
+    if (key === last) return
+    last = key
+    state.loading = true
+    state.error = ''
+    try {
+      const answer = await fetch(asked)
+      if (key !== last) return
+      state.data = answer
+    } catch (caught) {
+      if (key !== last) return
+      state.error = failed(caught)
+      last = '' // the same switches ask again
+    }
+    state.loading = false
+  }
+  state.reload = () => {
+    last = ''
+    return state.load()
+  }
+  return state
+}
+
+/* ---- The way: the browsers that first came in the period, from the first page to a payment ---- */
 
 const ENTRIES = [
   { key: '', label: 'Все входы' },
   { key: 'home', label: 'Главная' },
-  { key: 'landings', label: 'Лендинги' },
+  { key: 'landings', label: 'Посадочные' },
   { key: 'other', label: 'Другие страницы' },
 ]
-const PATH_DEVICES = [
+const WAY_DEVICES = [
   { key: '', label: 'Все устройства' },
   { key: 'phone', label: 'Телефон' },
   { key: 'desktop', label: 'Компьютер' },
 ]
-const VISIT = { '': 'Зашли на сайт', home: 'Зашли на главную', landings: 'Зашли на лендинг', other: 'Зашли на другую страницу' }
-const PATH = [
-  { key: 'visit', hint: 'впервые за срок' },
-  { key: 'reg_open', label: 'Открыли регистрацию', hint: 'форма «Открыть небо»' },
-  { key: 'reg_who', label: 'Прошли первый шаг', hint: 'имя, почта и пароль' },
-  { key: 'signup', label: 'Прошли второй шаг', hint: 'кабинет заведён' },
-  { key: 'confirm', label: 'Подтвердили почту', hint: 'открыли ссылку из письма' },
-  { key: 'cabinet', label: 'Вошли в кабинет', hint: 'после подтверждения' },
-  { key: 'checkout', label: 'Начали оплату', hint: 'перешли в ЮKassa' },
-  { key: 'paid', label: 'Оплатили', hint: 'хоть что-нибудь' },
-]
+const FIRST = { home: 'Зашли на главную', landings: 'Зашли на посадочную', other: 'Зашли на другую страницу' }
+const period = computed(() => periodName(days.value))
 
-const pathEntry = ref('')
-const pathDevice = ref('')
-const pathData = ref(null)
-const pathLoading = ref(false)
-const pathError = ref('')
+const wayEntry = ref('')
+const wayDevice = ref('')
+const way = part(() => ({ days: days.value, entry: wayEntry.value, device: wayDevice.value }), adminApi.way)
 
-async function loadPath() {
-  const asked = { days: days.value, entry: pathEntry.value, device: pathDevice.value }
-  pathLoading.value = true
-  pathError.value = ''
-  try {
-    const answer = await adminApi.path(asked)
-    if (asked.days === days.value && asked.entry === pathEntry.value && asked.device === pathDevice.value) pathData.value = answer
-  } catch (caught) {
-    pathError.value = failed(caught)
-  } finally {
-    pathLoading.value = false
-  }
+/* ---- The cabinet beside the payment: who did each thing before paying, and how many of them paid ---- */
+
+const CABINET = {
+  birth: 'Указали дату рождения',
+  intro: 'Прошли знакомство',
+  chart: 'Открыли карту',
+  game: 'Собрали карту в игре',
+  forecast: 'Открыли прогноз',
+  pair: 'Добавили пару',
+  chat: 'Спросили астролога',
+  sky: 'Открыли «Небосвод»',
+  offer: 'Видели предложение',
 }
-watch([days, pathEntry, pathDevice], loadPath)
-onMounted(loadPath)
-
-const pathRows = computed(() => {
-  const d = pathData.value
-  if (!d) return []
-  const top = Math.max(d.steps.visit, 1)
-  return PATH.map((item, index) => {
-    const value = d.steps[item.key]
-    const previous = index ? d.steps[PATH[index - 1].key] : value
-    const note = { signup: `с датой рождения ${fmt.count(d.birth)}`, cabinet: `открыли карту ${fmt.count(d.chart)}` }[item.key]
+const cabinet = computed(() => {
+  const c = way.data?.cabinet
+  if (!c) return null
+  const rows = c.actions.map((a) => {
+    const rest = c.people - a.did
+    const restPaid = c.paid - a.paid
+    const did = a.did ? a.paid / a.did : null
+    const not = rest ? restPaid / rest : null
+    const small = a.did < MIN_BASE || rest < MIN_BASE
+    const diff = did != null && not != null ? did - not : null
     return {
-      ...item,
-      label: item.label || VISIT[d.entry],
-      hint: note ? `${item.hint} · ${note}` : item.hint,
-      value,
-      width: (value / top) * 100,
-      ofFirst: index ? pct(value, d.steps.visit) : '',
-      ofPrev: index ? pct(value, previous) : '',
-      lost: Math.max(previous - value, 0),
-      after: index ? after(d.hours[item.key]) : '',
-      paid: ['checkout', 'paid'].includes(item.key),
+      ...a,
+      label: CABINET[a.key] || a.key,
+      share: c.people ? a.did / c.people : 0,
+      rest,
+      restPaid,
+      rates: { did, not },
+      diff,
+      small,
+      tone: diff == null || small ? 'none' : Math.abs(diff) < 0.01 ? 'flat' : diff > 0 ? 'up' : 'down',
     }
   })
+  // One scale for both bars of every row, so the rows compare too.
+  const top = Math.max(...rows.flatMap((row) => [row.rates.did || 0, row.rates.not || 0]), 0.0001)
+  for (const row of rows) row.width = { did: ((row.rates.did || 0) / top) * 100, not: ((row.rates.not || 0) / top) * 100 }
+  return { people: c.people, paid: c.paid, rows }
 })
-/** The two steps the most people fall off at. */
-const pathDrops = computed(() => pathRows.value.filter((row) => row.lost > 0).sort((a, b) => b.lost - a.lost).slice(0, 2).map((row) => row.key))
 
-/* ---- The funnel: the period's new visitors, then the people registered in it and how far they went ---- */
+/* ---- Week by week, and the way split by source, first page or device ---- */
 
-const FUNNEL = [
-  { key: 'signup', label: 'Регистрация', hint: 'кабинет заведён' },
-  { key: 'confirm', label: 'Подтвердил почту', hint: 'открыл ссылку из письма' },
-  { key: 'birth', label: 'Дата рождения', hint: 'небо нарисовало знак' },
-  { key: 'intro', label: 'Знакомство', hint: 'тур по кабинету пройден или закрыт' },
-  { key: 'section', label: 'Открыл раздел', hint: 'карта, прогноз, пара, астролог или «Небосвод»' },
-  { key: 'chart', label: 'Открыл карту', hint: 'раздел «Карта»' },
-  { key: 'game', label: 'Собрал карту в игре', hint: 'прошёл игру до финала' },
-  { key: 'pair', label: 'Добавил пару', hint: 'сам или приглашением' },
-  { key: 'chat', label: 'Спросил астролога', hint: 'хотя бы один вопрос' },
-  { key: 'checkout', label: 'Начал оплату', hint: 'перешёл в ЮKassa' },
-  { key: 'paid', label: 'Оплатил', hint: 'хоть что-нибудь' },
-  { key: 'sky', label: 'Купил «Небосвод»', hint: 'любой срок' },
-  { key: 'pair_bought', label: 'Купил разбор пары', hint: 'хотя бы один' },
+const WEEK_COUNTS = [8, 12, 26]
+const weekCount = ref(12)
+const weekDevice = ref('')
+const weekly = part(() => ({ weeks: weekCount.value, device: weekDevice.value }), adminApi.weeks)
+
+const SPLITS = [
+  { key: 'channel', label: 'Источник и ссылка' },
+  { key: 'landing', label: 'Первая страница' },
+  { key: 'device', label: 'Устройство' },
 ]
-
-const funnel = computed(() => {
-  const f = data.value?.funnel
-  if (!f) return []
-  const when = data.value.step_hours || {}
-  const top = Math.max(f.signup, 1)
-  // Accounts made before the counting began have no visitor: the bars measure against the larger.
-  const visitorsTop = Math.max(t.value.new_visitors, top)
-  const rows = [{ key: 'visitors', label: 'Новые посетители', hint: 'впервые открыли сайт', value: t.value.new_visitors, width: (t.value.new_visitors / visitorsTop) * 100, ofFirst: '', ofPrev: '' }]
-  let previous = null
-  for (const item of FUNNEL) {
-    const value = f[item.key]
-    rows.push({
-      ...item,
-      value,
-      width: (value / visitorsTop) * 100,
-      ofFirst: item.key === 'signup' ? pct(t.value.fresh_signups, t.value.new_visitors) : pct(value, f.signup),
-      ofPrev: item.key === 'signup' ? '' : pct(value, previous),
-      after: after(when[item.key]),
-      // The checkout and the purchases are not one after another: each counts from the registrations.
-      paid: ['checkout', 'paid', 'sky', 'pair_bought'].includes(item.key),
-    })
-    if (!['confirm', 'sky', 'pair_bought'].includes(item.key)) previous = value
-  }
-  return rows
-})
-
-/** The steps the most people fall off at, among the ones in order. */
-const drops = computed(() => {
-  const ordered = funnel.value.filter((row) => !['confirm', 'sky', 'pair_bought'].includes(row.key) && row.key !== 'visitors')
-  return ordered.slice(1).map((row, index) => ({ key: row.key, lost: ordered[index].value - row.value }))
-    .filter((row) => row.lost > 0)
-    .sort((a, b) => b.lost - a.lost)
-    .slice(0, 2)
-    .map((row) => row.key)
-})
+const splitBy = ref('channel')
+const split = part(() => ({ days: days.value, by: splitBy.value }), adminApi.segments)
 
 /* ---- Where people stop, the pages, the sources ---- */
 
@@ -206,11 +188,61 @@ const landings = computed(() => data.value?.landings || [])
 /** The landing pages for search and ads, with their own goals: a calculation made, a step to the account. */
 const adLandings = computed(() => landings.value.filter((row) => row.name?.startsWith('lp-')))
 
-const SOURCE_KIND = { ref: 'по ссылке', site: 'с сайта', direct: 'напрямую' }
-const sources = computed(() => (data.value?.sources || []).map((row) => ({
+/* ---- Sources and money: whom each source brings and what they pay; the links' spend and payback ---- */
+
+const SOURCE_KIND = { ref: 'ссылка', site: 'сайт', direct: 'напрямую' }
+const sourceMoney = part(() => days.value, adminApi.money)
+const perVisitor = (value) => `${value.toLocaleString('ru-RU', { maximumFractionDigits: value < 10 ? 1 : 0 })} ₽`
+const moneyRows = computed(() => (sourceMoney.data?.items || []).map((row) => ({
   ...row,
-  label: row.label || (row.kind === 'direct' ? 'Без источника' : '—'),
+  name: row.kind === 'direct' ? 'Без источника' : row.label,
+  check: row.payments ? Math.round(row.revenue / row.payments) : null,
+  perVisitor: row.visitors ? row.revenue / row.visitors : null,
+  payback: row.spend ? row.revenue_all / row.spend : null,
 })))
+const moneyTotal = computed(() => {
+  const x = sourceMoney.data?.totals
+  if (!x) return null
+  return { ...x, check: x.payments ? Math.round(x.revenue / x.payments) : null, perVisitor: x.visitors ? x.revenue / x.visitors : null }
+})
+
+// The spend of a campaign link, typed right in the table.
+const spendEdit = ref(null)
+const spendSaving = ref(false)
+const spendError = ref('')
+function editSpend(row) {
+  spendError.value = ''
+  spendEdit.value = { id: row.link_id, value: row.spend ? String(row.spend) : '' }
+}
+async function saveSpend() {
+  const edit = spendEdit.value
+  const value = Number(String(edit.value).replace(/\s/g, '').replace(',', '.') || 0)
+  if (!Number.isFinite(value) || value < 0) {
+    spendError.value = 'Расход — число рублей, без минуса.'
+    return
+  }
+  spendSaving.value = true
+  spendError.value = ''
+  try {
+    await adminApi.updateLink(edit.id, { spend: Math.round(value) })
+    spendEdit.value = null
+    await sourceMoney.reload()
+  } catch (caught) {
+    spendError.value = failed(caught)
+  } finally {
+    spendSaving.value = false
+  }
+}
+
+// The parts load when their tab is open, and again when a switch or the period changes.
+watch([tab, days, wayEntry, wayDevice, weekCount, weekDevice, splitBy], () => {
+  if (tab.value === 'funnel') {
+    way.load()
+    weekly.load()
+    split.load()
+  }
+  if (tab.value === 'sources') sourceMoney.load()
+}, { immediate: true })
 const DEVICES = { phone: 'Телефон', desktop: 'Компьютер', unknown: 'Не определено' }
 const devices = computed(() => {
   const rows = data.value?.devices || []
@@ -337,71 +369,112 @@ const gameSteps = computed(() => (data.value?.game?.steps || []).map((row) => ({
     <template v-if="tab === 'funnel'">
     <section class="adm-panel">
       <div class="adm-panel-head">
-        <h2>Путь от первого визита</h2>
-        <p>браузеры, впервые открывшие сайт за срок, — и докуда каждый дошёл к сегодняшнему дню</p>
+        <h2>Путь от визита до оплаты</h2>
+        <p>браузеры, впервые открывшие сайт за срок, — докуда каждый дошёл к сегодняшнему дню; рядом — та же доля за {{ period }} в том же возрасте</p>
       </div>
-      <div class="an-path-filters">
+      <div class="an-filters">
         <div class="adm-seg" role="group" aria-label="Страница входа">
-          <button v-for="item in ENTRIES" :key="item.key" type="button" :aria-pressed="pathEntry === item.key" @click="pathEntry = item.key">{{ item.label }}</button>
+          <button v-for="item in ENTRIES" :key="item.key" type="button" :aria-pressed="wayEntry === item.key" @click="wayEntry = item.key">{{ item.label }}</button>
         </div>
         <div class="adm-seg" role="group" aria-label="Устройство">
-          <button v-for="item in PATH_DEVICES" :key="item.key" type="button" :aria-pressed="pathDevice === item.key" @click="pathDevice = item.key">{{ item.label }}</button>
+          <button v-for="item in WAY_DEVICES" :key="item.key" type="button" :aria-pressed="wayDevice === item.key" @click="wayDevice = item.key">{{ item.label }}</button>
         </div>
       </div>
-      <p v-if="pathError" class="error">{{ pathError }}</p>
-      <ol v-if="pathRows.length" class="an-funnel" :class="{ 'adm-loading': pathLoading }">
-        <li v-for="row in pathRows" :key="row.key" :class="{ 'is-paid': row.paid, 'is-drop': pathDrops.includes(row.key) }">
-          <span class="an-funnel-name">
-            <strong>{{ row.label }}</strong>
-            <span>{{ row.hint }}</span>
-          </span>
-          <span class="an-funnel-track"><i :style="{ width: `${Math.max(row.width, row.value ? 0.6 : 0)}%` }" /></span>
-          <span class="an-funnel-value num">{{ fmt.count(row.value) }}</span>
-          <span class="an-funnel-share num" title="от зашедших">{{ row.ofFirst }}</span>
-          <span class="an-funnel-prev num" :title="row.lost ? `от предыдущего шага; не дошли ${fmt.count(row.lost)}` : 'от предыдущего шага'">
-            <template v-if="row.ofPrev">→ {{ row.ofPrev }}</template>
-          </span>
-          <span class="an-funnel-time num" title="медиана: сколько прошло от первого визита до шага">{{ row.after }}</span>
-        </li>
-      </ol>
-      <p class="adm-note an-legend">
-        <span><i class="an-dot" /> шаги по порядку: доля от зашедших и → от предыдущего шага</span>
-        <span><i class="an-dot is-paid" /> оплата</span>
-        <span><i class="an-dot is-drop" /> больше всего теряем здесь</span>
-        <span>справа — медиана времени от первого визита</span>
-      </p>
+      <p v-if="way.error" class="error">{{ way.error }}</p>
+      <div v-if="way.data" :class="{ 'adm-loading': way.loading }">
+        <WayFunnel :now="way.data.now" :before="way.data.before" :hours="way.data.hours" :period="period" :first="FIRST[way.data.entry] || ''" />
+      </div>
       <p class="adm-note an-foot">
-        Шаги регистрации записываются с этой версии сайта: аккаунт, заведённый раньше, прошёл их в любом случае.
-        Кто зарегистрировался с другого браузера, здесь не виден — он есть в воронке ниже.
+        Доля в полосе — от дошедших до прошлого шага; «к прошлому сроку» — та же доля тогда, в п.п.; время — медиана от первого визита.
+        Аккаунт считается за браузером, в котором его завели. Шаги регистрации записываются с этой версии сайта: аккаунт, заведённый раньше, прошёл их в любом случае.
       </p>
     </section>
 
     <section class="adm-panel">
       <div class="adm-panel-head">
-        <h2>Воронка</h2>
-        <p>люди, зарегистрированные за срок, — и докуда каждый дошёл к сегодняшнему дню</p>
+        <h2>Кабинет и оплата</h2>
+        <p v-if="cabinet">
+          {{ fmt.count(cabinet.people) }} из этих браузеров вошли в кабинет, оплатили {{ fmt.count(cabinet.paid) }} · {{ share(cabinet.people ? cabinet.paid / cabinet.people : null) }};
+          кто что сделал до первой оплаты — и какая доля из них платит
+        </p>
       </div>
-      <ol class="an-funnel">
-        <li v-for="row in funnel" :key="row.key" :class="{ 'is-paid': row.paid, 'is-drop': drops.includes(row.key) }">
-          <span class="an-funnel-name">
-            <strong>{{ row.label }}</strong>
-            <span>{{ row.hint }}</span>
-          </span>
-          <span class="an-funnel-track"><i :style="{ width: `${Math.max(row.width, row.value ? 0.6 : 0)}%` }" /></span>
-          <span class="an-funnel-value num">{{ fmt.count(row.value) }}</span>
-          <span class="an-funnel-share num" :title="row.key === 'signup' ? 'от новых посетителей' : 'от регистраций'">{{ row.ofFirst }}</span>
-          <span class="an-funnel-prev num" :title="'от предыдущего шага'">
-            <template v-if="row.ofPrev">→ {{ row.ofPrev }}</template>
-          </span>
-          <span class="an-funnel-time num" title="медиана: сколько прошло от регистрации до шага">{{ row.after }}</span>
-        </li>
-      </ol>
-      <p class="adm-note an-legend">
-        <span><i class="an-dot" /> шаги по порядку</span>
-        <span><i class="an-dot is-paid" /> покупки — доля от регистраций</span>
-        <span><i class="an-dot is-drop" /> больше всего теряем здесь</span>
-        <span>справа — медиана времени от регистрации до шага</span>
+      <div v-if="cabinet && cabinet.people" class="an-scroll" :class="{ 'adm-loading': way.loading }">
+        <table class="adm-table an-table an-cab">
+          <thead>
+            <tr>
+              <th>Действие</th>
+              <th class="num">Сделали</th>
+              <th>Оплатили: сделавшие и <span class="an-cab-not">не сделавшие</span></th>
+              <th class="num" title="доля оплативших среди сделавших минус среди не сделавших">Разница</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in cabinet.rows" :key="row.key" :class="{ 'is-small': row.small }">
+              <td>{{ row.label }}</td>
+              <td class="num">{{ fmt.count(row.did) }} <span class="adm-dim">· {{ share(row.share) }}</span></td>
+              <td>
+                <div class="an-cab-bars">
+                  <span class="an-cab-bar" :title="`сделали: оплатили ${fmt.count(row.paid)} из ${fmt.count(row.did)}`">
+                    <i class="is-did" :style="{ width: `${row.width.did}%` }" /><b class="num">{{ share(row.rates.did) }}</b>
+                  </span>
+                  <span class="an-cab-bar" :title="`не сделали: оплатили ${fmt.count(row.restPaid)} из ${fmt.count(row.rest)}`">
+                    <i class="is-not" :style="{ width: `${row.width.not}%` }" /><b class="num">{{ share(row.rates.not) }}</b>
+                  </span>
+                </div>
+              </td>
+              <td class="num">
+                <span v-if="row.diff != null" class="an-chip" :class="`is-${row.tone}`" :title="row.small ? `мало людей для выводов: меньше ${MIN_BASE} с одной из сторон` : ''">
+                  <svg v-if="row.tone === 'up' || row.tone === 'down'" viewBox="0 0 10 10" aria-hidden="true"><path :d="row.tone === 'up' ? 'M5 2 9 8H1Z' : 'M5 8 1 2h8Z'" /></svg>
+                  {{ points(row.diff) }}
+                </span>
+                <span v-else class="adm-dim">—</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p v-else-if="cabinet" class="adm-empty">Из браузеров этого среза в кабинет за срок никто не вошёл.</p>
+      <p class="adm-note an-foot">
+        Действие считается, если сделано до первой оплаты (у не плативших — к сегодняшнему дню). Это связь, а не причина:
+        кто и так собирался платить, мог делать больше. Бледные строки — меньше {{ MIN_BASE }} человек с одной из сторон.
       </p>
+    </section>
+
+    <section class="adm-panel">
+      <div class="adm-panel-head">
+        <h2>По неделям</h2>
+        <p>браузеры недели по первому визиту; шаг засчитывается, если сделан в течение {{ weekly.data?.horizon || 7 }} дней — так старые и новые недели сравнимы</p>
+      </div>
+      <div class="an-filters">
+        <div class="adm-seg" role="group" aria-label="Устройство">
+          <button v-for="item in WAY_DEVICES" :key="item.key" type="button" :aria-pressed="weekDevice === item.key" @click="weekDevice = item.key">{{ item.label }}</button>
+        </div>
+        <div class="adm-seg" role="group" aria-label="Сколько недель">
+          <button v-for="count in WEEK_COUNTS" :key="count" type="button" :aria-pressed="weekCount === count" @click="weekCount = count">{{ count }} нед.</button>
+        </div>
+      </div>
+      <p v-if="weekly.error" class="error">{{ weekly.error }}</p>
+      <div v-if="weekly.data" :class="{ 'adm-loading': weekly.loading }">
+        <WeekLines :items="weekly.data.items" />
+      </div>
+      <p class="adm-note an-foot">Полые точки и пунктир — недели, которые ещё досчитываются: их люди не прожили свои {{ weekly.data?.horizon || 7 }} дней.</p>
+    </section>
+
+    <section class="adm-panel">
+      <div class="adm-panel-head">
+        <h2>Срезы</h2>
+        <p>тот же путь за срок, разложенный по сегментам: где доля шага ниже, чем у всех</p>
+      </div>
+      <div class="an-filters">
+        <div class="adm-seg" role="group" aria-label="Срез">
+          <button v-for="item in SPLITS" :key="item.key" type="button" :aria-pressed="splitBy === item.key" @click="splitBy = item.key">{{ item.label }}</button>
+        </div>
+      </div>
+      <p v-if="split.error" class="error">{{ split.error }}</p>
+      <div v-if="split.data" :class="{ 'adm-loading': split.loading }">
+        <SegmentMatrix v-if="split.data.items.length" :items="split.data.items" :total="split.data.total" :by="split.data.by" />
+        <p v-else class="adm-empty">Новых посетителей за этот срок не было.</p>
+      </div>
     </section>
 
     <section class="adm-panel">
@@ -591,7 +664,10 @@ const gameSteps = computed(() => (data.value?.game?.steps || []).map((row) => ({
         </table>
       </div>
       <p v-if="!offers.length" class="adm-empty">За этот срок предложения никому не показывались.</p>
-      <p class="adm-note an-foot">Оплата засчитывается месту, где человек последним нажал на предложение в этой вкладке (в пределах получаса); без такого нажатия — разделу, где он платил.</p>
+      <p class="adm-note an-foot">
+        Оплата засчитывается месту, где человек последним нажал на предложение в этой вкладке (в пределах получаса); без такого нажатия — разделу, где он платил.
+        <button type="button" class="text-button an-link" @click="tab = 'sources'">Деньги по источникам и окупаемость ссылок →</button>
+      </p>
     </section>
     </template>
 
@@ -682,33 +758,84 @@ const gameSteps = computed(() => (data.value?.game?.steps || []).map((row) => ({
     </template>
 
     <template v-else>
-    <div class="an-pair">
-      <section class="adm-panel">
-        <div class="adm-panel-head">
-          <h2>Откуда приходят</h2>
-          <p>новые посетители за срок</p>
-        </div>
-        <table v-if="sources.length" class="adm-table an-table">
-          <thead><tr><th>Источник</th><th class="num">Посетители</th><th class="num">Регистрации</th><th class="num">Конверсия</th><th class="num">Платят</th></tr></thead>
+    <section class="adm-panel">
+      <div class="adm-panel-head">
+        <h2>Источники и деньги</h2>
+        <p>новые посетители, регистрации и оплаты за срок по источнику, с которого человек пришёл</p>
+      </div>
+      <p v-if="sourceMoney.error" class="error">{{ sourceMoney.error }}</p>
+      <div v-if="moneyRows.length" class="an-scroll" :class="{ 'adm-loading': sourceMoney.loading }">
+        <table class="adm-table an-table an-money">
+          <thead>
+            <tr>
+              <th>Источник</th>
+              <th class="num">Посетители</th>
+              <th class="num">Регистрации</th>
+              <th class="num" title="разные люди, оплатившие за срок">Платят</th>
+              <th class="num">Выручка</th>
+              <th class="num" title="выручка на одну оплату">Средний чек</th>
+              <th class="num" title="выручка на одного нового посетителя">На посетителя</th>
+              <th class="num" title="сколько потрачено на ссылку — вписывается здесь">Расход</th>
+              <th class="num" title="вся выручка ссылки за всё время к расходу">Окупаемость</th>
+            </tr>
+          </thead>
           <tbody>
-            <tr v-for="row in sources" :key="`${row.kind}:${row.label}`">
+            <tr v-for="row in moneyRows" :key="row.key">
               <td>
                 <span class="an-source">
                   <span class="adm-badge is-plain" :class="{ 'is-warn': row.kind === 'ref', 'is-ok': row.kind === 'site' }">{{ SOURCE_KIND[row.kind] }}</span>
-                  <span>{{ row.label }}</span>
+                  <span class="an-source-name" :title="row.name">{{ row.name }}</span>
                 </span>
               </td>
               <td class="num">{{ fmt.count(row.visitors) }}</td>
-              <td class="num">{{ fmt.count(row.signups) }}</td>
-              <td class="num">{{ pct(row.signups, row.visitors) }}</td>
-              <td class="num">{{ fmt.count(row.paying) }}</td>
+              <td class="num">{{ fmt.count(row.signups) }} <span class="adm-dim">· {{ pct(row.signups, row.visitors) }}</span></td>
+              <td class="num">{{ fmt.count(row.payers) }}</td>
+              <td class="num"><strong>{{ fmt.rub(row.revenue) }}</strong></td>
+              <td class="num">{{ row.check == null ? '—' : fmt.rub(row.check) }}</td>
+              <td class="num">{{ row.perVisitor == null ? '—' : perVisitor(row.perVisitor) }}</td>
+              <td class="num an-spend">
+                <form v-if="spendEdit && spendEdit.id === row.link_id" class="an-spend-form" @submit.prevent="saveSpend">
+                  <input v-model="spendEdit.value" class="adm-input" inputmode="numeric" aria-label="Расход, ₽" autofocus @keydown.esc="spendEdit = null">
+                  <button type="submit" class="adm-btn" :disabled="spendSaving">ОК</button>
+                </form>
+                <button v-else-if="row.link_id" type="button" class="text-button" title="вписать расход" @click="editSpend(row)">
+                  {{ row.spend ? fmt.rub(row.spend) : 'вписать' }}
+                </button>
+                <span v-else class="adm-dim">—</span>
+              </td>
+              <td class="num">
+                <span v-if="row.payback != null" class="an-chip" :class="row.payback >= 1 ? 'is-up' : 'is-down'" :title="`${fmt.rub(row.revenue_all)} за всё время на ${fmt.rub(row.spend)}`">
+                  {{ row.payback.toLocaleString('ru-RU', { maximumFractionDigits: row.payback < 10 ? 1 : 0 }) }}×
+                </span>
+                <span v-else class="adm-dim">—</span>
+              </td>
             </tr>
           </tbody>
+          <tfoot v-if="moneyTotal">
+            <tr>
+              <td>Всего</td>
+              <td class="num">{{ fmt.count(moneyTotal.visitors) }}</td>
+              <td class="num">{{ fmt.count(moneyTotal.signups) }} <span class="adm-dim">· {{ pct(moneyTotal.signups, moneyTotal.visitors) }}</span></td>
+              <td class="num">{{ fmt.count(moneyTotal.payers) }}</td>
+              <td class="num"><strong>{{ fmt.rub(moneyTotal.revenue) }}</strong></td>
+              <td class="num">{{ moneyTotal.check == null ? '—' : fmt.rub(moneyTotal.check) }}</td>
+              <td class="num">{{ moneyTotal.perVisitor == null ? '—' : perVisitor(moneyTotal.perVisitor) }}</td>
+              <td class="num">{{ moneyTotal.spend ? fmt.rub(moneyTotal.spend) : '—' }}</td>
+              <td />
+            </tr>
+          </tfoot>
         </table>
-        <p v-else class="adm-empty">Новых посетителей за этот срок не было.</p>
+      </div>
+      <p v-else-if="sourceMoney.data" class="adm-empty">За этот срок не было ни посетителей, ни оплат.</p>
+      <p v-if="spendError" class="error">{{ spendError }}</p>
+      <p class="adm-note an-foot">
+        Регистрация и оплата засчитываются ссылке аккаунта или платежа, а без неё — источнику первого визита браузера, где завели аккаунт.
+        Окупаемость — вся выручка ссылки за всё время, делённая на расход: от 1× ссылка окупилась.
         <RouterLink :to="{ name: 'admin-links' }" class="an-link">Рекламные ссылки →</RouterLink>
-      </section>
+      </p>
+    </section>
 
+    <div class="an-pair">
       <section class="adm-panel">
         <div class="adm-panel-head">
           <h2>Устройства</h2>
@@ -726,8 +853,10 @@ const gameSteps = computed(() => (data.value?.game?.steps || []).map((row) => ({
           </li>
         </ul>
         <p v-else class="adm-empty">Нет данных.</p>
+      </section>
 
-        <div class="adm-panel-head an-sub">
+      <section class="adm-panel">
+        <div class="adm-panel-head">
           <h2>Первая страница</h2>
           <p>куда попадают впервые</p>
         </div>
@@ -782,37 +911,28 @@ const gameSteps = computed(() => (data.value?.game?.steps || []).map((row) => ({
 .an-scroll { overflow-x: auto; }
 .an-foot { margin: 12px 0 0; font-size: 13px; }
 
-/* The funnel: one row a step, the bar against the period's new visitors. */
-.an-funnel { display: grid; gap: 2px; margin: 4px 0 0; padding: 0; list-style: none; }
-.an-funnel li {
-  display: grid;
-  grid-template-columns: minmax(170px, 15em) minmax(0, 1fr) 4.5em 4.5em 5em 4.5em;
-  align-items: center;
-  gap: 14px;
-  padding: 7px 0;
-}
-.an-funnel-name { display: grid; gap: 1px; }
-.an-funnel-name strong { font-size: 15px; font-weight: 500; }
-.an-funnel-name span { color: var(--soft); font-size: 12px; }
-.an-funnel-track { display: block; height: 14px; border-radius: 4px; background: rgba(244, 239, 230, 0.04); overflow: hidden; }
-.an-funnel-track i { display: block; height: 100%; border-radius: 4px; background: var(--people); transition: width 0.35s ease; }
-.an-funnel li.is-paid .an-funnel-track i { background: var(--money); }
-.an-funnel li.is-drop .an-funnel-prev { color: var(--danger); font-weight: 600; }
-.an-funnel li.is-drop .an-funnel-name strong::after { content: ' ↓'; color: var(--danger); }
-.an-funnel-value { font-size: 16px; font-weight: 600; }
-.an-funnel-share { color: var(--ink); font-size: 14px; }
-.an-funnel-prev { color: var(--soft); font-size: 13px; }
-.an-funnel-time { color: var(--soft); font-size: 12px; }
-.an-funnel li:first-child { padding-bottom: 12px; margin-bottom: 6px; border-bottom: 1px dashed var(--panel-line); }
+/* The cabinet beside the payment: two bars a row on one scale — who did it, who did not. */
+.an-filters { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 14px; }
+.an-filters .adm-seg { flex-wrap: wrap; }
+.an-cab td { vertical-align: middle; }
+.an-cab th:nth-child(3) { min-width: 260px; }
+.an-cab tr.is-small td { color: var(--soft); }
+.an-cab tr.is-small .an-cab-bar i { opacity: 0.45; }
+.an-cab-not { color: var(--soft); }
+.an-cab-bars { display: grid; gap: 3px; }
+.an-cab-bar { display: grid; grid-template-columns: minmax(0, 1fr) 3.6em; align-items: center; gap: 8px; }
+.an-cab-bar i { display: block; height: 9px; min-width: 2px; border-radius: 0 4px 4px 0; }
+.an-cab-bar i.is-did { background: var(--money); }
+.an-cab-bar i.is-not { background: rgba(244, 239, 230, 0.28); }
+.an-cab-bar b { font-size: 13px; font-weight: 500; text-align: right; }
+.an-cab-bar:last-child b { color: var(--soft); }
+.an-chip { display: inline-flex; align-items: center; gap: 4px; color: var(--soft); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.an-chip svg { width: 9px; height: 9px; fill: currentColor; }
+.an-chip.is-up { color: var(--ok); }
+.an-chip.is-down { color: var(--danger); }
+.an-chip.is-flat, .an-chip.is-none { font-weight: 400; }
 
-.an-path-filters { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 10px; }
-.an-path-filters .adm-seg { flex-wrap: wrap; }
-
-.an-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 12px 0 0; }
-.an-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .an-dot { display: inline-block; width: 9px; height: 9px; border-radius: 3px; background: var(--people); flex: none; }
-.an-dot.is-paid { background: var(--money); }
-.an-dot.is-drop { background: var(--danger); }
 .an-dot.is-desktop { background: var(--people); }
 .an-dot.is-phone { background: var(--money); }
 .an-dot.is-unknown { background: rgba(244, 239, 230, 0.25); }
@@ -834,7 +954,14 @@ const gameSteps = computed(() => (data.value?.game?.steps || []).map((row) => ({
 .an-action strong { font-size: 22px; font-weight: 600; text-align: left; }
 .an-action .adm-dim { font-size: 12px; }
 
-.an-source { display: inline-flex; align-items: center; gap: 8px; }
+.an-source { display: inline-flex; align-items: center; gap: 8px; max-width: 22em; }
+.an-source-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-money th, .an-money td { white-space: nowrap; }
+.an-money tfoot td { border-top: 1px solid var(--panel-line); color: var(--ink); font-weight: 600; }
+.an-spend .text-button { font-variant-numeric: tabular-nums; }
+.an-spend-form { display: inline-flex; gap: 6px; }
+.an-spend-form .adm-input { width: 7em; padding: 4px 8px; text-align: right; }
+.an-spend-form .adm-btn { padding: 4px 10px; }
 .an-link { display: inline-block; margin-top: 12px; color: var(--gold); font-size: 14px; text-decoration: none; }
 .an-link:hover { text-decoration: underline; }
 
@@ -864,9 +991,6 @@ const gameSteps = computed(() => (data.value?.game?.steps || []).map((row) => ({
 @media (max-width: 760px) {
   .an-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .an-tile-value { font-size: 22px; }
-  .an-funnel li { grid-template-columns: minmax(0, 1fr) 3.5em 4em; gap: 4px 10px; }
-  .an-funnel-track { grid-column: 1 / -1; grid-row: 2; }
-  .an-funnel-prev, .an-funnel-time { display: none; }
   .an-active { grid-template-columns: minmax(0, 1fr); }
   .an-bars li { grid-template-columns: minmax(0, 1fr) 6em; }
   .an-bars-track { grid-column: 1 / -1; grid-row: 2; }

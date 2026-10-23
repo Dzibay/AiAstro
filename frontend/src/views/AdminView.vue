@@ -1,6 +1,5 @@
 <script setup>
 import { onMounted, ref, watch } from 'vue'
-import SiteFrame from '../components/SiteFrame.vue'
 import Field from '../components/ui/Field.vue'
 import { adminApi } from '../api/admin.js'
 import { errorText } from '../api/http.js'
@@ -13,7 +12,7 @@ useHead({ title: 'Админка', noindex: true })
 
 /** The menu: a column on a wide screen, a row of tabs on a phone. */
 const PAGES = [
-  { to: { name: 'admin' }, label: 'Обзор', icon: 'M4 19V11M10 19V5M16 19v-6M22 19H2' },
+  { to: { name: 'admin' }, label: 'Сводка', icon: 'M4 19V11M10 19V5M16 19v-6M22 19H2' },
   { to: { name: 'admin-analytics' }, label: 'Аналитика', icon: 'M3 4h18l-7 8.5V19l-4 2v-8.5Z' },
   { to: { name: 'admin-links' }, label: 'Ссылки', icon: 'M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4L11.6 6M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.6-1.6' },
   { to: { name: 'admin-users' }, label: 'Пользователи', icon: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM2 21a7 7 0 0 1 14 0M17 3.5a4 4 0 0 1 0 7.5M22 21a7 7 0 0 0-4-6.3' },
@@ -74,7 +73,8 @@ function logout() {
 </script>
 
 <template>
-  <SiteFrame>
+  <!-- No site header or footer: the operator's pages keep the whole screen for the figures. -->
+  <main class="site adm-site">
     <section class="section adm-section">
       <div v-if="!authed" class="wrap narrow">
         <h1>Админка</h1>
@@ -88,6 +88,7 @@ function logout() {
       <div v-else-if="checked" class="adm">
         <aside class="adm-side">
           <p class="adm-title">Админка</p>
+          <RouterLink to="/" class="adm-site-link">← На сайт</RouterLink>
           <nav class="adm-nav" aria-label="Разделы админки">
             <RouterLink v-for="page in PAGES" :key="page.label" :to="page.to" class="adm-nav-link" :exact-active-class="page.to.name === 'admin' ? 'is-on' : ''" :active-class="page.to.name === 'admin' ? '' : 'is-on'">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path :d="page.icon" /></svg>
@@ -101,5 +102,5 @@ function logout() {
         </div>
       </div>
     </section>
-  </SiteFrame>
+  </main>
 </template>

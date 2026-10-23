@@ -3,8 +3,8 @@ how soon they get to each step and whether they come back, the tours, the source
 hold (time, scroll, buttons, the game), which offers bring the money — and the campaign links with
 everything that came by each.
 
-Days are Moscow days, as on the overview. The path follows the browsers that first came in the
-period from the first page to a payment; a funnel counts the people who registered in the period
+Days are Moscow days, as on the overview. The way from the first visit to a payment lives in
+pulse.py; a funnel here counts the people who registered in the period
 and how far each of them has gone by now; a campaign gets its people's registrations and payments
 for good (the first link a browser came by). A deleted account takes its whole trail with it.
 """
@@ -63,45 +63,6 @@ def _funnel(conn, where: str, params: dict) -> dict:
     columns = ", ".join(f"count(*) FILTER (WHERE {condition}) AS {key}" for key, condition in FUNNEL)
     row = conn.execute(f"SELECT {columns} FROM users u WHERE {where}", params).fetchone()
     return {key: int(row[key]) for key, _ in FUNNEL}
-
-
-def _first_event(where: str) -> str:
-    return f"(SELECT min(e.created_at) FROM events e WHERE e.user_id = u.id AND {where})"
-
-
-def _first_paid(where: str = "TRUE") -> str:
-    return f"(SELECT min(pa.paid_at) FROM payments pa WHERE pa.user_id = u.id AND pa.status = 'succeeded' AND {where})"
-
-
-# When each step of the funnel first happened, for the hours from the registration to it. The date
-# of birth has its moment only since the birth events are written (older accounts have none).
-FIRST = (
-    ("confirm", "u.email_confirmed_at"),
-    ("birth", _first_event("e.kind = 'birth'")),
-    ("intro", _first_event("e.kind = 'tour' AND e.name IN ('intro:done', 'intro:skip')")),
-    ("section", _first_event("e.kind = 'view' AND e.name IN ('cabinet-chart', 'cabinet-forecast', 'cabinet-pair', 'cabinet-chat', 'cabinet-sky')")),
-    ("chart", _first_event("e.kind = 'view' AND e.name = 'cabinet-chart'")),
-    ("game", _first_event("e.kind = 'act' AND e.name = 'game:land'")),
-    ("pair", "(SELECT min(p.created_at) FROM partners p WHERE p.user_id = u.id)"),
-    ("chat", "(SELECT min(c.created_at) FROM chat_messages c WHERE c.user_id = u.id AND c.role = 'user')"),
-    ("checkout", "(SELECT min(pa.created_at) FROM payments pa WHERE pa.user_id = u.id)"),
-    ("paid", _first_paid()),
-    ("sky", _first_paid("pa.product LIKE 'sky%%'")),
-    ("pair_bought", _first_paid(f"pa.product = '{PAIR}'")),
-)
-
-
-def _step_hours(conn, where: str, params: dict) -> dict:
-    """The median hours from the registration to each step, among those who made it."""
-    firsts = ", ".join(f"{first} AS {key}" for key, first in FIRST)
-    # GREATEST takes a missing moment for 0: those who have not made the step are filtered out first.
-    columns = ", ".join(
-        f"percentile_cont(0.5) WITHIN GROUP (ORDER BY GREATEST(0, extract(epoch FROM f.{key} - f.created_at)) / 3600)"
-        f" FILTER (WHERE f.{key} IS NOT NULL) AS {key}"
-        for key, _ in FIRST
-    )
-    row = conn.execute(f"SELECT {columns} FROM (SELECT u.created_at, {firsts} FROM users u WHERE {where}) f", params).fetchone()
-    return {key: (None if row[key] is None else round(float(row[key]), 2)) for key, _ in FIRST}
 
 
 COHORT_WEEKS = 8
@@ -210,8 +171,6 @@ def analytics(days: int) -> dict:
             """,
             p,
         )
-
-        funnel = _funnel(conn, cohort, p)
 
         # Where the people who have not paid stopped: the last page each of them saw.
         stuck = _rows(
@@ -323,7 +282,6 @@ def analytics(days: int) -> dict:
             p,
         ).fetchone()["people"]
 
-        step_hours = _step_hours(conn, cohort, p)
         retention = _retention(conn)
 
         # The first page of each visitor; the landing pages' goals (track.py: `<page>:calc`, `<page>:cta`) beside it.
@@ -341,22 +299,6 @@ def analytics(days: int) -> dict:
                    count(u.id) FILTER (WHERE EXISTS (SELECT 1 FROM payments pa WHERE pa.user_id = u.id AND pa.status = 'succeeded')) AS paying
             FROM visitors v LEFT JOIN users u ON u.visitor_id = v.id
             WHERE v.first_at >= {SINCE} GROUP BY 1 ORDER BY visitors DESC LIMIT 16
-            """,
-            p,
-        )
-
-        sources = _rows(
-            conn,
-            f"""
-            SELECT CASE WHEN v.ref_id IS NOT NULL THEN 'ref' WHEN v.source <> '' THEN 'site' ELSE 'direct' END AS kind,
-                   COALESCE(NULLIF(r.name, ''), r.token, NULLIF(v.source, ''), '') AS label,
-                   count(*) AS visitors, count(u.id) AS signups,
-                   count(u.id) FILTER (WHERE EXISTS (SELECT 1 FROM payments pa WHERE pa.user_id = u.id AND pa.status = 'succeeded')) AS paying
-            FROM visitors v
-            LEFT JOIN ref_links r ON r.id = v.ref_id
-            LEFT JOIN users u ON u.visitor_id = v.id
-            WHERE v.first_at >= {SINCE}
-            GROUP BY 1, 2 ORDER BY visitors DESC LIMIT 16
             """,
             p,
         )
@@ -434,98 +376,19 @@ def analytics(days: int) -> dict:
         "days": days,
         "totals": {key: _num(value) for key, value in totals.items()},
         "series": [{**row, "day": row["day"].isoformat(), "revenue": int(row["revenue"])} for row in _clean(series)],
-        "funnel": funnel,
         "stuck": _clean(stuck),
         "pages": _clean(pages),
         "landings": _clean(landings),
-        "sources": _clean(sources),
         "devices": _clean(devices),
         "tours": _clean(tours),
         "marks": _clean(marks),
         "actions": {key: int(value) for key, value in actions.items()},
         "products": _clean(products),
-        "step_hours": step_hours,
         "retention": retention,
         "clicks": _clean(clicks),
         "game": {"acts": {row["act"]: row for row in _clean(game_acts)}, "steps": _clean(game_steps)},
         "offers": _clean(offers),
         "sky_page": int(sky_page),
-    }
-
-
-# ---- The whole way: from the first visit to a payment ----
-
-# The first page a browser opened: the home page, the landing pages for search and ads, the rest.
-ENTRIES = {
-    "": "TRUE",
-    "home": "v.landing = 'home'",
-    "landings": "v.landing LIKE 'lp-%%'",
-    "other": "v.landing <> 'home' AND v.landing NOT LIKE 'lp-%%'",
-}
-PATH_DEVICES = {"": "TRUE", "phone": "v.device = 'phone'", "desktop": "v.device = 'desktop'"}
-# The steps in their order; each is a moment in the row of one browser (or empty if not made).
-PATH = ("reg_open", "reg_who", "signup", "confirm", "cabinet", "checkout", "paid")
-
-
-def path(days: int, entry: str = "", device: str = "") -> dict:
-    """The browsers that first came in the period (by their first page and device) and how far each
-    has gone by now: registration opened, its first step, the account, the email confirmed, the
-    cabinet entered, a payment started and made — with the median time from the first visit to each.
-
-    The registration's own steps are counted since the site writes them (reg:open, reg:who); an
-    account made before that has passed them anyway. The cabinet counts once the email is confirmed:
-    a look at it before that is only the way to the letter's screen."""
-    if days not in PERIODS or entry not in ENTRIES or device not in PATH_DEVICES:
-        raise DomainError("state")
-    p = {"days": days}
-    hours = ", ".join(
-        f"percentile_cont(0.5) WITHIN GROUP (ORDER BY GREATEST(0, extract(epoch FROM {key}_at - first_at)) / 3600)"
-        f" FILTER (WHERE {key}_at IS NOT NULL) AS h_{key}"
-        for key in PATH
-    )
-    with pool.connection() as conn:
-        row = conn.execute(
-            f"""
-            WITH c AS (
-                SELECT v.id, v.first_at, u.id AS user_id, u.created_at AS signup_at, u.email_confirmed_at AS confirm_at, u.birth_date
-                FROM visitors v
-                LEFT JOIN LATERAL (
-                    SELECT u.id, u.created_at, u.email_confirmed_at, u.birth_date FROM users u
-                    WHERE u.visitor_id = v.id ORDER BY u.created_at LIMIT 1
-                ) u ON TRUE
-                WHERE v.first_at >= {SINCE} AND {ENTRIES[entry]} AND {PATH_DEVICES[device]}
-            ),
-            f AS (
-                SELECT c.*,
-                    (SELECT min(e.created_at) FROM events e WHERE e.visitor_id = c.id AND e.kind = 'act' AND e.name = 'reg:open') AS opened,
-                    (SELECT min(e.created_at) FROM events e WHERE e.visitor_id = c.id AND e.kind = 'act' AND e.name = 'reg:who') AS named,
-                    (SELECT min(e.created_at) FROM events e
-                        WHERE e.user_id = c.user_id AND e.kind = 'view' AND e.name LIKE 'cabinet%%' AND e.created_at >= c.confirm_at) AS cabinet_at,
-                    EXISTS (SELECT 1 FROM events e WHERE e.user_id = c.user_id AND e.kind = 'view' AND e.name = 'cabinet-chart') AS chart,
-                    (SELECT min(pa.created_at) FROM payments pa WHERE pa.user_id = c.user_id) AS checkout_at,
-                    (SELECT min(pa.paid_at) FROM payments pa WHERE pa.user_id = c.user_id AND pa.status = 'succeeded') AS paid_at
-                FROM c
-            ),
-            s AS (
-                SELECT f.*, COALESCE(opened, named, signup_at) AS reg_open_at, COALESCE(named, signup_at) AS reg_who_at FROM f
-            )
-            SELECT count(*) AS visit, {", ".join(f"count({key}_at) AS {key}" for key in PATH)},
-                   count(*) FILTER (WHERE birth_date IS NOT NULL) AS birth,
-                   count(*) FILTER (WHERE cabinet_at IS NOT NULL AND chart) AS chart,
-                   {hours}
-            FROM s
-            """,
-            p,
-        ).fetchone()
-    return {
-        "days": days,
-        "entry": entry,
-        "device": device,
-        "steps": {key: int(row[key]) for key in ("visit", *PATH)},
-        # Beside the steps: the accounts with a date of birth, those in the cabinet who opened their chart.
-        "birth": int(row["birth"]),
-        "chart": int(row["chart"]),
-        "hours": {key: (None if row[f"h_{key}"] is None else round(float(row[f"h_{key}"]), 2)) for key in PATH},
     }
 
 
@@ -589,7 +452,8 @@ def list_links(days: int) -> dict:
         rows = _rows(
             conn,
             f"""
-            SELECT r.id, r.token, r.name, r.note, r.created_at,
+            SELECT r.id, r.token, r.name, r.note, r.created_at, r.spend,
+                   COALESCE((SELECT sum(amount) FROM payments WHERE ref_id = r.id AND status = 'succeeded'), 0) AS revenue_all,
                    COALESCE(e.clicks, 0) AS clicks, COALESCE(e.visitors, 0) AS visitors, e.last_click,
                    COALESCE(u.signups, 0) AS signups, COALESCE(u.birth, 0) AS birth, COALESCE(u.sky_now, 0) AS sky_now,
                    COALESCE(pa.paying, 0) AS paying, COALESCE(pa.payments, 0) AS payments, COALESCE(pa.sky, 0) AS sky,
@@ -738,11 +602,12 @@ def create_link(token: str, name: str, note: str) -> dict:
     raise DomainError("token_taken", 409)
 
 
-def update_link(link_id: int, name: str, note: str) -> dict:
+def update_link(link_id: int, name: str | None, note: str | None, spend: int | None = None) -> dict:
+    """spend: what the campaign has cost in all, in roubles, for its payback; None keeps any field as it is."""
     with pool.connection() as conn:
         row = conn.execute(
-            "UPDATE ref_links SET name = %s, note = %s WHERE id = %s RETURNING id",
-            (" ".join(name.split())[:80], note.strip()[:300], link_id),
+            "UPDATE ref_links SET name = COALESCE(%s, name), note = COALESCE(%s, note), spend = COALESCE(%s, spend) WHERE id = %s RETURNING id",
+            (None if name is None else " ".join(name.split())[:80], None if note is None else note.strip()[:300], spend, link_id),
         ).fetchone()
     if row is None:
         raise DomainError("missing", 404)
