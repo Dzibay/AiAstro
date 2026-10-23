@@ -28,14 +28,16 @@ function accept() {
         <path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" />
       </svg>
       <div class="cookie-body">
-        <h2 id="cookie-title" class="cookie-title">Немного звёздной пыли</h2>
+        <h2 id="cookie-title" class="cookie-title">Файлы cookie</h2>
         <p class="cookie-text">
-          Сайт хранит в браузере cookie и похожие данные: чтобы помнить вход в кабинет и ваш выбор,
-          и чтобы видеть, удобно ли пользоваться сайтом. Оставаясь здесь, вы соглашаетесь с этим.
+          Мы используем файлы cookie для корректной работы сайта, входа в личный кабинет и аналитики.
+          Продолжая использовать сайт, вы соглашаетесь с нашей
+          <RouterLink :to="{ name: 'legal', params: { page: 'cookies' } }">Политикой использования файлов cookie</RouterLink>
+          и
+          <RouterLink :to="{ name: 'legal', params: { page: 'privacy' } }">Политикой конфиденциальности</RouterLink>.
         </p>
         <div class="cookie-actions">
-          <button type="button" class="cookie-accept" @click="accept">Принять</button>
-          <RouterLink class="cookie-more" :to="{ name: 'legal', params: { page: 'privacy' }, hash: '#cookies' }">Подробнее</RouterLink>
+          <button type="button" class="cookie-accept" @click="accept">Принимаю</button>
         </div>
       </div>
     </section>
@@ -51,7 +53,7 @@ function accept() {
   display: grid;
   grid-template-columns: 22px 1fr;
   gap: 14px;
-  width: min(400px, calc(100vw - 40px));
+  width: min(440px, calc(100vw - 40px));
   padding: 18px 20px 18px 18px;
   border-radius: 20px;
   border: 1px solid rgba(240, 210, 150, 0.22);
@@ -76,6 +78,13 @@ function accept() {
 .cookie-body { display: grid; gap: 8px; }
 .cookie-title { margin: 0; font-family: var(--caps); font-weight: 600; font-size: 18px; letter-spacing: 0.06em; color: #f0cd8a; }
 .cookie-text { margin: 0; font-family: var(--book); font-size: 14px; line-height: 1.55; color: rgba(239, 231, 216, 0.82); }
+.cookie-text a {
+  color: #f0cd8a;
+  text-decoration: underline;
+  text-decoration-color: rgba(240, 205, 138, 0.4);
+  text-underline-offset: 3px;
+}
+.cookie-text a:hover { text-decoration-color: currentColor; }
 
 .cookie-actions { display: flex; align-items: center; gap: 18px; margin-top: 6px; }
 .cookie-accept {
@@ -93,17 +102,7 @@ function accept() {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .cookie-accept:hover { transform: translateY(-1px); box-shadow: 0 10px 26px rgba(220, 179, 108, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.5); }
-.cookie-accept:focus-visible, .cookie-more:focus-visible { outline: 2px solid #f0cd8a; outline-offset: 3px; }
-.cookie-more {
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 16px;
-  color: #f0cd8a;
-  text-decoration: underline;
-  text-decoration-color: rgba(240, 205, 138, 0.35);
-  text-underline-offset: 3px;
-}
-.cookie-more:hover { text-decoration-color: currentColor; }
+.cookie-accept:focus-visible, .cookie-text a:focus-visible { outline: 2px solid #f0cd8a; outline-offset: 3px; }
 
 .cookie-enter-active, .cookie-leave-active { transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .cookie-enter-from, .cookie-leave-to { opacity: 0; transform: translateY(14px); }

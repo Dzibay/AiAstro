@@ -28,6 +28,7 @@ const documents = [
   { label: 'Конфиденциальность', to: '/legal/privacy' },
   { label: 'Оферта', to: '/legal/offer' },
   { label: 'Согласие', to: '/legal/consent' },
+  { label: 'Cookie', to: '/legal/cookies' },
 ]
 
 const now = new Date()
@@ -114,7 +115,22 @@ onMounted(() => {
 
       <div class="bottom">
         <p>© {{ year }} {{ config?.site_name || fallbackConfig.site_name }}</p>
-        <p>Астрология — способ взглянуть на себя, а не медицинская, юридическая или финансовая консультация.</p>
+        <div class="disclaimers">
+          <p>
+            Информация на сайте не является публичной офертой. Настоящий интернет-сайт носит исключительно
+            информационный и рекламный характер. Вся информация, размещённая на нём (включая каталоги товаров,
+            цены, описания и условия оплаты), не является публичной офертой в смысле статьи 437 Гражданского
+            кодекса РФ.
+          </p>
+          <p>
+            Все материалы, расчеты и прогнозы сервиса «{{ config?.site_name || fallbackConfig.site_name }}» носят
+            исключительно информационно-развлекательный характер. Они не являются медицинской, психологической,
+            юридической, финансовой или иной профессиональной консультацией и не заменяют ее. Ответы
+            генерируются алгоритмически и могут содержать неточности. Пользователь самостоятельно несет полную
+            ответственность за любые решения, принятые на основе полученной информации. Администрация сервиса
+            не несет ответственности за последствия таких решений.
+          </p>
+        </div>
       </div>
     </div>
   </footer>
@@ -207,13 +223,22 @@ onMounted(() => {
 .bottom {
   display: flex;
   justify-content: space-between;
-  gap: 24px;
+  gap: 28px;
   padding: 16px 0 22px;
   border-top: 1px solid rgba(240, 210, 150, 0.1);
   font-size: 12.5px;
   color: rgba(226, 220, 210, 0.5);
 }
-.bottom p:last-child { max-width: 560px; text-align: right; }
+.bottom > p:first-child { flex: 0 0 auto; }
+.disclaimers {
+  display: grid;
+  gap: 10px;
+  max-width: 720px;
+  text-align: right;
+  line-height: 1.55;
+  font-size: 11.5px;
+  color: rgba(226, 220, 210, 0.42);
+}
 
 @media (max-width: 760px) {
   .footer.is-sky { padding-top: 56px; }
@@ -223,7 +248,7 @@ onMounted(() => {
   .moon { margin: 0 0 4px; }
   .cols { grid-template-columns: 1fr 1fr; gap: 26px 20px; }
   .col-brand { grid-column: 1 / -1; }
-  .bottom { flex-direction: column; gap: 8px; }
-  .bottom p:last-child { text-align: left; }
+  .bottom { flex-direction: column; gap: 12px; }
+  .disclaimers { max-width: none; text-align: left; }
 }
 </style>

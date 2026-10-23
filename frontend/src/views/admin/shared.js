@@ -201,7 +201,7 @@ const PAGE_NAMES = {
   'lp-chiron': 'Посадочная: Хирон',
   other: 'Другие адреса',
 }
-const LEGAL = { offer: 'оферта', privacy: 'политика', consent: 'согласие' }
+const LEGAL = { offer: 'оферта', privacy: 'политика', consent: 'согласие', cookies: 'cookie' }
 
 export function pageName(name) {
   if (!name) return 'не открывал страниц'

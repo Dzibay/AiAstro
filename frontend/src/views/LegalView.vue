@@ -15,6 +15,7 @@ const DOCS = [
   { slug: 'offer', name: 'Публичная оферта' },
   { slug: 'privacy', name: 'Политика конфиденциальности' },
   { slug: 'consent', name: 'Согласие на обработку данных' },
+  { slug: 'cookies', name: 'Политика использования cookie' },
 ]
 
 const route = useRoute()

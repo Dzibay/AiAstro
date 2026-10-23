@@ -41,9 +41,10 @@ def legal_page(page: str) -> dict:
     if document is None:
         raise HTTPException(status_code=404, detail="missing")
     config = public_config(settings.site_name)
-    names = {"site": settings.site_name, "url": settings.public_base_url.rstrip("/")}
+    email = config["support_email"] or "почта поддержки, указанная на сайте"
+    names = {"site": settings.site_name, "url": settings.public_base_url.rstrip("/"), "email": email}
     sections = _fill(document["sections"], names)
-    if config["support_email"]:
+    if config["support_email"] and not any(section.get("id") == "contacts" for section in sections):
         sections.append({"id": "contacts", "title": "Контакты", "items": [f"Почта поддержки: {config['support_email']}."]})
     return {
         "slug": page,
