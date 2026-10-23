@@ -125,6 +125,7 @@
 .adm-who strong { font-weight: 600; overflow-wrap: anywhere; }
 .adm-who span { color: var(--soft); font-size: 13px; }
 .adm-dim { color: var(--soft); }
+.adm-seen { color: var(--soft); white-space: nowrap; }
 
 .adm-badge {
   display: inline-flex;

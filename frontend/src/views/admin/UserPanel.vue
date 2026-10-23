@@ -1,10 +1,11 @@
 <script setup>
 import { computed, inject, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import ActivityCalendar from '../../components/admin/ActivityCalendar.vue'
 import ConfirmDialog from '../../components/admin/ConfirmDialog.vue'
 import { adminApi } from '../../api/admin.js'
 import { useToast } from '../../composables/useToast.js'
-import { PAYMENT_STATUS, PRODUCTS, failed, fmt, moscowDay } from './shared.js'
+import { PAYMENT_STATUS, PRODUCTS, failed, fmt, moscowDay, seen } from './shared.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -181,7 +182,7 @@ function remove() {
     <header class="up-head">
       <div v-if="user" class="adm-who">
         <strong class="up-email">{{ user.email }}</strong>
-        <span>{{ user.name || 'без имени' }} · № {{ user.id }} · с {{ fmt.day(user.created_at) }}</span>
+        <span>{{ user.name || 'без имени' }} · № {{ user.id }} · с {{ fmt.day(user.created_at) }} · {{ seen(user.last_seen) }}</span>
       </div>
       <span v-else class="adm-dim">Загружаем…</span>
       <button type="button" class="adm-btn up-close" aria-label="Закрыть карточку" @click="close">
@@ -192,6 +193,14 @@ function remove() {
     <p v-if="error" class="error up-error">{{ error }}</p>
 
     <div v-if="user" class="up-body">
+      <section class="up-block">
+        <div class="up-block-head">
+          <h2>Активность</h2>
+          <span class="adm-dim">московское время</span>
+        </div>
+        <ActivityCalendar :user-id="user.id" :last-seen="user.last_seen || ''" />
+      </section>
+
       <section class="up-block">
         <div class="up-block-head">
           <h2>«Небосвод»</h2>

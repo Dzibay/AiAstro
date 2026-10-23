@@ -2,7 +2,7 @@
 import { onMounted, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { adminApi } from '../../api/admin.js'
-import { fmt, usePagedList } from './shared.js'
+import { fmt, seen, usePagedList } from './shared.js'
 
 const FILTERS = [
   { id: '', label: 'Все' },
@@ -37,7 +37,7 @@ provide('adminUsers', {
   <header class="adm-head">
     <div>
       <h1>Пользователи</h1>
-      <p>Нажмите на строку — откроется карточка: «Небосвод», пары и разборы, платежи, данные рождения, удаление.</p>
+      <p>Нажмите на строку — откроется карточка: календарь заходов, «Небосвод», пары и разборы, платежи, данные рождения, удаление.</p>
     </div>
   </header>
 
@@ -58,6 +58,7 @@ provide('adminUsers', {
       <thead>
         <tr>
           <th>Пользователь</th>
+          <th>Был</th>
           <th>Регистрация</th>
           <th>Рождение</th>
           <th>«Небосвод»</th>
@@ -81,6 +82,7 @@ provide('adminUsers', {
               <span>{{ user.name || 'без имени' }}<template v-if="user.blocked"> · заблокирован</template></span>
             </span>
           </td>
+          <td data-label="Был" class="adm-seen" :title="user.last_seen ? fmt.moment(user.last_seen) : ''">{{ seen(user.last_seen) }}</td>
           <td data-label="С" class="adm-dim">{{ fmt.day(user.created_at) }}</td>
           <td data-label="Рождение">
             <span v-if="user.birth">{{ fmt.birth(user.birth.date) }}</span>

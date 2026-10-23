@@ -229,6 +229,8 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS events_kind_idx ON events (kind, created_at);
 CREATE INDEX IF NOT EXISTS events_user_idx ON events (user_id, created_at);
+-- Календарь активности в карточке: страницы браузера, уже привязанного к аккаунту.
+CREATE INDEX IF NOT EXISTS events_visitor_idx ON events (visitor_id, created_at) WHERE visitor_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS events_ref_idx ON events (ref_id, created_at) WHERE ref_id IS NOT NULL;
 
 -- Откуда пришёл человек: его браузер при регистрации и реферальная ссылка этого браузера.

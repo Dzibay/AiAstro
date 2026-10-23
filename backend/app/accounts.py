@@ -1,7 +1,8 @@
 import hashlib
 import re
 import secrets
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from psycopg.errors import UniqueViolation
 
@@ -413,17 +414,27 @@ def _like(query: str) -> str:
 
 
 def _operator_view(row: dict) -> dict:
+    seen = row.get("last_seen")
     return {
         **_public(row),
         "blocked": row["blocked"],
         "pairs": row.get("pairs", 0),
         "paid": row.get("paid", 0),
+        # The latest page of this account, or of a browser already tied to it.
+        "last_seen": seen.isoformat() if seen else None,
     }
 
 
-_OPERATOR_COLUMNS = ", ".join(f"u.{column.strip()}" for column in _USER_COLUMNS.split(",")) + """,
+# A page opened while signed in, or later by a browser that has signed in on this account.
+_SEEN = """GREATEST(
+    (SELECT max(e.created_at) FROM events e WHERE e.user_id = u.id AND e.kind IN ('view', 'visit')),
+    (SELECT max(v.last_at) FROM visitors v WHERE v.user_id = u.id)
+)"""
+
+_OPERATOR_COLUMNS = ", ".join(f"u.{column.strip()}" for column in _USER_COLUMNS.split(",")) + f""",
     (SELECT count(*) FROM partners p WHERE p.user_id = u.id) AS pairs,
-    (SELECT COALESCE(sum(pa.amount), 0) FROM payments pa WHERE pa.user_id = u.id AND pa.status = 'succeeded') AS paid"""
+    (SELECT COALESCE(sum(pa.amount), 0) FROM payments pa WHERE pa.user_id = u.id AND pa.status = 'succeeded') AS paid,
+    {_SEEN} AS last_seen"""
 
 
 def list_users(query: str = "", state: str = "", offset: int = 0) -> dict:
@@ -451,6 +462,78 @@ def operator_user(user_id: int) -> dict:
     if row is None:
         raise DomainError("missing", 404)
     return _operator_view(row)
+
+
+_MONTH = re.compile(r"^\d{4}-\d{2}$")
+_MOSCOW = ZoneInfo("Europe/Moscow")
+
+
+def user_activity(user_id: int, month: str = "") -> dict:
+    """One Moscow month of this account: which days the person opened the site, and which pages.
+
+    A day counts pages opened while signed in and pages of a browser already tied to the account,
+    so a return without a new sign-in still shows.
+    """
+    today = datetime.now(_MOSCOW).date()
+    if not month:
+        month = today.strftime("%Y-%m")
+    if not _MONTH.match(month):
+        raise DomainError("state")
+    try:
+        start = date.fromisoformat(f"{month}-01")
+    except ValueError:
+        raise DomainError("state") from None
+    if start < date(2024, 1, 1) or start > today.replace(day=1):
+        raise DomainError("state")
+    end = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    with pool.connection() as conn:
+        if conn.execute("SELECT 1 FROM users WHERE id = %s", (user_id,)).fetchone() is None:
+            raise DomainError("missing", 404)
+        rows = conn.execute(
+            """
+            SELECT (e.created_at AT TIME ZONE 'Europe/Moscow')::date AS day,
+                   e.kind,
+                   e.name,
+                   count(*) AS n,
+                   min(e.created_at) AS first_at,
+                   max(e.created_at) AS last_at
+            FROM events e
+            WHERE e.kind IN ('view', 'visit')
+              AND e.created_at >= (%(start)s::date::timestamp AT TIME ZONE 'Europe/Moscow')
+              AND e.created_at < (%(end)s::date::timestamp AT TIME ZONE 'Europe/Moscow')
+              AND (
+                    e.user_id = %(id)s
+                 OR e.visitor_id IN (SELECT v.id FROM visitors v WHERE v.user_id = %(id)s)
+              )
+            GROUP BY 1, 2, 3
+            ORDER BY 1, n DESC
+            """,
+            {"start": start.isoformat(), "end": end.isoformat(), "id": user_id},
+        ).fetchall()
+    days: dict[str, dict] = {}
+    for row in rows:
+        key = row["day"].isoformat()
+        item = days.get(key)
+        if item is None:
+            item = {"date": key, "views": 0, "visits": 0, "first_at": None, "last_at": None, "pages": []}
+            days[key] = item
+        n = int(row["n"])
+        if item["first_at"] is None or row["first_at"] < item["first_at"]:
+            item["first_at"] = row["first_at"]
+        if item["last_at"] is None or row["last_at"] > item["last_at"]:
+            item["last_at"] = row["last_at"]
+        if row["kind"] == "view":
+            item["views"] += n
+            item["pages"].append({"name": row["name"], "views": n})
+        else:
+            item["visits"] += n
+    out = []
+    for item in days.values():
+        item["pages"].sort(key=lambda page: (-page["views"], page["name"]))
+        item["first_at"] = item["first_at"].isoformat()
+        item["last_at"] = item["last_at"].isoformat()
+        out.append(item)
+    return {"month": start.strftime("%Y-%m"), "days": out}
 
 
 def set_sky(user_id: int, days: int) -> dict:

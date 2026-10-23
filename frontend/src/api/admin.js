@@ -19,6 +19,8 @@ export const adminApi = {
   /** state: '' | sky | nobirth | paid. */
   users: ({ q = '', state = '', offset = 0 } = {}) => get(`/api/admin/users?${query({ q, state, offset })}`),
   user: (userId) => get(`/api/admin/users/${id(userId)}`),
+  /** Days of one Moscow month (YYYY-MM) this person opened the site, and the pages of each day. */
+  activity: (userId, month) => get(`/api/admin/users/${id(userId)}/activity?${query({ month })}`),
   /** Deletes the account for good; the email typed again is the confirmation. */
   deleteUser: (userId, email) => send(`/api/admin/users/${id(userId)}/delete`, 'POST', { email }),
   /** { days } extends «Небосвод» (0 closes it), { until: 'YYYY-MM-DD' } sets its last day. */

@@ -95,6 +95,33 @@ export const PRODUCTS = {
   synastry: 'Разбор пары',
 }
 
+export function plural(n, one, few, many) {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  const word = mod10 === 1 && mod100 !== 11 ? one : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? few : many
+  return word
+}
+
+/** When this person was last on the site, in Moscow time: «сегодня, 14:32», «3 дня назад». */
+export function seen(value) {
+  if (!value) return 'не заходил'
+  const stamp = (at) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date(at))
+    const get = (type) => parts.find((part) => part.type === type)?.value || ''
+    return { day: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}` }
+  }
+  const then = stamp(value)
+  const now = stamp(Date.now())
+  if (then.day === now.day) return `сегодня, ${then.time}`
+  const diff = Math.round((Date.parse(`${now.day}T12:00:00Z`) - Date.parse(`${then.day}T12:00:00Z`)) / 864e5)
+  if (diff === 1) return `вчера, ${then.time}`
+  if (diff > 1 && diff < 7) return `${diff} ${plural(diff, 'день', 'дня', 'дней')} назад`
+  return new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value))
+}
+
 /** The «Небосвод» date field works in Moscow days, as the server does. */
 export function moscowDay(value) {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' })
