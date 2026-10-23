@@ -71,7 +71,7 @@ const dateLine = computed(() => {
   return `${sameMonth ? start.getUTCDate() : dayFormat.format(start)} — ${dayFormat.format(end)}`
 })
 
-const TONES = { easy: 'лёгкий', tense: 'напряжённый', calm: 'ровный' }
+const TONES = { easy: 'лёгкий', tense: 'бережный', calm: 'ровный' }
 
 const transits = computed(() => (data.value ? data.value.transits : []).map((transit) => ({
   key: `${transit.a}-${transit.b}-${transit.type}`,

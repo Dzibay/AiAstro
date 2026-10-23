@@ -31,7 +31,7 @@ const plural = (count, one, few, many) => {
 const screens = computed(() => props.reading.parts.map((part) => ({
   ...part,
   heading: part.title || part.label,
-  // What the screen is about, above its heading: the astrology of it, or its section when the heading says something else.
+  // The astrology of the screen, or its section when the heading says something else. It follows the heading.
   kicker: part.term || (part.title && part.title !== part.label ? part.label : ''),
   items: (part.items || []).filter((item) => item.text),
   // One short thought and nothing else on the screen (the advice of the day): it is set as a quote.
@@ -203,8 +203,8 @@ const readLabel = computed(() => {
               <Transition :name="forward ? 'turn-next' : 'turn-back'" mode="out-in">
                 <article v-if="screen" :key="at" class="screen" :class="[screen.tone && `tone-${screen.tone}`, { 'is-short': screen.short }]">
                   <span class="glow" aria-hidden="true" />
-                  <p v-if="screen.kicker" class="kicker">{{ screen.kicker }}</p>
                   <h2 class="title">{{ screen.heading }}</h2>
+                  <p v-if="screen.kicker" class="kicker">{{ screen.kicker }}</p>
                   <p v-if="screen.score" class="score" :aria-label="`${screen.score} из 5`">
                     <span v-for="index in 5" :key="index" class="score-dot" :class="{ 'is-on': index <= screen.score }" aria-hidden="true" />
                   </p>
@@ -252,8 +252,8 @@ const readLabel = computed(() => {
 
                 <article v-else :key="'locked'" class="screen is-locked-screen">
                   <span class="glow" aria-hidden="true" />
-                  <p class="kicker">За туманом</p>
                   <h2 class="title">{{ lockedTitle }}</h2>
+                  <p class="kicker">За туманом</p>
                   <ul class="outline">
                     <li v-for="(title, index) in outline" :key="index">
                       <svg viewBox="0 0 12 14" aria-hidden="true"><rect x="1.5" y="6" width="9" height="7" rx="1.6" /><path d="M3.6 6V4.3a2.4 2.4 0 0 1 4.8 0V6" /></svg>
@@ -418,7 +418,7 @@ const readLabel = computed(() => {
 
 .kicker {
   position: relative;
-  margin: 8px 0 0;
+  margin: 0;
   font-family: var(--caps);
   font-weight: 600;
   font-size: 15px;

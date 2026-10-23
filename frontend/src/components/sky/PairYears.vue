@@ -21,7 +21,7 @@ const word = computed(() => {
   if (count % 10 === 1 && !teen) return 'период'
   return count % 10 >= 2 && count % 10 <= 4 && !teen ? 'периода' : 'периодов'
 })
-const TONE = { easy: 'лёгкий период', tense: 'период испытаний', calm: 'ровный период' }
+const TONE = { easy: 'лёгкий период', tense: 'период роста', calm: 'ровный период' }
 </script>
 
 <template>

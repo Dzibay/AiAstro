@@ -286,7 +286,7 @@ watch(() => [partner.value?.id, partner.value?.bought, props.user.sky, pair.valu
     forecastFailed.value = true
   }
 }, { immediate: true })
-const TONE_WORD = { easy: 'легко', calm: 'ровно', tense: 'напряжённо' }
+const TONE_WORD = { easy: 'легко', calm: 'ровно', tense: 'бережно' }
 
 const birthLine = computed(() => {
   const birth = partner.value?.birth
@@ -358,7 +358,7 @@ async function confirmRemove() {
 /* ---- The list: each pair's tone, its signs beside the person's own, and whether its reading is open ---- */
 
 const TONE_COLOUR = { easy: '#f0cd8a', tense: '#e08a76', mixed: '#eab48a', calm: '#e6e0f4' }
-const TONE_PAIR = { easy: 'лёгкая пара', tense: 'пара с искрой', mixed: 'переменчивая пара', calm: 'спокойная пара' }
+const TONE_PAIR = { easy: 'лёгкая пара', tense: 'пара с искрой', mixed: 'многогранная пара', calm: 'спокойная пара' }
 
 function status_of(item, tone) {
   if (item.waiting_share) return 'общая · ждём данных партнёра'

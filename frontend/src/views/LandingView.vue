@@ -115,8 +115,8 @@ const focusSign = computed(() => {
   return result.value.points.find((point) => point.id === page.value.focus)?.sign || ''
 })
 
-const PAIR_TONES = { easy: 'Пара лёгкая', tense: 'Пара с искрой', mixed: 'Пара переменчивая', calm: 'Пара спокойная' }
-const DAY_TONES = { easy: 'Лёгкий день', tense: 'День бережности', calm: 'Ровный день', mixed: 'Переменчивый день' }
+const PAIR_TONES = { easy: 'Пара лёгкая', tense: 'Пара с искрой', mixed: 'Пара многогранная', calm: 'Пара спокойная' }
+const DAY_TONES = { easy: 'Лёгкий день', tense: 'День бережности', calm: 'Ровный день', mixed: 'Многогранный день' }
 const daySpheres = computed(() => SPHERES.map((sphere) => ({ ...sphere, tone: result.value?.spheres?.[sphere.id] || 'calm' })))
 const more = computed(() => Math.max(0, (result.value?.total || 0) - 1))
 const dayOf = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })

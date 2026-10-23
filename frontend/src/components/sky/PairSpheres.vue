@@ -18,7 +18,7 @@ const NAMES = {
   home: { name: 'Быт и опора', hint: 'Луна и Сатурн: дом, привычки, надёжность' },
   path: { name: 'Общий путь', hint: 'Солнце, Юпитер, Сатурн: куда вы идёте вместе' },
 }
-const WORDS = ['', 'непросто', 'с усилием', 'ровно', 'легко', 'созвучно']
+const WORDS = ['', 'точка роста', 'в развитии', 'ровно', 'легко', 'созвучно']
 
 const rows = computed(() => props.spheres.filter((sphere) => NAMES[sphere.id]).map((sphere) => ({
   ...sphere,
