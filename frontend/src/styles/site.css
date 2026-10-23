@@ -610,6 +610,14 @@ html.lite .cabinet-sky .point-star { animation: none; }
 html.lite .sky-stage .lat-runner,
 html.lite .sky-stage .emblem-pulse { animation: none; opacity: 0; }
 
+/*
+ * The natal sky game (NatalGame) covers the page: the site's own sky rests beneath it. The stage
+ * keeps its box (its size is watched), only stops painting; the canvas leaves, so it stops drawing.
+ */
+html.game-on .sky-stage,
+html.game-on .cabinet-sky { visibility: hidden; }
+html.game-on .sky-stage canvas { display: none; }
+
 /* «Reduce motion» in the system: the sky keeps its beauty and loses only its movement. */
 @media (prefers-reduced-motion: reduce) {
   .sky-stage .star-halo,

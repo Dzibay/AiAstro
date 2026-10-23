@@ -69,3 +69,26 @@ export function chartItems(chart) {
   }
   return items
 }
+
+/** Glyphs closer than their own width are eased apart along the circle; the dots keep the true degrees. */
+export function spread(list, gap) {
+  const items = list.map((item) => ({ id: item.id, at: item.lon })).sort((a, b) => a.at - b.at)
+  const n = items.length
+  gap = Math.min(gap, 360 / n)
+  for (let pass = 0; pass < 200; pass += 1) {
+    let moved = false
+    for (let i = 0; i < n; i += 1) {
+      const a = items[i]
+      const b = items[(i + 1) % n]
+      const space = i === n - 1 ? b.at + 360 - a.at : b.at - a.at
+      if (space < gap - 0.01) {
+        const push = (gap - space) / 4
+        a.at -= push
+        b.at += push
+        moved = true
+      }
+    }
+    if (!moved) break
+  }
+  return Object.fromEntries(items.map((item) => [item.id, item.at]))
+}

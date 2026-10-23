@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import SiteHeader from '../components/SiteHeader.vue'
 import CabinetSky from '../components/cabinet/CabinetSky.vue'
@@ -7,6 +7,8 @@ import CabinetTour from '../components/cabinet/CabinetTour.vue'
 import NatalWheel from '../components/cabinet/NatalWheel.vue'
 import PairSky from '../components/cabinet/PairSky.vue'
 import SkyDome from '../components/sky/SkyDome.vue'
+import GameOffer from '../components/game/GameOffer.vue'
+import { closeGame, game, gameSupported, landGame, startGame } from '../components/game/state.js'
 import { ROUTE_ORDER, SECTION_BY_ID } from '../components/cabinet/layout.js'
 import { webApi } from '../api/web.js'
 import { ApiError, errorText } from '../api/http.js'
@@ -18,8 +20,11 @@ import { linkPendingInvite, pendingInvite, usePartners } from '../composables/us
 import { settlePendingPayment } from '../composables/usePayment.js'
 import { useChat } from '../composables/useChat.js'
 import { useHead } from '../utils/useHead.js'
-import { startTour, stopTour, tour, tourSeen } from '../utils/tour.js'
+import { markTourSeen, startTour, stopTour, tour, tourSeen } from '../utils/tour.js'
 import { takeMarks } from '../utils/marks.js'
+
+// three.js comes with the game only, in its own chunk.
+const NatalGame = defineAsyncComponent(() => import('../components/game/NatalGame.vue'))
 
 /**
  * The cabinet's shell: the sky is the menu (CabinetSky, about the person's star) and one glass
@@ -50,8 +55,37 @@ const selected = computed(() => (typeof route.params.item === 'string' ? route.p
 watch(section, (id) => {
   if (id === 'chart' || id === 'forecast') loadChart()
 }, { immediate: true })
+/**
+ * The chart's first visit asks whether to build it by hand (GameOffer → NatalGame): after the
+ * cabinet's own introduction, before the section's walk. Either answer is remembered.
+ */
+const gamePending = computed(() => Boolean(user.value?.birth && gameSupported() && !tourSeen(user.value.id, 'game')))
+const gameOffer = computed(() => Boolean(
+  gamePending.value && chart.value && section.value === 'chart' && !selected.value && !tour.kind && !game.open
+  && tourSeen(user.value.id, 'intro'),
+))
+/** The game's sky covers the page until its last picture turns into the wheel. */
+const gameAway = computed(() => game.open && !game.landing)
+function playGame() {
+  markTourSeen(user.value.id, 'game')
+  startGame()
+}
+function skipGame() {
+  markTourSeen(user.value.id, 'game')
+}
+watch(section, (id) => {
+  if (id !== 'chart' && game.open) closeGame()
+})
+// Answered or played through: the section's walk may come now.
+watch(() => gamePending.value || game.open, (busy, was) => {
+  if (was && !busy) offerTour()
+})
+
 /** In the forecast the same wheel carries the sky of the day or the week around it. */
-const showWheel = computed(() => Boolean(user.value && chart.value && (section.value === 'chart' || section.value === 'forecast')))
+const showWheel = computed(() => Boolean(
+  user.value && chart.value && (section.value === 'chart' || section.value === 'forecast')
+  && !(section.value === 'chart' && (gameOffer.value || gameAway.value)),
+))
 const transitSky = computed((previous) => {
   if (section.value !== 'forecast') return null
   // While the other period loads, the wheel keeps the sky it has instead of blinking bare.
@@ -138,6 +172,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  closeGame()
   clearMark()
   clearTimeout(tourTimer)
   stopTour()
@@ -173,8 +208,11 @@ function offerSectionTour() {
   const current = user.value
   const id = section.value
   if (!current?.birth || tour.kind || !WALKED.includes(id) || route.params.item || tourSeen(current.id, `section-${id}`)) return
+  // The chart asks about the game first.
+  const waits = () => id === 'chart' && (gamePending.value || game.open)
+  if (waits()) return
   tourTimer = setTimeout(() => {
-    if (tour.kind || section.value !== id || route.params.item || !user.value?.birth) return
+    if (tour.kind || section.value !== id || route.params.item || !user.value?.birth || waits()) return
     startTour('section')
   }, 1200)
 }
@@ -360,7 +398,7 @@ const sheetStyle = computed(() => {
 
 <template>
   <div class="site">
-    <SiteHeader />
+    <SiteHeader :inert="gameAway || undefined" />
     <Transition name="wheel">
       <PairSky v-if="user && section === 'pair'" :stars="pairStars" :tone="pairTone" :aspect="hotAspect" @select="openPair" @hover="hoverPair" />
     </Transition>
@@ -368,12 +406,23 @@ const sheetStyle = computed(() => {
       <SkyDome v-if="user && section === 'sky'" :lit="user.sky" />
     </Transition>
     <Transition name="wheel">
-      <NatalWheel v-if="showWheel" :key="section" :chart="chart" :selected="selected" :forecast="transitSky" @select="selectPoint" />
+      <NatalWheel
+        v-if="showWheel"
+        :key="section"
+        :chart="chart"
+        :selected="selected"
+        :forecast="transitSky"
+        :landing="game.landing"
+        @select="selectPoint"
+      />
+    </Transition>
+    <Transition name="wheel">
+      <GameOffer v-if="gameOffer" @play="playGame" @skip="skipGame" />
     </Transition>
     <CabinetSky v-if="user" :section="section" :birth-open="birthOpen" :lit="Boolean(user.sky)" :flare="tour.flare" />
     <CabinetTour v-if="user" :user="user" />
 
-    <main class="cabinet">
+    <main class="cabinet" :class="{ 'is-away': gameAway }" :inert="gameAway || undefined">
       <section
         ref="panel"
         class="cabinet-panel"
@@ -432,6 +481,8 @@ const sheetStyle = computed(() => {
         </div>
       </section>
     </main>
+
+    <NatalGame v-if="game.open && chart" :key="game.runs" :chart="chart" :user="user" @land="landGame" @close="closeGame" />
   </div>
 </template>
 
@@ -449,7 +500,10 @@ const sheetStyle = computed(() => {
   min-height: 100svh;
   padding: 110px clamp(20px, 8vw, 150px) 40px;
   pointer-events: none;
+  transition: opacity 0.8s ease;
 }
+/* Under the game: gone while it plays, back as its sky becomes the wheel. */
+.cabinet.is-away { opacity: 0; transition-duration: 0.4s; }
 
 /* The login card's glass, wider: it waits for the flight to land before it rises. */
 .cabinet-panel {

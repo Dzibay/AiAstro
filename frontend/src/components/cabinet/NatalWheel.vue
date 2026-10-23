@@ -4,7 +4,7 @@ import { useSky } from '../../composables/useSky.js'
 import { useChart } from '../../composables/useChart.js'
 import { clamp } from '../hero/sky.js'
 import { wheelSpot } from './layout.js'
-import { ASPECTS, POINTS, SIGN_LIST } from './astro.js'
+import { ASPECTS, POINTS, SIGN_LIST, spread } from './astro.js'
 
 /**
  * The natal wheel, engraved on the sky in thin gold lines with nothing behind it: the ring of
@@ -22,8 +22,12 @@ const props = defineProps({
   selected: { type: String, default: '' },
   /** A forecast (GET /me/forecast): its `sky` circles the chart, its `transits` reach in. */
   forecast: { type: Object, default: null },
+  /** Drawn under the last picture of the natal sky game (NatalGame): the planets come at once, where its bodies fade. */
+  landing: { type: Boolean, default: false },
 })
 const emit = defineEmits(['select'])
+// Read once: the drawing-in is decided when the wheel appears, a later change must not replay it.
+const landed = props.landing
 
 const { geo } = useSky()
 const { hot } = useChart()
@@ -119,29 +123,6 @@ const axes = computed(() => {
     return { id, label: POINTS[id].glyph, x, y }
   })
 })
-
-/** Glyphs closer than their own width are eased apart along the circle; the dots keep the true degrees. */
-function spread(list, gap) {
-  const items = list.map((item) => ({ id: item.id, at: item.lon })).sort((a, b) => a.at - b.at)
-  const n = items.length
-  gap = Math.min(gap, 360 / n)
-  for (let pass = 0; pass < 200; pass += 1) {
-    let moved = false
-    for (let i = 0; i < n; i += 1) {
-      const a = items[i]
-      const b = items[(i + 1) % n]
-      const space = i === n - 1 ? b.at + 360 - a.at : b.at - a.at
-      if (space < gap - 0.01) {
-        const push = (gap - space) / 4
-        a.at -= push
-        b.at += push
-        moved = true
-      }
-    }
-    if (!moved) break
-  }
-  return Object.fromEntries(items.map((item) => [item.id, item.at]))
-}
 
 const planets = computed(() => {
   const { planets: ring, aspects } = radii.value
@@ -271,7 +252,7 @@ function choose(id) {
 </script>
 
 <template>
-  <div class="natal-wheel" :class="{ 'motion-off': reduce, 'has-focus': Boolean(focus), 'with-transits': Boolean(forecast) }" :style="frame.style">
+  <div class="natal-wheel" :class="{ 'is-landed': landed, 'motion-off': reduce, 'has-focus': Boolean(focus), 'with-transits': Boolean(forecast) }" :style="frame.style">
     <svg :viewBox="frame.viewBox" role="img" :aria-label="forecast ? 'Транзиты над натальной картой. Ключевые транзиты — в панели.' : 'Колесо натальной карты. Те же планеты списком — в панели.'">
       <g class="rings">
         <circle class="ring" :r="radii.outer" pathLength="1" />
@@ -554,6 +535,10 @@ function choose(id) {
 
 @keyframes draw { to { stroke-dashoffset: 0; } }
 @keyframes show { to { opacity: var(--o); } }
+
+/* After the game: the rings draw at once beneath its fading picture, the planets take over its bodies. */
+.is-landed { --d0: 0s; }
+.is-landed .planet { animation: show 0.7s ease calc(0.2s + var(--i) * 0.03s) forwards; }
 
 /* Without the flights: everything simply fades in at once. */
 .motion-off .ring, .motion-off .aspect { stroke-dashoffset: 0; animation: none; }

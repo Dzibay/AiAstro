@@ -6,6 +6,7 @@ import ReadingText from '../../components/cabinet/ReadingText.vue'
 import LockedReading from '../../components/cabinet/LockedReading.vue'
 import SkyNudge from '../../components/sky/SkyNudge.vue'
 import { markStep } from '../../utils/newcomer.js'
+import { gameSupported, startGame } from '../../components/game/state.js'
 import { useChart } from '../../composables/useChart.js'
 import { errorText } from '../../api/http.js'
 import { formatDate } from '../../utils/format.js'
@@ -69,6 +70,9 @@ const birthLine = computed(() => {
 })
 
 const linkTo = (id) => ({ name: 'cabinet-chart', params: { item: id } })
+
+/** The natal sky game (NatalGame) once more, or for the first time if it was declined. */
+const canPlay = gameSupported()
 
 /** «в Весах, 18°24′» */
 const where = (point) => `${SIGN_BY_ID[point.sign].in}, ${degrees(point.deg)}`
@@ -245,6 +249,16 @@ const nudge = computed(() => {
     <!-- The whole chart. -->
     <template v-else>
       <PanelHead :lead="birthLine">Натальная <em>карта</em></PanelHead>
+
+      <button v-if="canPlay" type="button" class="replay" @click="startGame">
+        <svg viewBox="-12 -12 24 24" aria-hidden="true">
+          <circle class="replay-orbit" r="7" />
+          <path class="replay-ray" d="M0 7V-11" />
+          <circle class="replay-sun" r="2.2" />
+          <circle class="replay-earth" cy="7" r="1.6" />
+        </svg>
+        Собрать своё небо
+      </button>
 
       <p v-if="!chart.time_known" class="note">
         Время рождения неизвестно: домов и Асцендента нет, Луна стоит приблизительно.
@@ -462,8 +476,32 @@ a.three-item:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 2px; }
 .add-birth:hover { background: rgba(240, 205, 138, 0.12); border-color: rgba(240, 205, 138, 0.8); }
 .add-birth:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 3px; }
 
+.replay {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: -4px;
+  padding: 7px 16px 7px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(240, 205, 138, 0.38);
+  background: rgba(240, 205, 138, 0.05);
+  font: inherit;
+  font-size: 13.5px;
+  color: #f3dcae;
+  cursor: pointer;
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+.replay svg { width: 22px; height: 22px; overflow: visible; }
+.replay-orbit { fill: none; stroke: rgba(240, 205, 138, 0.45); stroke-width: 0.9; }
+.replay-ray { stroke: #ffe2a8; stroke-width: 1; stroke-linecap: round; opacity: 0.8; }
+.replay-sun { fill: #ffe7b0; filter: drop-shadow(0 0 3px rgba(255, 196, 110, 0.9)); }
+.replay-earth { fill: #8fc2ff; }
+.replay:hover { background: rgba(240, 205, 138, 0.12); border-color: rgba(240, 205, 138, 0.8); }
+.replay:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 3px; }
+
 @media (max-width: 760px) {
   .planet-row { min-height: 44px; align-items: center; }
-  .back { min-height: 44px; }
+  .back, .replay { min-height: 44px; }
 }
 </style>
