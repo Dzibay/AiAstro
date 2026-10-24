@@ -46,10 +46,16 @@ const message = ref('')
 // before anything asks whether a tour was seen.
 watch(user, (current) => current && takeMarks(current), { flush: 'sync' })
 
-useHead({ title: 'Кабинет', noindex: true })
-
 const section = computed(() => route.meta.section || '')
 const birthOpen = computed(() => route.name === 'cabinet-birth')
+
+// The browser's tab names the open section: with a few tabs open, each says what it holds.
+const PANEL_TITLES = { 'cabinet-birth': 'Данные рождения', 'cabinet-profile': 'Профиль и настройки' }
+watch(
+  () => SECTION_BY_ID[section.value]?.title || PANEL_TITLES[route.name] || '',
+  (title) => useHead({ title: title ? `${title} — Кабинет` : 'Кабинет', noindex: true }),
+  { immediate: true },
+)
 
 /** The wheel stands on the sky while the chart is open; its points choose the panel's reading. */
 const selected = computed(() => (typeof route.params.item === 'string' ? route.params.item : ''))

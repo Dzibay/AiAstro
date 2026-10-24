@@ -13,6 +13,8 @@ FIELDS = {
     "site_name": ("Название", "Астра", "site"),
     "tagline": ("Подзаголовок", "Натальная карта обычным языком", "site"),
     "support_email": ("Почта поддержки", "", "site"),
+    # Kept without «@»: the site makes t.me/… of it; empty — no Telegram on the site.
+    "support_telegram": ("Telegram поддержки — имя пользователя, например @astra_help", "", "site"),
     # Whole roubles as text; an empty price keeps «от … ₽» on the site and that tariff unpaid.
     "price_sky": ("«Небосвод» на месяц, ₽", "", "prices"),
     "price_sky_3": ("«Небосвод» на 3 месяца, ₽", "", "prices"),
@@ -43,10 +45,17 @@ FIELDS = {
     "ai_helpline": ("Телефон психологической помощи в кризисном ответе", "8-800-333-44-34", "ai"),
     "ai_style": ("Стиль ответов", DEFAULT_STYLE, "ai"),
     "ai_examples": ("Примеры вопросов и ответов", DEFAULT_EXAMPLES, "ai"),
+    # Копии базы на Яндекс Диск по WebDAV: включаются, когда заданы логин и пароль приложения.
+    "backup_login": ("Логин Яндекса (почта или имя)", "", "backup"),
+    "backup_password": ("Пароль приложения для «Файлы (WebDAV)»", "", "backup"),
+    "backup_folder": ("Папка на Диске", "astra-backups", "backup"),
+    "backup_keep": ("Сколько дней хранить копии (не больше 30)", "14", "backup"),
 }
 PRICES = ("price_sky", "price_sky_3", "price_sky_12", "price_synastry", "price_synastry_sky")
 # Never sent back to the page: the admin sees only whether it is set.
-SECRETS = ("yookassa_secret_key", "smtp_password", "ai_api_key")
+SECRETS = ("yookassa_secret_key", "smtp_password", "ai_api_key", "backup_password")
+# Copies of the base live no longer than this many days (see backups.keep_days).
+BACKUP_KEEP_MAX = 30
 # Long texts: the line breaks stay, the length is theirs.
 LONG = {"ai_style": 4000, "ai_examples": 6000, "ai_testers": 2000}
 AI_MODES = ("off", "test", "on")
@@ -77,6 +86,7 @@ def public_config(fallback_name: str) -> dict:
         "site_name": data.get("site_name") or fallback_name or FIELDS["site_name"][1],
         "tagline": data.get("tagline") or FIELDS["tagline"][1],
         "support_email": data.get("support_email") or "",
+        "support_telegram": data.get("support_telegram") or "",
         "prices": {key.removeprefix("price_"): data.get(key) or "" for key in PRICES},
         "pay": payments_on(data),
     }
@@ -126,6 +136,11 @@ def set_setting(key: str, value: str) -> dict[str, str]:
         cleaned = " ".join(value.split())
     if key in ("support_email", "mail_from", "smtp_host", "ai_testers"):
         cleaned = cleaned.lower()
+    # @name, t.me/name or the whole link: only the name is kept.
+    if key == "support_telegram":
+        cleaned = re.sub(r"^(https?://)?(www\.)?(t\.me|telegram\.me)/", "", cleaned).lstrip("@").strip("/")
+        if cleaned and not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{3,31}", cleaned):
+            raise DomainError("setting")
     if key in PRICES and cleaned and not _digits(cleaned, 7):
         raise DomainError("setting")
     if key == "yookassa_shop_id" and cleaned and not _digits(cleaned, 12):
@@ -165,6 +180,18 @@ def set_setting(key: str, value: str) -> dict[str, str]:
     if key == "ai_month_budget" and not _digits(cleaned, 7):
         raise DomainError("setting")
     if key == "ai_helpline" and cleaned and not re.fullmatch(r"[\d\s()+-]{3,30}", cleaned):
+        raise DomainError("setting")
+    if key == "backup_login":
+        cleaned = cleaned.lower()
+        if cleaned and not re.fullmatch(r"[a-z0-9._@+-]{2,100}", cleaned):
+            raise DomainError("setting")
+    if key == "backup_password" and cleaned and not (cleaned.isascii() and " " not in cleaned and len(cleaned) <= 100):
+        raise DomainError("setting")
+    # One folder in the root of the Disk; empty — the default one.
+    if key == "backup_folder" and cleaned and not re.fullmatch(r"\w[\w .-]{0,59}", cleaned):
+        raise DomainError("setting")
+    # The privacy policy promises a deleted account is gone within 30 days — from the copies too.
+    if key == "backup_keep" and not (_digits(cleaned, 2) and 1 <= int(cleaned) <= BACKUP_KEEP_MAX):
         raise DomainError("setting")
     if len(cleaned) > LONG.get(key, 300):
         raise DomainError("setting")

@@ -10,6 +10,17 @@ fi
 
 mkdir -p /etc/caddy
 
+# Заголовки безопасности для всех ответов. Встраивать сайт во фрейм можно только себе и Вебвизору
+# Метрики (он показывает записи визитов во фрейме), MIME-типы не угадываются, чужим сайтам уходит
+# только домен, а не адрес страницы; камера, микрофон и геолокация сайту не нужны.
+SECURITY='header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		Content-Security-Policy "frame-ancestors '"'"'self'"'"' https://metrika.yandex.ru https://metrika.yandex.by https://metrica.yandex.com https://metrica.yandex.com.tr https://webvisor.com https://*.webvisor.com"
+		-Server
+	}'
+
 # Локально или явный http:// — без сертификатов, на :80 для любого Host.
 if [ "$HOST" = "localhost" ] || [ "$HOST" = "127.0.0.1" ] || [ "$SCHEME" = "http" ]; then
   cat > /etc/caddy/Caddyfile <<EOF
@@ -18,6 +29,7 @@ if [ "$HOST" = "localhost" ] || [ "$HOST" = "127.0.0.1" ] || [ "$SCHEME" = "http
 }
 :80 {
 	encode zstd gzip
+	${SECURITY}
 	reverse_proxy nginx:80
 }
 EOF
@@ -35,6 +47,9 @@ else
   cat > /etc/caddy/Caddyfile <<EOF
 ${GLOBAL}${APEX} {
 	encode zstd gzip
+	${SECURITY}
+	# Браузер запоминает на год: сюда только по HTTPS.
+	header Strict-Transport-Security "max-age=31536000"
 	reverse_proxy nginx:80
 }
 www.${APEX} {

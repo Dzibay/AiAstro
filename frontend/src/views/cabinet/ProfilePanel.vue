@@ -1,9 +1,10 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
 import { webApi } from '../../api/web.js'
 import { errorText } from '../../api/http.js'
+import { supportOf, useSiteConfig } from '../../composables/useSiteConfig.js'
 import { formatDate } from '../../utils/format.js'
 import { startTour } from '../../utils/tour.js'
 
@@ -17,6 +18,10 @@ const props = defineProps({
   user: { type: Object, required: true },
 })
 const emit = defineEmits(['updated', 'logout'])
+
+const { config, load } = useSiteConfig()
+onMounted(load)
+const support = computed(() => supportOf(config.value))
 
 /** One small form: its fields, whether it is sending, its error and its «сохранено». */
 function form(fields) {
@@ -199,6 +204,15 @@ const showPassword = ref(false)
         <button type="button" class="link" @click="startTour('sky')">Показать снова</button>
       </div>
       <p class="hint">Звезда, пять разделов и что из них бесплатно — по шагам. То же открывает «?» у вашей звезды, а «?» в углу панели раздела рассказывает о нём самом.</p>
+    </section>
+
+    <section v-if="support" class="block" aria-labelledby="support-title">
+      <h3 id="support-title" class="block-title">Поддержка</h3>
+      <div class="row">
+        <span class="value">{{ support.kind === 'telegram' ? 'Telegram' : 'Почта' }}</span>
+        <a class="link" :href="support.href" target="_blank" rel="noopener">{{ support.label }}</a>
+      </div>
+      <p class="hint">Если оплата прошла, а разбор не открылся, или нужно исправить данные рождения — напишите, разберёмся.</p>
     </section>
 
     <p class="since">С нами с {{ formatDate(user.created_at) }}</p>

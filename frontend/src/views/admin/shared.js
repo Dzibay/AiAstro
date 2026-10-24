@@ -4,6 +4,8 @@ import { readSession } from '../../composables/useSession.js'
 
 /** One sign-in for every page: a 401 anywhere takes the operator back to the password. */
 export const authed = ref(Boolean(readSession('admin')))
+/** The open errors of the journal, for the number by «Ошибки» in the menu; null until known. */
+export const openFaults = ref(null)
 
 export function failed(error) {
   if (error?.status === 401) authed.value = false

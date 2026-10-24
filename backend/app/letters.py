@@ -37,11 +37,41 @@ class Letter:
     foot: str = ""
 
 
+def _support() -> tuple[str, str]:
+    """The support's mail and Telegram name, as the operator set them; either may be empty."""
+    return setting("support_email"), setting("support_telegram")
+
+
+def _support_text() -> str:
+    email, telegram = _support()
+    ways = [way for way in (f"в Telegram https://t.me/{telegram}" if telegram else "", f"на {email}" if email else "") if way]
+    return f"Есть вопрос — напишите нам {' или '.join(ways)}." if ways else ""
+
+
+def _support_html() -> str:
+    email, telegram = _support()
+    style = f"color:{_GOLD};text-decoration:none;"
+    ways = []
+    if telegram:
+        ways.append(f'в Telegram <a href="https://t.me/{escape(telegram, quote=True)}" target="_blank" style="{style}">@{escape(telegram)}</a>')
+    if email:
+        ways.append(f'на <a href="mailto:{escape(email, quote=True)}" style="{style}">{escape(email)}</a>')
+    if not ways:
+        return ""
+    return (
+        f'<p style="margin:0 0 10px;font-family:{_SANS};font-size:13px;line-height:1.55;color:{_MUTED};">'
+        f"Есть вопрос — напишите нам {' или '.join(ways)}.</p>"
+    )
+
+
 def text(letter: Letter) -> str:
     parts = [letter.hello, *letter.lines]
     if letter.url:
         parts.append(f"{letter.button}:\n{letter.url}")
     parts += letter.after
+    # Every letter says where to ask, if the operator has given a way.
+    if support := _support_text():
+        parts.append(support)
     if letter.foot:
         parts.append(letter.foot)
     return "\n\n".join(parts)
@@ -113,7 +143,7 @@ def html(letter: Letter) -> str:
         </tr>
         <tr>
           <td align="center" style="padding:22px 22px 0;text-align:center;">
-            {foot}
+            {_support_html()}{foot}
             <p style="margin:10px 0 0;font-family:{_SERIF};font-size:15px;line-height:1.5;color:{_MUTED};">
               <a href="{escape(home, quote=True)}" target="_blank" style="color:{_GOLD};text-decoration:none;">{escape(site)}</a>{tagline}
             </p>

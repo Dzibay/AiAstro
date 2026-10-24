@@ -1,9 +1,9 @@
 import datetime as dt
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from pydantic import BaseModel, Field
 
-from app import notes
+from app import backups, faults, notes
 from app.ai import admin as ai_admin, store as ai_store
 from app.analytics import analytics, create_link, delete_link, link_detail, list_links, update_link, user_events
 from app.accounts import (
@@ -22,6 +22,7 @@ from app.pulse import journey, money, pulse, segments, way, weeks
 from app.security import check_admin_password, make_admin_session
 from app.settings_store import list_editable, set_setting
 from app.stats import stats
+from app.throttle import Window, address
 
 router = APIRouter(prefix="/admin")
 
@@ -93,8 +94,16 @@ class PlaygroundIn(BaseModel):
     examples: str | None = Field(default=None, max_length=6000)
 
 
+# One password guards the whole admin: ten tries per address in a quarter of an hour.
+_login_by_address = Window(10, 15 * 60, "attempts")
+
+
 @router.post("/login")
-def login(body: LoginIn) -> dict:
+def login(body: LoginIn, request: Request) -> dict:
+    try:
+        _login_by_address.take(address(request))
+    except DomainError as exc:
+        raise as_http(exc) from exc
     if not check_admin_password(body.password):
         raise as_http(DomainError("unauthorized", 401))
     try:
@@ -106,7 +115,8 @@ def login(body: LoginIn) -> dict:
 
 @router.get("/me", dependencies=[Depends(require_admin)])
 def me() -> dict:
-    return {"role": "admin"}
+    """The open errors go along: the menu shows their number by «Ошибки»."""
+    return {"role": "admin", "faults": faults.open_count()}
 
 
 @router.get("/settings", dependencies=[Depends(require_admin)])
@@ -473,3 +483,73 @@ def pair_purchase(pair_id: int, body: BoughtIn, background: BackgroundTasks) -> 
         raise as_http(exc) from exc
     background.add_task(notes.pair_gift, told)
     return {"ok": True}
+
+
+# ---- The journal of errors ----
+
+class ResolvedIn(BaseModel):
+    resolved: bool
+
+
+@router.get("/faults", dependencies=[Depends(require_admin)])
+def faults_list(
+    q: str = Query(default="", max_length=100),
+    state: str = Query(default="open", max_length=16),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """The errors of the server and the browsers, the latest first; state: open | resolved | all."""
+    try:
+        return faults.listing(q, state, offset)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/faults/{fault_id}", dependencies=[Depends(require_admin)])
+def fault_detail(fault_id: int) -> dict:
+    """One error with its last traceback or browser stack, the browser and the person, if any."""
+    try:
+        return faults.detail(fault_id)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.put("/faults/{fault_id}", dependencies=[Depends(require_admin)])
+def fault_resolve(fault_id: int, body: ResolvedIn) -> dict:
+    try:
+        faults.set_resolved(fault_id, body.resolved)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    return {"open": faults.open_count()}
+
+
+@router.post("/faults/resolve", dependencies=[Depends(require_admin)])
+def faults_resolve_all() -> dict:
+    """Every open error marked as fixed at once: after a release that fixed them."""
+    return {"resolved": faults.set_resolved(None, True), "open": faults.open_count()}
+
+
+# ---- Copies of the base ----
+
+@router.get("/backups", dependencies=[Depends(require_admin)])
+def backups_status() -> dict:
+    """Whether the copies are on, the last good one and the last attempts."""
+    return backups.status()
+
+
+@router.get("/backups/copies", dependencies=[Depends(require_admin)])
+def backups_copies() -> dict:
+    """The copies lying on the Disk now; the Disk's refusal comes back as error, not as a failure of the page."""
+    try:
+        return backups.copies()
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.post("/backups", dependencies=[Depends(require_admin)])
+def backups_now() -> dict:
+    """A copy now, in the background: the page asks for the status until it is done."""
+    try:
+        backups.start(manual=True)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    return {"running": True}

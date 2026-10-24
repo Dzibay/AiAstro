@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import BirthForm from '../../components/cabinet/BirthForm.vue'
-import { useSiteConfig } from '../../composables/useSiteConfig.js'
+import { supportOf, useSiteConfig } from '../../composables/useSiteConfig.js'
 import { reachGoal } from '../../utils/track.js'
 
 /**
@@ -22,7 +22,7 @@ onMounted(load)
 const locked = computed(() => Boolean(props.user.birth_locked))
 /** Locked, the form stays only to add the time, if it was unknown. */
 const timeOnly = computed(() => locked.value && !props.user.birth?.time)
-const mail = computed(() => config.value?.support_email || '')
+const support = computed(() => supportOf(config.value))
 
 /** The first date of birth is a Metrika goal: the chart can be built from here. */
 function saved(user) {
@@ -63,7 +63,7 @@ function saved(user) {
       </dl>
       <p>
         Свою правку вы уже сделали: от этих данных зависят карта, пары и купленные разборы.
-        Если в них ошибка, напишите в поддержку<template v-if="mail"> — <a :href="`mailto:${mail}`">{{ mail }}</a></template>,
+        Если в них ошибка, напишите в поддержку<template v-if="support"> — <a :href="support.href" target="_blank" rel="noopener">{{ support.label }}</a></template>,
         и мы исправим.
       </p>
       <button type="button" class="quiet" @click="emit('done')">Назад</button>

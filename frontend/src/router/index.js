@@ -19,12 +19,14 @@ const AdminSettings = () => import('../views/admin/SettingsPage.vue')
 const AdminAi = () => import('../views/admin/AiPage.vue')
 const AdminAnalytics = () => import('../views/admin/AnalyticsPage.vue')
 const AdminLinks = () => import('../views/admin/LinksPage.vue')
+const AdminFaults = () => import('../views/admin/FaultsPage.vue')
 const OverviewPanel = () => import('../views/cabinet/OverviewPanel.vue')
 const BirthPanel = () => import('../views/cabinet/BirthPanel.vue')
 const SectionSoon = () => import('../views/cabinet/SectionSoon.vue')
 const ChartPanel = () => import('../views/cabinet/ChartPanel.vue')
 const ForecastPanel = () => import('../views/cabinet/ForecastPanel.vue')
 const InviteView = () => import('../views/InviteView.vue')
+const NotFoundView = () => import('../views/NotFoundView.vue')
 const PairPanel = () => import('../views/cabinet/PairPanel.vue')
 const ChatPanel = () => import('../views/cabinet/ChatPanel.vue')
 const ProfilePanel = () => import('../views/cabinet/ProfilePanel.vue')
@@ -94,12 +96,14 @@ const router = createRouter({
         { path: 'payments', name: 'admin-payments', component: AdminPayments },
         { path: 'pairs', name: 'admin-pairs', component: AdminPairs },
         { path: 'ai', name: 'admin-ai', component: AdminAi },
+        { path: 'faults', name: 'admin-faults', component: AdminFaults },
         { path: 'settings', name: 'admin-settings', component: AdminSettings },
       ],
     },
     // The landing pages for search and ads, one calculation each; their names are what «Аналитика» counts.
     ...LANDINGS.map((page) => ({ path: `/${page.slug}`, name: page.name, component: LandingView, meta: { sky: 'landing' } })),
-    { path: '/:pathMatch(.*)*', redirect: '/' },
+    // An unknown address says so, instead of a silent jump to the home page.
+    { path: '/:pathMatch(.*)*', name: 'missing', component: NotFoundView, meta: { sky: 'landing' } },
   ],
 })
 

@@ -73,5 +73,5 @@ def send_quietly(to: str, subject: str, text: str, html: str | None = None) -> b
         send(to, subject, text, html)
         return True
     except Exception as exc:  # noqa: BLE001 — any SMTP or network failure is the same to the person
-        log.warning("Письмо «%s» не ушло: %s", subject, exc)
+        log.error("Письмо «%s» не ушло: %s", subject, exc)
         return False

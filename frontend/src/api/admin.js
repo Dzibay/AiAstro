@@ -74,4 +74,13 @@ export const adminApi = {
   userChat: (userId) => get(`/api/admin/users/${id(userId)}/chat`),
   forgetUserChat: (userId) => send(`/api/admin/users/${id(userId)}/chat/memory`, 'DELETE'),
   unpauseUserChat: (userId) => send(`/api/admin/users/${id(userId)}/chat/pause`, 'DELETE'),
+  /** The journal of errors; state: open | resolved | all. */
+  faults: ({ q = '', state = 'open', offset = 0 } = {}) => get(`/api/admin/faults?${query({ q, state, offset })}`),
+  fault: (faultId) => get(`/api/admin/faults/${id(faultId)}`),
+  setFaultResolved: (faultId, resolved) => send(`/api/admin/faults/${id(faultId)}`, 'PUT', { resolved }),
+  resolveAllFaults: () => send('/api/admin/faults/resolve', 'POST'),
+  /** Copies of the base on Яндекс Диск: whether they are on, the last good one, the last attempts. */
+  backups: () => get('/api/admin/backups'),
+  backupCopies: () => get('/api/admin/backups/copies'),
+  backupNow: () => send('/api/admin/backups', 'POST'),
 }

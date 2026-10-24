@@ -329,6 +329,44 @@ CREATE TABLE IF NOT EXISTS ai_runs (
 CREATE INDEX IF NOT EXISTS ai_runs_created_idx ON ai_runs (created_at);
 CREATE INDEX IF NOT EXISTS ai_runs_user_idx ON ai_runs (user_id, created_at) WHERE user_id IS NOT NULL;
 
+-- Журнал ошибок для оператора (админка → «Ошибки»): что сломалось на сервере (back) и в браузерах
+-- посетителей (front). Одна и та же ошибка из одного места — одна строка (signature) со счётчиком.
+-- returned — ошибка повторилась после отметки «исправлено». Исправленные старше 90 дней удаляются.
+CREATE TABLE IF NOT EXISTS faults (
+    id BIGSERIAL PRIMARY KEY,
+    signature TEXT NOT NULL UNIQUE,
+    side TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT '',
+    message TEXT NOT NULL DEFAULT '',
+    place TEXT NOT NULL DEFAULT '',
+    path TEXT NOT NULL DEFAULT '',
+    detail TEXT NOT NULL DEFAULT '',
+    agent TEXT NOT NULL DEFAULT '',
+    user_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    count INTEGER NOT NULL DEFAULT 1,
+    returned BOOLEAN NOT NULL DEFAULT FALSE,
+    first_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    resolved_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS faults_last_idx ON faults (last_at DESC);
+
+-- Копии базы на Яндекс Диск: каждая попытка — строка. ok пусто, пока копия делается;
+-- при запуске backend незаконченные отмечаются прерванными. Строки старше 180 дней удаляются.
+CREATE TABLE IF NOT EXISTS backup_runs (
+    id BIGSERIAL PRIMARY KEY,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at TIMESTAMPTZ,
+    manual BOOLEAN NOT NULL DEFAULT FALSE,
+    ok BOOLEAN,
+    name TEXT NOT NULL DEFAULT '',
+    size BIGINT,
+    error TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS backup_runs_started_idx ON backup_runs (started_at DESC);
+
 INSERT INTO app_settings (key, value) VALUES
     ('site_name', 'Астра'),
     ('tagline', 'Натальная карта обычным языком'),

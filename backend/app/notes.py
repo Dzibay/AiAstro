@@ -235,5 +235,5 @@ async def loop() -> None:
         try:
             await asyncio.to_thread(remind_sky)
         except Exception as exc:  # noqa: BLE001 — a bad hour must not stop the next one
-            log.warning("Напоминания не разосланы: %s", exc)
+            log.error("Напоминания не разосланы: %s", exc, exc_info=exc)
         await asyncio.sleep(LOOP_SECONDS)

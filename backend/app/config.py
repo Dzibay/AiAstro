@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # Эфемериды JPL DE421 (1900–2050); пусто — backend/data, в образе /app/data.
     ephemeris_dir: str = ""
 
+    # Копии базы: WebDAV Яндекс Диска и pg_dump (в образе backend — postgresql-client-16).
+    backup_webdav_url: str = "https://webdav.yandex.ru"
+    backup_pg_dump: str = "pg_dump"
+
     @property
     def dsn(self) -> str:
         # make_conninfo экранирует значения: пароль с @, /, : или пробелами не ломает строку.

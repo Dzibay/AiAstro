@@ -6,7 +6,6 @@ what the cabinet shows for free — a point's reading, the opening of a pair or 
 landing never gives away more than an account would, and never less.
 """
 
-import time as clock
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
@@ -15,29 +14,14 @@ from app.astro.chart import natal
 from app.astro.texts import POINTS, interpreter, item_title, pair_aspect_title, pair_phrase, transit_phrase
 from app.errors import DomainError
 from app.places import timezone_at
+from app.throttle import Window
 
 # The points a landing may show, in the order of the card.
 SHOWN = ("sun", "moon", "asc", "lilith", "chiron", "node")
 FOCUS = set(SHOWN)
 
-# Each calculation is cheap, but the page is open to anyone: a fixed one-minute window per address.
-_PER_MINUTE = 30
-_budget: dict[str, tuple[float, int]] = {}
-
-
-def allow(address: str) -> None:
-    if not address:
-        return
-    now = clock.monotonic()
-    start, count = _budget.get(address, (now, 0))
-    if now - start >= 60:
-        start, count = now, 0
-    if count >= _PER_MINUTE:
-        raise DomainError("busy", 429)
-    _budget[address] = (start, count + 1)
-    if len(_budget) > 10_000:
-        for key in [key for key, (began, _) in _budget.items() if now - began >= 60]:
-            del _budget[key]
+# Each calculation is cheap, but the page is open to anyone: a one-minute budget per address.
+allow = Window(30, 60).take
 
 
 def _chart(birth_date: date, birth_time: time | None, lat: float | None, lon: float | None) -> dict:

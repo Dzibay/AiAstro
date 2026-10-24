@@ -135,9 +135,10 @@ const total = computed(() => {
   gap: 14px;
   padding: 8px 0;
 }
-.has-before .wf-row { grid-template-columns: minmax(170px, 14em) 4.5em minmax(160px, 1fr) 7.5em 5em 5em; }
-.has-time .wf-row { grid-template-columns: minmax(170px, 14em) 4.5em minmax(160px, 1fr) 5em 5em 4.5em; }
-.has-before.has-time .wf-row { grid-template-columns: minmax(170px, 14em) 4.5em minmax(160px, 1fr) 7.5em 5em 5em 4.5em; }
+/* :where() keeps these no stronger than the phone's columns below, which must win on a narrow screen. */
+.wf:where(.has-before) .wf-row { grid-template-columns: minmax(170px, 14em) 4.5em minmax(160px, 1fr) 7.5em 5em 5em; }
+.wf:where(.has-time) .wf-row { grid-template-columns: minmax(170px, 14em) 4.5em minmax(160px, 1fr) 5em 5em 4.5em; }
+.wf:where(.has-before.has-time) .wf-row { grid-template-columns: minmax(170px, 14em) 4.5em minmax(160px, 1fr) 7.5em 5em 5em 4.5em; }
 .wf-head { padding: 0 0 8px; border-bottom: 1px solid var(--panel-line); color: var(--soft); font-size: 12px; }
 .wf-list .wf-row { border-bottom: 1px solid rgba(244, 239, 230, 0.05); }
 .wf-list .wf-row:last-child { border-bottom: 0; }

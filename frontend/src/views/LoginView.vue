@@ -6,7 +6,7 @@ import PlaceInput from '../components/ui/PlaceInput.vue'
 import { webApi } from '../api/web.js'
 import { ApiError, errorText } from '../api/http.js'
 import { readSession, writeSession } from '../composables/useSession.js'
-import { useSiteConfig } from '../composables/useSiteConfig.js'
+import { supportOf, useSiteConfig } from '../composables/useSiteConfig.js'
 import { useSky } from '../composables/useSky.js'
 import { useHead } from '../utils/useHead.js'
 import { likelyMeant, mailbox } from '../utils/mailbox.js'
@@ -145,13 +145,13 @@ function say(error) {
   if (error instanceof ApiError && error.status < 500) {
     if (error.code === 'unauthorized') return 'Не узнаём эту почту с этим паролем'
     if (error.code === 'blocked') {
-      const mail = config.value?.support_email
-      return mail ? `Кабинет закрыт. Напишите нам: ${mail}` : 'Кабинет закрыт. Напишите в поддержку'
+      const support = supportOf(config.value)
+      return support ? `Кабинет закрыт. Напишите нам: ${support.label}` : 'Кабинет закрыт. Напишите в поддержку'
     }
     if (error.code === 'exists') return 'Эта почта уже открывала кабинет — войдите'
     if (error.code === 'mail_off') {
-      const mail = config.value?.support_email
-      return mail ? `Письма пока не отправляются. Напишите нам: ${mail}` : 'Письма пока не отправляются — напишите в поддержку'
+      const support = supportOf(config.value)
+      return support ? `Письма пока не отправляются. Напишите нам: ${support.label}` : 'Письма пока не отправляются — напишите в поддержку'
     }
   }
   return errorText(error)

@@ -20,9 +20,17 @@ from app.partners import (
 )
 from app.places import search
 from app.security import make_web_session
+from app.throttle import Window, address
 from app.track import attach
 
 router = APIRouter(prefix="/web")
+
+# The doors open to anyone: a password is not guessed by the thousand, a mailbox is not flooded with letters.
+_login_by_address = Window(30, 15 * 60, "attempts")
+_login_by_email = Window(10, 15 * 60, "attempts")
+_register_by_address = Window(10, 60 * 60, "attempts")
+_forgot_by_address = Window(10, 60 * 60, "attempts")
+_forgot_by_email = Window(3, 60 * 60, "attempts")
 
 
 class BirthIn(BaseModel):
@@ -141,9 +149,10 @@ class TaskIn(BaseModel):
 
 
 @router.post("/register")
-def register_user(body: RegisterIn, background: BackgroundTasks) -> dict:
+def register_user(body: RegisterIn, request: Request, background: BackgroundTasks) -> dict:
     birth = body.birth
     try:
+        _register_by_address.take(address(request))
         user = register(
             body.email,
             body.password,
@@ -199,22 +208,28 @@ def confirm(body: ConfirmIn, background: BackgroundTasks) -> dict:
 
 
 @router.post("/login")
-def login_user(body: LoginIn, background: BackgroundTasks) -> dict:
+def login_user(body: LoginIn, request: Request, background: BackgroundTasks) -> dict:
+    email = body.email.strip().lower()
     try:
+        _login_by_address.take(address(request))
+        _login_by_email.take(email)
         user = authenticate(body.email, body.password)
         token = make_web_session(user["id"])
     except DomainError as exc:
         raise as_http(exc) from exc
+    _login_by_email.forget(email)
     background.add_task(attach, user["id"], body.visitor)
     return {"token": token, "user": user}
 
 
 @router.post("/password/forgot")
-def forgot_password(body: ForgotIn, background: BackgroundTasks) -> dict:
+def forgot_password(body: ForgotIn, request: Request, background: BackgroundTasks) -> dict:
     """Always the same answer, so the form does not tell whose mail is registered; the letter goes in the background."""
     try:
         if not mail_on():
             raise DomainError("mail_off", 409)
+        _forgot_by_address.take(address(request))
+        _forgot_by_email.take(body.email.strip().lower())
         found = request_reset(body.email)
     except DomainError as exc:
         raise as_http(exc) from exc
@@ -559,6 +574,6 @@ def link_invitation(
 def places(request: Request, q: str = Query(default="", max_length=100)) -> list[dict]:
     """City suggestions for the birth place: open, since registration asks for it before an account exists."""
     try:
-        return search(q, request.client.host if request.client else "")
+        return search(q, address(request))
     except DomainError as exc:
         raise as_http(exc) from exc

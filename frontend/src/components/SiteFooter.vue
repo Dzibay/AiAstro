@@ -12,8 +12,9 @@ const route = useRoute()
 // On the home page the footer lies on the planet's horizon; elsewhere it is just the columns.
 const onSky = computed(() => route.name === 'home')
 
-/** No channel yet: the link appears once there is a real address. */
-const TELEGRAM_URL = ''
+// The support's contacts from the admin; the column is shown once there is at least one.
+const telegram = computed(() => config.value?.support_telegram || '')
+const mail = computed(() => config.value?.support_email || '')
 
 const sections = [
   { label: 'Как это работает', to: { path: '/', hash: '#how' } },
@@ -81,7 +82,7 @@ onMounted(() => {
         </p>
       </div>
 
-      <div class="cols">
+      <div class="cols" :class="{ 'is-short': !telegram && !mail }">
         <div class="col-brand">
           <RouterLink to="/" class="footer-brand" aria-label="На главную">
             <BrandMark class="footer-mark" />
@@ -100,11 +101,10 @@ onMounted(() => {
           <RouterLink v-for="link in calculations" :key="link.to" :to="link.to">{{ link.label }}</RouterLink>
         </nav>
 
-        <div class="col">
+        <div v-if="telegram || mail" class="col">
           <p class="col-title">Связь</p>
-          <a v-if="TELEGRAM_URL" :href="TELEGRAM_URL" target="_blank" rel="noopener">Telegram</a>
-          <span v-else class="is-soon">Telegram <small>скоро</small></span>
-          <a v-if="config?.support_email" :href="`mailto:${config.support_email}`">{{ config.support_email }}</a>
+          <a v-if="telegram" :href="`https://t.me/${telegram}`" target="_blank" rel="noopener">Telegram @{{ telegram }}</a>
+          <a v-if="mail" :href="`mailto:${mail}`">{{ mail }}</a>
         </div>
 
         <nav class="col" aria-label="Документы">
@@ -182,6 +182,8 @@ onMounted(() => {
   gap: 32px;
   padding: 28px 0 32px;
 }
+/* No contacts yet: four columns, not a gap where «Связь» would stand. */
+.cols.is-short { grid-template-columns: 1.4fr 1fr 1fr 1fr; }
 .is-sky .cols { border-top: 1px solid rgba(240, 210, 150, 0.12); }
 .col { display: grid; align-content: start; gap: 9px; }
 .col-title {
@@ -194,16 +196,6 @@ onMounted(() => {
 .col a, .footer-brand { color: rgba(236, 228, 214, 0.8); text-decoration: none; transition: color 0.25s ease; }
 .col a:hover, .footer-brand:hover { color: #ffe2a8; }
 .col a:focus-visible, .footer-brand:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 3px; border-radius: 4px; }
-.is-soon small {
-  margin-left: 6px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  border: 1px solid rgba(240, 205, 138, 0.35);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(240, 205, 138, 0.8);
-}
 
 .col-brand { display: grid; align-content: start; gap: 10px; }
 .footer-brand {
@@ -246,7 +238,7 @@ onMounted(() => {
   .sky-line { flex-direction: column; gap: 4px; font-size: 17px; }
   .sky-dot { display: none; }
   .moon { margin: 0 0 4px; }
-  .cols { grid-template-columns: 1fr 1fr; gap: 26px 20px; }
+  .cols, .cols.is-short { grid-template-columns: 1fr 1fr; gap: 26px 20px; }
   .col-brand { grid-column: 1 / -1; }
   .bottom { flex-direction: column; gap: 12px; }
   .disclaimers { max-width: none; text-align: left; }

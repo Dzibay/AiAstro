@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.config import settings
 from app.errors import DomainError
+from app.throttle import Window
 
 _CACHE_SIZE = 512
 _LIMIT = 6
@@ -23,30 +24,13 @@ _LIMIT = 6
 _SETTLEMENT_KEYS = ("city", "town", "village", "hamlet", "municipality", "locality")
 
 # The suggestions are open to the registration form, so each address gets its own budget.
-_PER_MINUTE = 40
+allow = Window(40, 60).take
 # A request that would wait longer than this for its turn at the geocoder is turned away.
 _QUEUE_SECONDS = 3.0
 
 _cache: OrderedDict[str, list[dict]] = OrderedDict()
 _lock = threading.Lock()
 _last_call = 0.0
-_budget: dict[str, tuple[float, int]] = {}
-_budget_lock = threading.Lock()
-
-
-def allow(address: str) -> None:
-    """A fixed one-minute window per client address."""
-    now = time.monotonic()
-    with _budget_lock:
-        start, count = _budget.get(address, (now, 0))
-        if now - start >= 60:
-            start, count = now, 0
-        if count >= _PER_MINUTE:
-            raise DomainError("busy", 429)
-        _budget[address] = (start, count + 1)
-        if len(_budget) > 10_000:
-            for key in [key for key, (began, _) in _budget.items() if now - began >= 60]:
-                del _budget[key]
 
 
 def _user_agent() -> str:

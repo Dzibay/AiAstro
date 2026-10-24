@@ -3,13 +3,15 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { adminApi } from '../../api/admin.js'
 import { errorText } from '../../api/http.js'
 import { useToast } from '../../composables/useToast.js'
+import BackupStatus from './BackupStatus.vue'
 import { failed } from './shared.js'
 
 /** The settings under their headings, in the order of FIELDS on the server. */
 const GROUPS = [
-  { id: 'site', title: 'Сайт', note: 'Название, подзаголовок и почта поддержки.' },
+  { id: 'site', title: 'Сайт', note: 'Название, подзаголовок и контакты поддержки. Почта и Telegram появляются в подвале сайта, в кабинете, на странице входа и в документах; пустое поле там не показывается.' },
   { id: 'prices', title: 'Цены', note: 'Целые рубли. Пока цена пуста, сайт пишет «от … ₽», а этот тариф не продаётся.' },
   { id: 'mail', title: 'Почта', note: 'SMTP почтового сервиса (Яндекс 360, Mail.ru для бизнеса, Unisender Go и подобные). С неё уходят ссылки для нового пароля, напоминание за три дня до конца «Небосвода» и весть об ответе партнёра.' },
+  { id: 'backup', title: 'Копии базы', note: 'Раз в сутки, после 04:00 по Москве, сайт кладёт сжатую копию базы на ваш Яндекс Диск и стирает там копии старше срока хранения. Нужен не пароль от Яндекса, а пароль приложения: id.yandex.ru → «Безопасность» → «Пароли приложений» → «Файлы (WebDAV)». В копиях — почты и даты рождения людей: держите на этом аккаунте Яндекса вход с подтверждением.' },
   { id: 'pay', title: 'ЮKassa', note: 'shopId и секретный ключ — в личном кабинете ЮKassa, «Интеграция → Ключи API». Ключ test_… — для проверки без настоящих денег. Коды чека — из справочника ЮKassa (54-ФЗ).' },
 ]
 
@@ -34,7 +36,13 @@ onMounted(async () => {
 const groups = computed(() => GROUPS.map((group) => ({ ...group, items: items.value.filter((item) => item.group === group.id) })))
 const value = (key) => items.value.find((item) => item.key === key)?.value || ''
 const mailOn = computed(() => Boolean(value('smtp_host') && (value('mail_from') || value('smtp_user')).includes('@')))
-const payOn = computed(() => Boolean(value('yookassa_shop_id') && items.value.find((item) => item.key === 'yookassa_secret_key')?.filled))
+const filled = (key) => Boolean(items.value.find((item) => item.key === key)?.filled)
+const payOn = computed(() => Boolean(value('yookassa_shop_id') && filled('yookassa_secret_key')))
+const backupOn = computed(() => Boolean(value('backup_login') && filled('backup_password')))
+/** «Пароль» or «Ключ»: what the secret field holds, for its placeholder and its erase button. */
+const secretWord = (item) => (item.key.endsWith('_password') ? 'Пароль' : 'Ключ')
+// Saving a field of the copies asks their status again.
+const backupStamp = ref(0)
 
 async function save(item, next = item.value) {
   error.value = ''
@@ -42,7 +50,8 @@ async function save(item, next = item.value) {
   try {
     const saved = await adminApi.saveSetting({ key: item.key, value: next })
     Object.assign(item, saved)
-    push(item.secret && !next ? (item.key === 'smtp_password' ? 'Пароль стёрт' : 'Ключ стёрт') : `Сохранено: ${item.label}`)
+    push(item.secret && !next ? `${secretWord(item)} стёрт` : `Сохранено: ${item.label}`)
+    if (item.group === 'backup') backupStamp.value += 1
   } catch (caught) {
     error.value = failed(caught)
   } finally {
@@ -92,10 +101,12 @@ async function copyText(text, ok = 'Адрес скопирован') {
         <h2>{{ group.title }}</h2>
         <span v-if="group.id === 'mail'" class="adm-badge" :class="mailOn ? 'is-ok' : 'is-warn'">{{ mailOn ? 'включена' : 'выключена' }}</span>
         <span v-if="group.id === 'pay'" class="adm-badge" :class="payOn ? 'is-ok' : 'is-warn'">{{ payOn ? 'оплата включена' : 'оплата выключена' }}</span>
+        <span v-if="group.id === 'backup'" class="adm-badge" :class="backupOn ? 'is-ok' : 'is-warn'">{{ backupOn ? 'включены' : 'выключены' }}</span>
       </div>
       <p class="adm-note">{{ group.note }}</p>
       <p v-if="group.id === 'mail' && !mailOn" class="st-warn">Заполните сервер и адрес отправителя — пока письма не уходят и восстановить пароль нельзя.</p>
       <p v-if="group.id === 'pay' && !payOn" class="st-warn">Заполните shopId и секретный ключ — пока кнопки оплаты на сайте не работают.</p>
+      <p v-if="group.id === 'backup' && !backupOn" class="st-warn">Заполните логин и пароль приложения — пока копии базы не делаются.</p>
 
       <div class="st-fields" :class="{ 'is-prices': group.id === 'prices' }">
         <form v-for="item in group.items" :key="item.key" class="st-field" @submit.prevent="save(item)">
@@ -107,13 +118,13 @@ async function copyText(text, ok = 'Адрес скопирован') {
               class="adm-input"
               :type="item.secret ? 'password' : 'text'"
               :inputmode="group.id === 'prices' ? 'numeric' : undefined"
-              :placeholder="item.secret && item.filled ? `${item.key === 'smtp_password' ? 'Пароль сохранён' : 'Ключ сохранён'} — введите новый, чтобы заменить` : ''"
+              :placeholder="item.secret && item.filled ? `${secretWord(item)} сохранён — введите новый, чтобы заменить` : ''"
               autocomplete="off"
             />
             <button class="adm-btn" type="submit" :disabled="(item.secret && !item.value) || saving === item.key">Сохранить</button>
           </div>
           <button v-if="item.secret && item.filled" class="text-button st-erase" type="button" :disabled="saving === item.key" @click="save(item, '')">
-            {{ item.key === 'smtp_password' ? 'Стереть пароль' : 'Стереть ключ' }}
+            Стереть {{ secretWord(item).toLowerCase() }}
           </button>
         </form>
       </div>
@@ -126,6 +137,8 @@ async function copyText(text, ok = 'Адрес скопирован') {
         </div>
         <p v-if="testMail.result" class="st-result" :class="testMail.ok ? 'is-ok' : 'error'">{{ testMail.result }}</p>
       </form>
+
+      <BackupStatus v-if="group.id === 'backup'" :stamp="backupStamp" />
 
       <div v-if="group.id === 'pay' && (notifyUrl || returnUrl)" class="st-extra">
         <template v-if="returnUrl">

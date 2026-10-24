@@ -5,7 +5,7 @@ import { adminApi } from '../api/admin.js'
 import { errorText } from '../api/http.js'
 import { clearSession, writeSession } from '../composables/useSession.js'
 import { useHead } from '../utils/useHead.js'
-import { authed } from './admin/shared.js'
+import { authed, openFaults } from './admin/shared.js'
 import './admin/admin.css'
 
 useHead({ title: 'Админка', noindex: true })
@@ -19,6 +19,7 @@ const PAGES = [
   { to: { name: 'admin-payments' }, label: 'Платежи', icon: 'M2 6h20v12H2zM2 10h20M6 15h4' },
   { to: { name: 'admin-pairs' }, label: 'Пары', icon: 'M8.5 15a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11ZM15.5 20a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11Z' },
   { to: { name: 'admin-ai' }, label: 'ИИ-астролог', icon: 'M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8ZM18.5 15l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9Z' },
+  { to: { name: 'admin-faults' }, label: 'Ошибки', icon: 'M12 3.5 2.5 20h19L12 3.5ZM12 10v4.5M12 17.5h.01', count: true },
   { to: { name: 'admin-settings' }, label: 'Настройки', icon: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M16 4v4M10 10v4M18 16v4' },
 ]
 
@@ -34,7 +35,8 @@ onMounted(async () => {
     return
   }
   try {
-    await adminApi.me()
+    const me = await adminApi.me()
+    openFaults.value = me.faults ?? null
   } catch (error) {
     authed.value = false
     message.value = errorText(error)
@@ -55,6 +57,7 @@ async function login() {
   try {
     const result = await adminApi.login({ password: password.value })
     writeSession('admin', result.token)
+    adminApi.me().then((me) => { openFaults.value = me.faults ?? null }).catch(() => {})
     password.value = ''
     message.value = ''
     authed.value = true
@@ -94,6 +97,7 @@ function logout() {
             <RouterLink v-for="page in PAGES" :key="page.label" :to="page.to" class="adm-nav-link" :exact-active-class="page.to.name === 'admin' ? 'is-on' : ''" :active-class="page.to.name === 'admin' ? '' : 'is-on'">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path :d="page.icon" /></svg>
               <span>{{ page.label }}</span>
+              <span v-if="page.count && openFaults" class="adm-nav-count" :aria-label="`открытых: ${openFaults}`">{{ openFaults > 99 ? '99+' : openFaults }}</span>
             </RouterLink>
           </nav>
           <button type="button" class="text-button adm-logout" @click="logout">Выйти</button>

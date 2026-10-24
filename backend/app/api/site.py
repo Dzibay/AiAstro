@@ -5,12 +5,13 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app import landing, legal
+from app import faults, landing, legal
 from app.astro import forecast
 from app.api.deps import as_http, optional_web_user
 from app.errors import DomainError
 from app.config import settings
 from app.settings_store import public_config
+from app.throttle import Window, address
 from app.track import BATCH, track, track_many
 
 router = APIRouter(prefix="/site")
@@ -44,8 +45,13 @@ def legal_page(page: str) -> dict:
     email = config["support_email"] or "почта поддержки, указанная на сайте"
     names = {"site": settings.site_name, "url": settings.public_base_url.rstrip("/"), "email": email}
     sections = _fill(document["sections"], names)
-    if config["support_email"] and not any(section.get("id") == "contacts" for section in sections):
-        sections.append({"id": "contacts", "title": "Контакты", "items": [f"Почта поддержки: {config['support_email']}."]})
+    contacts = []
+    if config["support_email"]:
+        contacts.append(f"Почта поддержки: {config['support_email']}.")
+    if config["support_telegram"]:
+        contacts.append(f"Telegram поддержки: @{config['support_telegram']} (https://t.me/{config['support_telegram']}).")
+    if contacts and not any(section.get("id") == "contacts" for section in sections):
+        sections.append({"id": "contacts", "title": "Контакты", "items": contacts})
     return {
         "slug": page,
         "title": document["title"],
@@ -103,6 +109,31 @@ def _track_many_quietly(body: TrackManyIn, user_id: int | None) -> None:
         pass
 
 
+class FaultIn(BaseModel):
+    kind: str = Field(max_length=40)
+    message: str = Field(max_length=1000)
+    place: str = Field(default="", max_length=300)
+    stack: str = Field(default="", max_length=8000)
+    page: str = Field(default="", max_length=300)
+
+
+# A page in a loop of errors, or someone filling the journal on purpose: past these, quietly dropped.
+_faults_by_address = Window(30, 60 * 60)
+_faults_all = Window(600, 60 * 60)
+
+
+@router.post("/fault", status_code=204)
+def site_fault(body: FaultIn, request: Request, user_id: int | None = Depends(optional_web_user)) -> None:
+    """An error in a visitor's browser, for the journal in the admin; the page never hears back."""
+    try:
+        _faults_by_address.take(address(request))
+        _faults_all.take("all")
+    except DomainError:
+        return
+    faults.record("front", body.kind, body.message, place=body.place, path=body.page, detail=body.stack,
+                  agent=request.headers.get("user-agent", ""), user_id=user_id)
+
+
 # ---- The landing pages' calculation, open without an account ----
 
 class PreviewBirthIn(BaseModel):
@@ -127,7 +158,7 @@ class PairPreviewIn(BaseModel):
 
 def _preview(request: Request, make):
     try:
-        landing.allow(request.client.host if request.client else "")
+        landing.allow(address(request))
         return make()
     except DomainError as exc:
         raise as_http(exc) from exc

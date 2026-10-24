@@ -83,14 +83,15 @@ watch(() => route.params.page, load, { immediate: true })
               </li>
             </ol>
           </section>
-
-          <footer class="others">
-            <span class="others-star" aria-hidden="true">✦</span>
-            <p>Другие документы:</p>
-            <RouterLink v-for="doc in others" :key="doc.slug" :to="{ name: 'legal', params: { page: doc.slug } }">{{ doc.name }}</RouterLink>
-          </footer>
         </template>
         <p v-else class="loading">Загружаем текст…</p>
+
+        <!-- Under a document — the other ones; under a wrong address — all of them. -->
+        <footer v-if="page || message" class="others">
+          <span class="others-star" aria-hidden="true">✦</span>
+          <p>{{ page ? 'Другие документы:' : 'Документы сайта:' }}</p>
+          <RouterLink v-for="doc in others" :key="doc.slug" :to="{ name: 'legal', params: { page: doc.slug } }">{{ doc.name }}</RouterLink>
+        </footer>
       </div>
     </article>
   </SiteFrame>
