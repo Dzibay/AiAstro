@@ -507,6 +507,10 @@ def reading_text(reading: dict) -> str:
         line += [f"{item['name']}: {item['text']}" if item.get("name") else item["text"] for item in part.get("items", [])]
         line.append(f"Что делать: {part['todo']}" if part.get("todo") else "")
         lines.append(" ".join(piece for piece in line if piece))
+    # The ИИ-астролог's answer ends with its key apart (app.chat._talk_reading).
+    if reading.get("key"):
+        key = reading["key"]
+        lines.append(f"Ключ — {key[0].lower() + key[1:] if key[1:2].islower() else key}")
     return "\n\n".join(lines)
 
 

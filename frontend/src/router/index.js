@@ -16,6 +16,7 @@ const AdminUser = () => import('../views/admin/UserPanel.vue')
 const AdminPayments = () => import('../views/admin/PaymentsPage.vue')
 const AdminPairs = () => import('../views/admin/PairsPage.vue')
 const AdminSettings = () => import('../views/admin/SettingsPage.vue')
+const AdminAi = () => import('../views/admin/AiPage.vue')
 const AdminAnalytics = () => import('../views/admin/AnalyticsPage.vue')
 const AdminLinks = () => import('../views/admin/LinksPage.vue')
 const OverviewPanel = () => import('../views/cabinet/OverviewPanel.vue')
@@ -92,6 +93,7 @@ const router = createRouter({
         },
         { path: 'payments', name: 'admin-payments', component: AdminPayments },
         { path: 'pairs', name: 'admin-pairs', component: AdminPairs },
+        { path: 'ai', name: 'admin-ai', component: AdminAi },
         { path: 'settings', name: 'admin-settings', component: AdminSettings },
       ],
     },

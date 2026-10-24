@@ -1,6 +1,7 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
+import ChatAnswer from '../../components/cabinet/ChatAnswer.vue'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
 import ReadingText from '../../components/cabinet/ReadingText.vue'
 import { useChat } from '../../composables/useChat.js'
@@ -9,9 +10,11 @@ import { usePrices } from '../../utils/prices.js'
 import { markStep } from '../../utils/newcomer.js'
 
 /**
- * The conversation with the astrologer. The astrologer speaks in italic serif, the person in the
- * plain face; the questions to start with come from the person's own chart. Without «Небосвод»
- * there are two trial questions, then the field gives way to the invitation.
+ * The conversation with the ИИ-астролог. It speaks in italic serif, the person in the plain face;
+ * the questions to start with come from the person's own chart, the ones to ask next from its last
+ * answer. A new answer is printed out. Without «Небосвод» there are two trial questions, then the
+ * field gives way to the invitation; with it, a number of questions a day. After three turns away
+ * from the chart the conversation rests for a few minutes.
  */
 
 const props = defineProps({
@@ -32,7 +35,38 @@ const body = ref(null)
 const hasBirth = computed(() => Boolean(props.user.birth))
 const locked = computed(() => chat.left === 0)
 const empty = computed(() => chat.items.length === 0)
-/** The suggestions not asked yet: after the first answer they wait in a row above the field. */
+
+/* ---- The pause after turns away from the chart, and the day's questions ---- */
+
+const clock = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' })
+const now = ref(Date.now())
+let timer = 0
+// The field comes back by itself when the pause is over.
+watch(() => chat.pauseUntil, (until) => {
+  clearTimeout(timer)
+  now.value = Date.now()
+  const wait = until ? new Date(until).getTime() - Date.now() : 0
+  if (wait > 0) timer = setTimeout(() => { now.value = Date.now() }, Math.min(wait + 500, 2 ** 31 - 1))
+}, { immediate: true })
+onBeforeUnmount(() => clearTimeout(timer))
+const paused = computed(() => Boolean(chat.pauseUntil) && new Date(chat.pauseUntil).getTime() > now.value)
+const dayOver = computed(() => !locked.value && chat.todayLeft === 0)
+const resting = computed(() => paused.value || dayOver.value)
+
+const questionsWord = (n) => {
+  const tens = n % 100
+  const ones = n % 10
+  if (tens > 10 && tens < 20) return 'вопросов'
+  return ones === 1 ? 'вопрос' : ones >= 2 && ones <= 4 ? 'вопроса' : 'вопросов'
+}
+const leftWord = (n) => (n % 10 === 1 && n % 100 !== 11 ? 'остался' : 'осталось')
+const perDay = computed(() => `${chat.daily} ${questionsWord(chat.daily)} в день`)
+
+/** The questions to ask next: the last answer's own, or else the chart's suggestions not asked yet. */
+const lastAnswer = computed(() => {
+  const item = chat.items.at(-1)
+  return item && item.role !== 'user' && item.reading?.kind === 'talk' && item.reading.follow?.length ? item : null
+})
 const suggestions = computed(() => {
   const asked = new Set(chat.items.filter((item) => item.role === 'user').map((item) => item.text))
   return chat.suggestions.filter((text) => !asked.has(text))
@@ -43,6 +77,29 @@ const trialNote = computed(() => {
     ? `${chat.trial} вопроса в подарок — спросите о самом важном.`
     : 'Остался один вопрос в подарок.'
 })
+/** With «Небосвод», the day's count shows only when it runs low. */
+const dayNote = computed(() => {
+  const left = chat.todayLeft
+  if (chat.left != null || left == null || left === 0 || left > 3) return ''
+  return `Сегодня ${leftWord(left)} ${left} ${questionsWord(left)} из ${chat.daily}.`
+})
+
+/* ---- The answer being printed ---- */
+
+const typing = ref(null)
+watch(() => chat.fresh, (id) => {
+  typing.value = id
+})
+// While it waits, the line under the star changes now and then: the answer takes a few seconds.
+const WAITING = ['ИИ-астролог смотрит на ваше небо…', 'Сверяет вопрос с вашей картой…', 'Подбирает слова…']
+const waiting = ref(0)
+let waitingTimer = 0
+watch(() => chat.sending, (sending) => {
+  clearInterval(waitingTimer)
+  waiting.value = 0
+  if (sending) waitingTimer = setInterval(() => { waiting.value = Math.min(waiting.value + 1, WAITING.length - 1) }, 2600)
+})
+onBeforeUnmount(() => clearInterval(waitingTimer))
 
 onMounted(() => {
   if (hasBirth.value) load().then(() => scrollDown(false))
@@ -61,9 +118,15 @@ function scrollDown(smooth = true) {
 }
 watch(() => [chat.items.length, chat.sending], () => scrollDown())
 
+/** As the answer prints, the view follows it, unless the person has scrolled up to read. */
+function follow() {
+  const scroller = body.value
+  if (scroller && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80) scroller.scrollTop = scroller.scrollHeight
+}
+
 async function send(text = draft.value) {
   const question = text.trim()
-  if (!question || chat.sending || locked.value) return
+  if (!question || chat.sending || locked.value || resting.value) return
   if (question.length > LENGTH) {
     chat.error = `Вопрос слишком длинный — сократите его до ${LENGTH} знаков`
     return
@@ -79,7 +142,7 @@ async function send(text = draft.value) {
   } else if (typed && !draft.value) {
     draft.value = question
   }
-  if (!locked.value) nextTick(() => field.value?.focus({ preventScroll: true }))
+  if (!locked.value && !resting.value) nextTick(() => field.value?.focus({ preventScroll: true }))
 }
 
 function onKey(event) {
@@ -101,8 +164,8 @@ function fit() {
 <template>
   <div class="chat-panel" :class="{ 'is-talk': hasBirth && chat.status === 'ready' }">
     <template v-if="!hasBirth">
-      <PanelHead lead="Астролог отвечает по вашей карте, а карте нужна дата рождения.">
-        Разговор <em>с астрологом</em>
+      <PanelHead lead="ИИ-астролог отвечает по вашей карте, а карте нужна дата рождения.">
+        Разговор <em>с ИИ-астрологом</em>
       </PanelHead>
       <RouterLink class="add-birth" :to="{ name: 'cabinet-birth' }">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path :d="STAR" /></svg>
@@ -115,8 +178,8 @@ function fit() {
 
     <template v-else>
       <div ref="body" class="chat-body">
-        <PanelHead :lead="empty ? 'Спросите о своей карте простыми словами — ответ придёт с опорой на ваше небо.' : ''">
-          Разговор <em>с астрологом</em>
+        <PanelHead :lead="empty ? 'Спросите о своей карте простыми словами — ИИ-астролог ответит с опорой на ваше небо.' : ''">
+          Разговор <em>с ИИ-астрологом</em>
         </PanelHead>
 
         <ul v-if="empty && !locked && suggestions.length" class="starters" aria-label="С чего начать">
@@ -129,35 +192,56 @@ function fit() {
         </ul>
 
         <ol v-if="!empty" class="thread" role="log" aria-label="Разговор">
-          <li v-for="item in chat.items" :key="item.id" class="message" :class="[item.role === 'user' ? 'from-you' : 'from-astrologer', { 'has-reading': item.reading }]">
-            <span class="visually-hidden">{{ item.role === 'user' ? 'Вы:' : 'Астролог:' }}</span>
-            <ReadingText v-if="item.reading" :reading="item.reading" compact />
+          <li v-for="item in chat.items" :key="item.id" class="message" :class="[item.role === 'user' ? 'from-you' : 'from-astrologer', { 'has-reading': item.reading && item.reading.kind !== 'talk' }]">
+            <span class="visually-hidden">{{ item.role === 'user' ? 'Вы:' : 'ИИ-астролог:' }}</span>
+            <ChatAnswer
+              v-if="item.reading?.kind === 'talk'"
+              :reading="item.reading"
+              :typing="item.id === typing"
+              :followable="item === lastAnswer && !locked && !resting"
+              :disabled="chat.sending"
+              @ask="send"
+              @grow="follow"
+            />
+            <ReadingText v-else-if="item.reading" :reading="item.reading" compact />
             <p v-for="(paragraph, index) in paragraphs(item.text)" v-else :key="index">{{ paragraph }}</p>
           </li>
           <li v-if="chat.sending" class="message waiting" aria-live="polite">
             <svg class="waiting-star" viewBox="0 0 20 20" aria-hidden="true"><path :d="STAR" /></svg>
-            Астролог смотрит на ваше небо…
+            <Transition name="waiting" mode="out-in"><span :key="waiting">{{ WAITING[waiting] }}</span></Transition>
           </li>
         </ol>
       </div>
 
       <div class="composer-wrap">
         <div v-if="locked" class="unlock">
-          <p class="unlock-note">Вопросы в подарок позади — надеемся, астролог был вам полезен. В «Небосводе» разговор идёт без счёта вопросов, а вместе с ним загораются полные прогнозы и звёздный календарь.</p>
+          <p class="unlock-note">Вопросы в подарок позади — надеемся, ИИ-астролог был вам полезен. В «Небосводе» — {{ perDay }}, а вместе с ними загораются полные прогнозы и звёздный календарь.</p>
           <RouterLink class="unlock-cta" v-seen="'sky:chat'" data-track="sky:chat" :to="{ name: 'cabinet-sky' }">
             <svg viewBox="0 0 20 20" aria-hidden="true"><path :d="STAR" /></svg>
             Зажечь Небосвод — {{ skyPrice }}
           </RouterLink>
         </div>
 
+        <div v-else-if="paused" class="rest" role="status">
+          <p class="rest-note">
+            Небольшая пауза: ИИ-астролог говорит только о вашей карте и небе. Разговор продолжится
+            в {{ clock.format(new Date(chat.pauseUntil)) }}.
+          </p>
+        </div>
+
+        <div v-else-if="dayOver" class="rest" role="status">
+          <p class="rest-note">На сегодня вопросы закончились: {{ perDay }}, новые появятся в полночь по Москве. А пока — что небо готовит на сегодня.</p>
+          <RouterLink class="rest-link" :to="{ name: 'cabinet-forecast' }">Открыть прогноз на день</RouterLink>
+        </div>
+
         <template v-else>
-          <ul v-if="!empty && suggestions.length" class="more" aria-label="Можно спросить" data-no-swipe>
+          <ul v-if="!empty && !lastAnswer && suggestions.length" class="more" aria-label="Можно спросить" data-no-swipe>
             <li v-for="text in suggestions" :key="text">
               <button type="button" class="more-chip" :disabled="chat.sending" @click="send(text)">{{ text }}</button>
             </li>
           </ul>
           <form class="composer" @submit.prevent="send()">
-            <label class="visually-hidden" for="chat-question">Ваш вопрос астрологу</label>
+            <label class="visually-hidden" for="chat-question">Ваш вопрос ИИ-астрологу</label>
             <textarea
               id="chat-question"
               ref="field"
@@ -176,8 +260,9 @@ function fit() {
           <p v-else-if="draft.length > LENGTH - 100" class="hint" :class="{ 'is-over': draft.length > LENGTH }">{{ draft.length }} / {{ LENGTH }}</p>
           <p v-else-if="trialNote" class="hint">
             {{ trialNote }}
-            <RouterLink class="hint-link" v-seen="'sky:chat-hint'" data-track="sky:chat-hint" :to="{ name: 'cabinet-sky' }">Без счёта — в «Небосводе»</RouterLink>
+            <RouterLink class="hint-link" v-seen="'sky:chat-hint'" data-track="sky:chat-hint" :to="{ name: 'cabinet-sky' }">{{ perDay }} — в «Небосводе»</RouterLink>
           </p>
+          <p v-else-if="dayNote" class="hint">{{ dayNote }}</p>
         </template>
       </div>
     </template>
@@ -340,6 +425,12 @@ function fit() {
 .loading { margin: 0; font-family: var(--serif); font-style: italic; font-size: 17px; color: rgba(242, 228, 200, 0.75); }
 
 .unlock { display: grid; gap: 12px; justify-items: start; }
+.rest { display: grid; gap: 8px; justify-items: start; padding: 12px 16px; border-radius: 18px; border: 1px dashed rgba(240, 210, 150, 0.22); }
+.rest-note { margin: 0; font-size: 13.5px; line-height: 1.5; color: rgba(239, 231, 216, 0.8); }
+.rest-link { color: #f0cd8a; font-size: 13.5px; text-decoration: underline; text-decoration-color: rgba(240, 205, 138, 0.35); text-underline-offset: 3px; }
+.rest-link:hover { text-decoration-color: currentColor; }
+.waiting-enter-active, .waiting-leave-active { transition: opacity 0.35s ease; }
+.waiting-enter-from, .waiting-leave-to { opacity: 0; }
 .hint-link { margin-left: 4px; color: #f0cd8a; text-decoration: underline; text-decoration-color: rgba(240, 205, 138, 0.35); text-underline-offset: 3px; }
 .hint-link:hover { text-decoration-color: currentColor; }
 .unlock-note { margin: 0; font-size: 13.5px; line-height: 1.5; color: rgba(233, 194, 124, 0.8); }

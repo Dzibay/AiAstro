@@ -191,7 +191,7 @@ const PAGE_NAMES = {
   'cabinet-chart': 'Карта',
   'cabinet-forecast': 'Прогноз',
   'cabinet-pair': 'Пара',
-  'cabinet-chat': 'Астролог',
+  'cabinet-chat': 'ИИ-астролог',
   'cabinet-sky': '«Небосвод»',
   'lp-natal': 'Посадочная: натальная карта',
   'lp-pair': 'Посадочная: совместимость',
@@ -209,7 +209,7 @@ export function pageName(name) {
   return PAGE_NAMES[name] || name
 }
 
-const SECTION_NAMES = { chart: 'Карта', forecast: 'Прогноз', pair: 'Пара', chat: 'Астролог', sky: '«Небосвод»' }
+const SECTION_NAMES = { chart: 'Карта', forecast: 'Прогноз', pair: 'Пара', chat: 'ИИ-астролог', sky: '«Небосвод»' }
 
 export function tourName(name) {
   if (name === 'intro') return 'Знакомство с кабинетом'
@@ -218,7 +218,7 @@ export function tourName(name) {
   return name
 }
 
-export const STEP_NAMES = { sun: 'Прочитал своё Солнце', chat: 'Спросил астролога' }
+export const STEP_NAMES = { sun: 'Прочитал своё Солнце', chat: 'Спросил ИИ-астролога' }
 
 /** A share in per cent with one decimal below ten: «4,2%», «38%»; nothing to divide by gives «—». */
 export function pct(part, whole) {
@@ -232,8 +232,8 @@ export function pct(part, whole) {
 const OFFER_NAMES = {
   'sky:portrait': 'Портрет за замком',
   'sky:chart': 'Карта: строка про «Небосвод»',
-  'sky:chat': 'Астролог: замок',
-  'sky:chat-hint': 'Астролог: подсказка про счёт',
+  'sky:chat': 'ИИ-астролог: замок',
+  'sky:chat-hint': 'ИИ-астролог: подсказка про счёт',
   'sky:month': 'Прогноз на месяц',
   'sky:forecast-stories': 'Прогноз: истории дня',
   'sky:forecast': 'Прогноз: замок',

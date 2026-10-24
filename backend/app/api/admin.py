@@ -4,12 +4,14 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel, Field
 
 from app import notes
+from app.ai import admin as ai_admin, store as ai_store
 from app.analytics import analytics, create_link, delete_link, link_detail, list_links, update_link, user_events
 from app.accounts import (
     SKY_MAX_DAYS, admin_delete, list_users, operator_confirm, operator_user, set_birth, set_sky, set_sky_until,
     user_activity,
 )
 from app.api.deps import as_http, require_admin
+from app.chat import LENGTH, transcript, unpause
 from app.config import settings
 from app.errors import DomainError
 from app.letters import Letter, html, text
@@ -72,7 +74,23 @@ class LinkEditIn(BaseModel):
 
 class SettingIn(BaseModel):
     key: str = Field(max_length=64)
-    value: str = Field(max_length=300)
+    # The style and the examples of the ИИ-астролог are long; each setting has its own limit besides.
+    value: str = Field(max_length=6000)
+
+
+class AiModelIn(BaseModel):
+    # Empty: the model chosen in the settings.
+    model: str = Field(default="", max_length=60)
+
+
+class PlaygroundIn(BaseModel):
+    question: str = Field(max_length=LENGTH)
+    # Whose chart and conversation; absent — the demo chart.
+    user_id: int | None = None
+    model: str = Field(default="", max_length=60)
+    # The style and the examples being tried before they are saved; absent — the saved ones.
+    style: str | None = Field(default=None, max_length=4000)
+    examples: str | None = Field(default=None, max_length=6000)
 
 
 @router.post("/login")
@@ -125,6 +143,58 @@ def mail_test(body: TestMailIn) -> dict:
     except Exception as exc:  # noqa: BLE001 — whatever the server said goes back to the operator
         return {"ok": False, "error": str(exc)[:300]}
     return {"ok": True}
+
+
+@router.get("/ai", dependencies=[Depends(require_admin)])
+def ai_view(days: int = Query(default=30)) -> dict:
+    """The ИИ-астролог: its settings, the models with prices, the month's spend and the numbers of the period."""
+    try:
+        return ai_admin.overview(days)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.post("/ai/check", dependencies=[Depends(require_admin)])
+def ai_check(body: AiModelIn) -> dict:
+    """One short call to the model: the provider's own answer goes back, like the test letter's."""
+    try:
+        return ai_admin.check(body.model)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.post("/ai/playground", dependencies=[Depends(require_admin)])
+def ai_playground(body: PlaygroundIn) -> dict:
+    try:
+        return ai_admin.playground(body.question, body.user_id, body.model, body.style, body.examples)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/ai/redteam", dependencies=[Depends(require_admin)])
+def ai_redteam_list() -> dict:
+    return {"items": ai_admin.redteam_list()}
+
+
+@router.post("/ai/redteam/{index}", dependencies=[Depends(require_admin)])
+def ai_redteam(index: int, body: AiModelIn) -> dict:
+    """One provocation at a time: the page runs them in turn and shows each as it comes."""
+    try:
+        return ai_admin.redteam(index, body.model)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/ai/runs", dependencies=[Depends(require_admin)])
+def ai_runs(
+    kind: str = Query(default="", max_length=20),
+    only: str = Query(default="", max_length=20),
+    before: int = Query(default=0, ge=0),
+) -> dict:
+    try:
+        return ai_admin.runs(kind, only, before)
+    except DomainError as exc:
+        raise as_http(exc) from exc
 
 
 @router.get("/stats", dependencies=[Depends(require_admin)])
@@ -299,6 +369,24 @@ def users_events(user_id: int, before: str = Query(default="", max_length=40)) -
         return user_events(user_id, before)
     except DomainError as exc:
         raise as_http(exc) from exc
+
+
+@router.get("/users/{user_id}/chat", dependencies=[Depends(require_admin)])
+def users_chat(user_id: int) -> dict:
+    """The conversation with the ИИ-астролог as it is, with the topic and the source of every turn, and the memory."""
+    return transcript(user_id)
+
+
+@router.delete("/users/{user_id}/chat/memory", dependencies=[Depends(require_admin)])
+def users_chat_forget(user_id: int) -> dict:
+    ai_store.forget(user_id)
+    return {"ok": True}
+
+
+@router.delete("/users/{user_id}/chat/pause", dependencies=[Depends(require_admin)])
+def users_chat_unpause(user_id: int) -> dict:
+    unpause(user_id)
+    return {"ok": True}
 
 
 @router.post("/users/{user_id}/delete", dependencies=[Depends(require_admin)])

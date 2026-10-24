@@ -35,7 +35,7 @@ const steps = computed(() => {
       to: { name: 'cabinet-birth' },
     },
     { id: 'sun', name: 'Прочитать своё Солнце', why: 'главное о вашем характере', done: stepDone(props.user.id, 'sun'), to: { name: 'cabinet-chart', params: { item: 'sun' } } },
-    { id: 'chat', name: 'Задать вопрос астрологу', why: 'два вопроса — в подарок', done: asked.value, to: { name: 'cabinet-chat' } },
+    { id: 'chat', name: 'Задать вопрос ИИ-астрологу', why: 'два вопроса — в подарок', done: asked.value, to: { name: 'cabinet-chat' } },
     { id: 'pair', name: 'Добавить партнёра', why: 'увидеть пару по сферам жизни', done: partners.value.length > 0, to: { name: 'cabinet-pair', query: { add: '' } } },
   ]
 })

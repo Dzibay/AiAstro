@@ -3,6 +3,7 @@ import { computed, inject, onBeforeUnmount, onMounted, reactive, ref, watch } fr
 import { useRoute, useRouter } from 'vue-router'
 import ActivityCalendar from '../../components/admin/ActivityCalendar.vue'
 import ConfirmDialog from '../../components/admin/ConfirmDialog.vue'
+import UserChat from '../../components/admin/ai/UserChat.vue'
 import { adminApi } from '../../api/admin.js'
 import { useToast } from '../../composables/useToast.js'
 import { PAYMENT_STATUS, PRODUCTS, eventText, failed, fmt, moscowDay, offerName, pageName, plural, seen, tourName } from './shared.js'
@@ -65,7 +66,7 @@ const ACTIONS = {
   game: { label: 'Собрал карту в игре', part: 'Начал игру, не закончил', extra: (n) => (n > 1 ? times(n) : '') },
   forecast: { label: 'Открыл прогноз', extra: (n) => (n > 1 ? times(n) : '') },
   pair: { label: 'Добавил пару', extra: (n) => `${n} ${plural(n, 'пара', 'пары', 'пар')}` },
-  chat: { label: 'Спросил астролога', extra: (n) => `${n} ${plural(n, 'вопрос', 'вопроса', 'вопросов')}` },
+  chat: { label: 'Спросил ИИ-астролога', extra: (n) => `${n} ${plural(n, 'вопрос', 'вопроса', 'вопросов')}` },
   sky_view: { label: 'Открыл «Небосвод»', money: true },
   offer: { label: 'Видел предложение', money: true, extra: (n) => `в ${n} ${plural(n, 'месте', 'местах', 'местах')}` },
   pick: { label: 'Выбрал срок', money: true },
@@ -232,7 +233,7 @@ async function confirmed(typed) {
 function closeSky() {
   confirm({
     title: 'Снять «Небосвод»?',
-    text: `У ${user.value.email} сразу закроются прогнозы и астролог. Деньги этим не возвращаются — возврат делается в ЮKassa.`,
+    text: `У ${user.value.email} сразу закроются прогнозы и ИИ-астролог. Деньги этим не возвращаются — возврат делается в ЮKassa.`,
     label: 'Снять',
     run: async () => {
       const saved = await adminApi.setSky(user.value.id, { days: 0 })
@@ -294,7 +295,7 @@ async function saveBirth() {
 function remove() {
   confirm({
     title: 'Удалить аккаунт навсегда?',
-    text: 'Удалятся кабинет, пары этого человека и переписка с астрологом. Платежи останутся в учёте; пары, общие с партнёрами, останутся у партнёров, им уйдёт письмо. Отменить нельзя.',
+    text: 'Удалятся кабинет, пары этого человека и переписка с ИИ-астрологом. Платежи останутся в учёте; пары, общие с партнёрами, останутся у партнёров, им уйдёт письмо. Отменить нельзя.',
     label: 'Удалить навсегда',
     need: user.value.email,
     run: async (typed) => {
@@ -406,6 +407,8 @@ function remove() {
         </div>
         <ActivityCalendar :user-id="user.id" :last-seen="user.last_seen || ''" />
       </section>
+
+      <UserChat :user-id="user.id" />
 
       <section class="up-block">
         <div class="up-block-head">

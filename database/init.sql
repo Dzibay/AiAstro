@@ -285,6 +285,50 @@ CREATE TABLE IF NOT EXISTS day_tasks (
     PRIMARY KEY (user_id, day)
 );
 
+-- ИИ-астролог. У каждой реплики — тема, которую ей дала проверка или модель:
+-- astro, smalltalk, offtopic, injection, abuse, crisis; pending — ответ ещё пишется; пусто — реплика до ИИ.
+-- counted — вопрос идёт в счёт пробных и дневных (уводы в сторону и кризис не считаются).
+-- source ответа: ai — модель, stub — шаблоны, guard — готовый текст сервиса.
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '';
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS counted BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT '';
+-- Три увода в сторону за полчаса — разговор на паузе до этого момента.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_pause_until TIMESTAMPTZ;
+
+-- Что человек сам рассказал ИИ-астрологу о себе (до 12 коротких фактов): они идут в каждый
+-- следующий разговор. Оператор видит и стирает их в карточке человека; удаление кабинета стирает всё.
+CREATE TABLE IF NOT EXISTS chat_memory (
+    user_id BIGINT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    facts JSONB NOT NULL DEFAULT '[]',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Каждое обращение к модели и каждый готовый ответ сервиса: тема, модель, токены, цена в рублях, время.
+-- kind: chat — разговор человека, playground — проба в админке, redteam — проверка провокациями, check — проверка связи.
+-- Расход остаётся и после удаления кабинета (ссылка пустеет): по нему считается месячный бюджет.
+-- flagged — ответ модели не прошёл проверку хотя бы раз; note — вопрос проб из админки (не из разговоров людей).
+CREATE TABLE IF NOT EXISTS ai_runs (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    message_id BIGINT REFERENCES chat_messages (id) ON DELETE SET NULL,
+    kind TEXT NOT NULL DEFAULT 'chat',
+    category TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    cached_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost NUMERIC(12, 4) NOT NULL DEFAULT 0,
+    ms INTEGER NOT NULL DEFAULT 0,
+    error TEXT NOT NULL DEFAULT '',
+    flagged BOOLEAN NOT NULL DEFAULT FALSE,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ai_runs_created_idx ON ai_runs (created_at);
+CREATE INDEX IF NOT EXISTS ai_runs_user_idx ON ai_runs (user_id, created_at) WHERE user_id IS NOT NULL;
+
 INSERT INTO app_settings (key, value) VALUES
     ('site_name', 'Астра'),
     ('tagline', 'Натальная карта обычным языком'),

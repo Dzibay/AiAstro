@@ -178,6 +178,27 @@
 
 .adm-input, .adm input[type='date'], .adm input[type='time'] { padding: 8px 12px; border-radius: 10px; font-size: 15px; width: auto; }
 .adm-label { display: grid; gap: 4px; color: var(--soft); font-size: 13px; }
+/* The long texts and the lists of choices: the inputs' own look, which the site gives only to <input>. */
+.adm textarea.adm-input, .adm select.adm-input {
+  width: 100%;
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--line);
+  font: inherit;
+  font-size: 15px;
+}
+.adm textarea.adm-input { min-height: 120px; padding: 10px 12px; line-height: 1.5; resize: vertical; }
+.adm select.adm-input {
+  appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%23c9bfae' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 11px 8px;
+  cursor: pointer;
+}
+.adm select.adm-input option { background: #151722; color: var(--ink); }
+.adm textarea.adm-input:focus, .adm select.adm-input:focus { outline: 2px solid rgba(224, 193, 122, 0.45); border-color: transparent; }
 
 /* A switch: the paid reading of a pair. */
 .adm-switch {

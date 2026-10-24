@@ -1,5 +1,8 @@
+import re
 import time
 
+from app.ai.models import DEFAULT_MODEL, MODELS
+from app.ai.prompt import DEFAULT_EXAMPLES, DEFAULT_STYLE
 from app.db import pool
 from app.errors import DomainError
 
@@ -27,10 +30,26 @@ FIELDS = {
     "smtp_user": ("Логин", "", "mail"),
     "smtp_password": ("Пароль", "", "mail"),
     "mail_from": ("Адрес отправителя (пусто — логин)", "", "mail"),
+    # ИИ-астролог (Yandex AI Studio): off — отвечают шаблоны, test — модель только для почт из списка, on — для всех.
+    "ai_mode": ("Режим", "off", "ai"),
+    "ai_testers": ("Почты тестировщиков через запятую", "", "ai"),
+    "ai_api_key": ("API-ключ сервисного аккаунта", "", "ai"),
+    "ai_folder": ("ID каталога", "", "ai"),
+    "ai_model": ("Модель", DEFAULT_MODEL, "ai"),
+    # Пусто — та же модель; без «Небосвода» человек задаёт два пробных вопроса, их можно отдать модели сильнее.
+    "ai_trial_model": ("Модель для пробных вопросов (пусто — та же)", "", "ai"),
+    "ai_daily_limit": ("Вопросов в день на человека", "20", "ai"),
+    "ai_month_budget": ("Бюджет на месяц, ₽ (по нему модель уступает шаблонам)", "1000", "ai"),
+    "ai_helpline": ("Телефон психологической помощи в кризисном ответе", "8-800-333-44-34", "ai"),
+    "ai_style": ("Стиль ответов", DEFAULT_STYLE, "ai"),
+    "ai_examples": ("Примеры вопросов и ответов", DEFAULT_EXAMPLES, "ai"),
 }
 PRICES = ("price_sky", "price_sky_3", "price_sky_12", "price_synastry", "price_synastry_sky")
 # Never sent back to the page: the admin sees only whether it is set.
-SECRETS = ("yookassa_secret_key", "smtp_password")
+SECRETS = ("yookassa_secret_key", "smtp_password", "ai_api_key")
+# Long texts: the line breaks stay, the length is theirs.
+LONG = {"ai_style": 4000, "ai_examples": 6000, "ai_testers": 2000}
+AI_MODES = ("off", "test", "on")
 
 _cache: dict[str, str] = {}
 _loaded = False
@@ -88,13 +107,24 @@ def _digits(value: str, longest: int) -> bool:
     return value.isascii() and value.isdigit() and len(value) <= longest
 
 
+def _long(value: str) -> str:
+    """Line breaks kept, spaces within a line folded, no more than one empty line in a row."""
+    lines = [" ".join(line.split()) for line in value.replace("\r", "").split("\n")]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
 def set_setting(key: str, value: str) -> dict[str, str]:
     global _loaded, _loaded_at
     if key not in FIELDS:
         raise DomainError("setting")
-    # A password may hold spaces of its own; everything else folds them.
-    cleaned = value.strip() if key == "smtp_password" else " ".join(value.split())
-    if key in ("support_email", "mail_from", "smtp_host"):
+    # A password may hold spaces of its own; the long texts keep their lines; everything else folds them.
+    if key == "smtp_password":
+        cleaned = value.strip()
+    elif key in LONG:
+        cleaned = _long(value)
+    else:
+        cleaned = " ".join(value.split())
+    if key in ("support_email", "mail_from", "smtp_host", "ai_testers"):
         cleaned = cleaned.lower()
     if key in PRICES and cleaned and not _digits(cleaned, 7):
         raise DomainError("setting")
@@ -115,7 +145,28 @@ def set_setting(key: str, value: str) -> dict[str, str]:
         raise DomainError("setting")
     if key == "mail_from" and cleaned and not (" " not in cleaned and cleaned.count("@") == 1):
         raise DomainError("setting")
-    if len(cleaned) > 300:
+    if key == "ai_mode" and cleaned not in AI_MODES:
+        raise DomainError("setting")
+    if key == "ai_testers" and cleaned and not all(
+        part.count("@") == 1 and " " not in part for part in re.split(r"[,;\s]+", cleaned) if part
+    ):
+        raise DomainError("setting")
+    # The key of AI Studio is one ASCII word; the folder is like b1g…
+    if key == "ai_api_key" and cleaned and not (cleaned.isascii() and " " not in cleaned and len(cleaned) <= 300):
+        raise DomainError("setting")
+    if key == "ai_folder" and cleaned and not (cleaned.isascii() and cleaned.isalnum() and len(cleaned) <= 40):
+        raise DomainError("setting")
+    if key == "ai_model" and cleaned not in MODELS:
+        raise DomainError("setting")
+    if key == "ai_trial_model" and cleaned and cleaned not in MODELS:
+        raise DomainError("setting")
+    if key == "ai_daily_limit" and not (_digits(cleaned, 3) and 1 <= int(cleaned) <= 500):
+        raise DomainError("setting")
+    if key == "ai_month_budget" and not _digits(cleaned, 7):
+        raise DomainError("setting")
+    if key == "ai_helpline" and cleaned and not re.fullmatch(r"[\d\s()+-]{3,30}", cleaned):
+        raise DomainError("setting")
+    if len(cleaned) > LONG.get(key, 300):
         raise DomainError("setting")
     with pool.connection() as conn:
         conn.execute(

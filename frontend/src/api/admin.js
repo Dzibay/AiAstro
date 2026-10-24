@@ -59,4 +59,19 @@ export const adminApi = {
   /** { name?, note?, spend? }: the fields left out stay as they are. */
   updateLink: (linkId, body) => send(`/api/admin/links/${id(linkId)}`, 'PUT', body),
   deleteLink: (linkId) => send(`/api/admin/links/${id(linkId)}`, 'DELETE'),
+  /** The ИИ-астролог: its settings, the models with prices, the month's spend and the numbers for 7, 30 or 90 days. */
+  ai: (days) => get(`/api/admin/ai?${query({ days })}`),
+  /** One short call to the model: { ok, model, ms, cost, error }. */
+  aiCheck: (model = '') => send('/api/admin/ai/check', 'POST', { model }),
+  /** { question, user_id?, model?, style?, examples? }: the answer with the passport, the rules and the raw text. */
+  aiPlayground: (body) => send('/api/admin/ai/playground', 'POST', body),
+  aiRedteamList: () => get('/api/admin/ai/redteam'),
+  /** One provocation of the list through the whole path. */
+  aiRedteam: (index, model = '') => send(`/api/admin/ai/redteam/${id(index)}`, 'POST', { model }),
+  /** The journal of calls; kind: '' | chat | check | playground | redteam, only: '' | flagged | errors | guard. */
+  aiRuns: ({ kind = '', only = '', before = 0 } = {}) => get(`/api/admin/ai/runs?${query({ kind, only, before: before || '' })}`),
+  /** One person's conversation with the ИИ-астролог, with the topic and source of each turn, and the memory. */
+  userChat: (userId) => get(`/api/admin/users/${id(userId)}/chat`),
+  forgetUserChat: (userId) => send(`/api/admin/users/${id(userId)}/chat/memory`, 'DELETE'),
+  unpauseUserChat: (userId) => send(`/api/admin/users/${id(userId)}/chat/pause`, 'DELETE'),
 }

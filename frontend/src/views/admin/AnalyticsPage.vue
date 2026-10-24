@@ -129,7 +129,7 @@ const CABINET = {
   game: 'Собрали карту в игре',
   forecast: 'Открыли прогноз',
   pair: 'Добавили пару',
-  chat: 'Спросили астролога',
+  chat: 'Спросили ИИ-астролога',
   sky: 'Открыли «Небосвод»',
   offer: 'Видели предложение',
 }
@@ -284,7 +284,7 @@ const actions = computed(() => {
     { label: 'Указали дату рождения', value: a.births, hint: `${pct(a.births, t.value.signups)} регистраций` },
     { label: 'Добавили партнёров', value: a.partners, hint: `из них приглашением ${fmt.count(a.invites)}` },
     { label: 'Ответили на приглашение', value: a.answered, hint: `завели кабинет ${fmt.count(a.joined)}` },
-    { label: 'Вопросов астрологу', value: a.questions, hint: `спрашивали ${fmt.count(a.askers)} чел.` },
+    { label: 'Вопросов ИИ-астрологу', value: a.questions, hint: `спрашивали ${fmt.count(a.askers)} чел.` },
     { label: 'Открытий карты', value: a.chart_views, hint: 'просмотры раздела' },
     { label: 'Открытий прогноза', value: a.forecast_views, hint: 'просмотры раздела' },
     { label: 'Подарено разборов', value: a.gifts, hint: 'из админки' },
