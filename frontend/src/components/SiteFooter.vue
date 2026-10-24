@@ -117,10 +117,10 @@ onMounted(() => {
         <p>© {{ year }} {{ config?.site_name || fallbackConfig.site_name }}</p>
         <div class="disclaimers">
           <p>
-            Информация на сайте не является публичной офертой. Настоящий интернет-сайт носит исключительно
-            информационный и рекламный характер. Вся информация, размещённая на нём (включая каталоги товаров,
-            цены, описания и условия оплаты), не является публичной офертой в смысле статьи 437 Гражданского
-            кодекса РФ.
+            Условия оказания услуг, порядок оплаты и возврата определяет
+            <RouterLink :to="{ name: 'legal', params: { page: 'offer' } }">Публичная оферта</RouterLink>; действует
+            цена, показанная в Кабинете в момент оплаты. Остальные материалы сайта — описания, примеры и
+            иллюстрации — носят информационный характер и сами по себе офертой не являются.
           </p>
           <p>
             Все материалы, расчеты и прогнозы сервиса «{{ config?.site_name || fallbackConfig.site_name }}» носят
@@ -231,6 +231,8 @@ onMounted(() => {
   font-size: 11.5px;
   color: rgba(226, 220, 210, 0.42);
 }
+.disclaimers a { color: rgba(240, 205, 138, 0.7); text-decoration: underline; text-decoration-color: rgba(240, 205, 138, 0.3); text-underline-offset: 2px; }
+.disclaimers a:hover { color: #f0cd8a; }
 
 @media (max-width: 760px) {
   .footer.is-sky { padding-top: 56px; }

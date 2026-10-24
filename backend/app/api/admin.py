@@ -3,7 +3,7 @@ import datetime as dt
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from pydantic import BaseModel, Field
 
-from app import backups, faults, notes
+from app import backups, faults, notes, outbox
 from app.ai import admin as ai_admin, store as ai_store
 from app.analytics import analytics, create_link, delete_link, link_detail, list_links, update_link, user_events
 from app.accounts import (
@@ -14,8 +14,7 @@ from app.api.deps import as_http, require_admin
 from app.chat import LENGTH, transcript, unpause
 from app.config import settings
 from app.errors import DomainError
-from app.letters import Letter, html, text
-from app.mailer import link, mail_on, send
+from app.mailer import mail_on
 from app.partners import admin_pairs, admin_partners, mine_changed, set_bought, set_pair_bought
 from app.payments import list_payments
 from app.pulse import journey, money, pulse, segments, way, weeks
@@ -140,19 +139,8 @@ def mail_test(body: TestMailIn) -> dict:
     """A letter sent now, not in the background: the operator sees the SMTP server's own answer."""
     if not mail_on():
         raise as_http(DomainError("mail_off", 409))
-    try:
-        letter = Letter(
-            subject="Пробное письмо",
-            title="Почта настроена",
-            hello="Здравствуйте!",
-            lines=["Письма с подтверждением почты, новым паролем и напоминаниями будут уходить с этого адреса — и выглядеть так."],
-            button="Открыть сайт",
-            url=link("/"),
-        )
-        send(body.email.strip(), letter.subject, text(letter), html(letter))
-    except Exception as exc:  # noqa: BLE001 — whatever the server said goes back to the operator
-        return {"ok": False, "error": str(exc)[:300]}
-    return {"ok": True}
+    error = notes.test_letter(body.email.strip())
+    return {"ok": not error, "error": error} if error else {"ok": True}
 
 
 @router.get("/ai", dependencies=[Depends(require_admin)])
@@ -381,6 +369,12 @@ def users_events(user_id: int, before: str = Query(default="", max_length=40)) -
         raise as_http(exc) from exc
 
 
+@router.get("/users/{user_id}/letters", dependencies=[Depends(require_admin)])
+def users_letters(user_id: int) -> dict:
+    """The letters sent to this person, newest first, with what became of each and the button's presses."""
+    return {"items": outbox.of_user(user_id)}
+
+
 @router.get("/users/{user_id}/chat", dependencies=[Depends(require_admin)])
 def users_chat(user_id: int) -> dict:
     """The conversation with the ИИ-астролог as it is, with the topic and the source of every turn, and the memory."""
@@ -489,6 +483,32 @@ def pair_purchase(pair_id: int, body: BoughtIn, background: BackgroundTasks) -> 
 
 class ResolvedIn(BaseModel):
     resolved: bool
+
+
+@router.get("/letters", dependencies=[Depends(require_admin)])
+def letters_list(
+    q: str = Query(default="", max_length=100),
+    kind: str = Query(default="", max_length=32),
+    status: str = Query(default="", max_length=16),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """The journal of letters, newest first: by address or subject, kind and status (or «clicked»)."""
+    return outbox.listing(q, kind, status, offset)
+
+
+@router.get("/letters/kinds", dependencies=[Depends(require_admin)])
+def letters_kinds() -> dict:
+    """Every kind of letter the site sends: when and to whom, with the last 30 days of each."""
+    return {**outbox.catalogue(), "mail_on": mail_on()}
+
+
+@router.get("/letters/preview/{kind}", dependencies=[Depends(require_admin)])
+def letters_preview(kind: str) -> dict:
+    """The letter of this kind on made-up data, laid out as it goes."""
+    found = notes.preview(kind)
+    if found is None:
+        raise as_http(DomainError("missing", 404))
+    return found
 
 
 @router.get("/faults", dependencies=[Depends(require_admin)])

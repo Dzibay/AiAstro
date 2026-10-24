@@ -188,7 +188,10 @@ const showPassword = ref(false)
           {{ user.mail_notes ? 'Отключить' : 'Включить' }}
         </button>
       </div>
-      <p class="hint">Напоминание о конце «Небосвода» и весть, когда партнёр ответил на приглашение. Ссылка для нового пароля приходит всегда.</p>
+      <p class="hint">
+        Напоминания о конце «Небосвода» и о незавершённой оплате, вести о партнёре и паре. Подтверждение почты,
+        ссылка для нового пароля и письмо об оплате приходят всегда.
+      </p>
       <p v-if="letters.error" class="error" role="alert">{{ letters.error }}</p>
       <p v-else-if="letters.done" class="done" role="status">✦ {{ letters.done }}</p>
     </section>

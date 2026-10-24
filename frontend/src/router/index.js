@@ -20,6 +20,7 @@ const AdminAi = () => import('../views/admin/AiPage.vue')
 const AdminAnalytics = () => import('../views/admin/AnalyticsPage.vue')
 const AdminLinks = () => import('../views/admin/LinksPage.vue')
 const AdminFaults = () => import('../views/admin/FaultsPage.vue')
+const AdminLetters = () => import('../views/admin/LettersPage.vue')
 const OverviewPanel = () => import('../views/cabinet/OverviewPanel.vue')
 const BirthPanel = () => import('../views/cabinet/BirthPanel.vue')
 const SectionSoon = () => import('../views/cabinet/SectionSoon.vue')
@@ -96,6 +97,7 @@ const router = createRouter({
         { path: 'payments', name: 'admin-payments', component: AdminPayments },
         { path: 'pairs', name: 'admin-pairs', component: AdminPairs },
         { path: 'ai', name: 'admin-ai', component: AdminAi },
+        { path: 'letters', name: 'admin-letters', component: AdminLetters },
         { path: 'faults', name: 'admin-faults', component: AdminFaults },
         { path: 'settings', name: 'admin-settings', component: AdminSettings },
       ],

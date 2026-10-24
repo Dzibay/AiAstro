@@ -231,8 +231,11 @@ onMounted(async () => {
   watchArrival()
   siteApi.sky().then((sky) => { liveSky.value = sky }).catch(() => {})
   await load()
+  // «Астра — натальная карта…», as in index.html: after the dash the tagline goes on in lower case
+  // (an acronym like «ИИ» keeps its capitals).
+  const rest = /^\p{Lu}\p{Ll}/u.test(tagline.value) ? tagline.value[0].toLowerCase() + tagline.value.slice(1) : tagline.value
   useHead({
-    title: `${name.value} — ${tagline.value}`,
+    title: `${name.value} — ${rest}`,
     description: tagline.value,
   })
 })

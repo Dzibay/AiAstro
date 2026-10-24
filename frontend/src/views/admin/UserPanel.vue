@@ -6,7 +6,7 @@ import ConfirmDialog from '../../components/admin/ConfirmDialog.vue'
 import UserChat from '../../components/admin/ai/UserChat.vue'
 import { adminApi } from '../../api/admin.js'
 import { useToast } from '../../composables/useToast.js'
-import { PAYMENT_STATUS, PRODUCTS, eventText, failed, fmt, moscowDay, offerName, pageName, plural, seen, tourName } from './shared.js'
+import { LETTER_KINDS, LETTER_STATUS, PAYMENT_STATUS, PRODUCTS, eventText, failed, fmt, moscowDay, offerName, pageName, plural, seen, tourName } from './shared.js'
 import { DEVICE_NAMES, WAY } from './way.js'
 
 const route = useRoute()
@@ -113,6 +113,25 @@ const way = computed(() => {
     tours: j.tours.map(tourName),
   }
 })
+
+/* ---- The letters sent to the person: what became of each and whether its button was pressed ---- */
+
+const LETTERS_SHOWN = 5
+const letters = reactive({ items: [], all: false, error: '' })
+const lettersShown = computed(() => (letters.all ? letters.items : letters.items.slice(0, LETTERS_SHOWN)))
+
+async function loadLetters() {
+  const id = route.params.id
+  Object.assign(letters, { items: [], all: false, error: '' })
+  try {
+    const answer = await adminApi.userLetters(id)
+    if (id === route.params.id) letters.items = answer.items
+  } catch (caught) {
+    letters.error = failed(caught)
+  }
+}
+watch(() => route.params.id, (id) => id && loadLetters())
+onMounted(loadLetters)
 
 /* ---- What the person did on the site, newest first ---- */
 
@@ -422,6 +441,33 @@ function remove() {
             <button type="button" class="adm-btn is-gold" :disabled="Boolean(busy)" @click="confirmEmail">Подтвердить почту</button>
           </div>
         </template>
+        <p class="up-note">
+          Напоминания и вести о партнёре: {{ user.mail_notes ? 'включены' : 'выключены в профиле' }}. Письма о входе, пароле и оплате
+          приходят всегда.
+        </p>
+        <ul v-if="lettersShown.length" class="up-letters">
+          <li v-for="letter in lettersShown" :key="letter.id">
+            <span class="adm-dim">{{ fmt.moment(letter.created_at) }}</span>
+            <span class="up-letter-what">
+              {{ LETTER_KINDS[letter.kind] || letter.kind }}
+              <span v-if="letter.email !== user.email" class="adm-dim"> · на {{ letter.email }}</span>
+            </span>
+            <span class="up-letter-marks">
+              <span class="adm-badge" :class="LETTER_STATUS[letter.status]?.tone" :title="letter.error || ''">
+                {{ LETTER_STATUS[letter.status]?.text || letter.status }}
+              </span>
+              <span v-if="letter.clicks" class="adm-badge is-ok" :title="`Первый переход ${fmt.moment(letter.clicked_at)}`">
+                переход{{ letter.clicks > 1 ? ` ×${letter.clicks}` : '' }}
+              </span>
+            </span>
+            <span v-if="letter.status === 'failed' && letter.error" class="up-letter-error">{{ letter.error }}</span>
+          </li>
+        </ul>
+        <p v-else-if="!letters.error" class="up-empty">Писем не было.</p>
+        <p v-if="letters.error" class="error">{{ letters.error }}</p>
+        <button v-if="!letters.all && letters.items.length > LETTERS_SHOWN" type="button" class="adm-btn" @click="letters.all = true">
+          Все письма ({{ letters.items.length }})
+        </button>
       </section>
 
       <section class="up-block">
@@ -522,7 +568,7 @@ function remove() {
         </div>
         <p class="up-note">Всё по порядку, новые сверху, вместе с тем, что браузер делал до регистрации. Подробно — ещё прокрутка, время на странице и начала визитов.</p>
         <ul v-if="timelineShown.length" class="up-events">
-          <li v-for="(item, index) in timelineShown" :key="`${item.at}:${item.kind}:${item.name}:${index}`" :class="{ 'is-pay': item.kind === 'payment' }">
+          <li v-for="(item, index) in timelineShown" :key="`${item.at}:${item.kind}:${item.name}:${index}`" :class="{ 'is-pay': item.kind === 'payment', 'is-letter': item.kind === 'letter' }">
             <span class="adm-dim">{{ fmt.moment(item.at) }}</span>
             <span>{{ eventText(item) }}<span v-if="where(item)" class="adm-dim"> · {{ where(item) }}</span></span>
           </li>
@@ -605,6 +651,13 @@ function remove() {
 .up-events li { display: grid; grid-template-columns: 7.6em 1fr; gap: 12px; padding: 6px 0; border-top: 1px solid rgba(244, 239, 230, 0.07); }
 .up-events li:first-child { border-top: 0; }
 .up-events li.is-pay { color: #9fd3a8; }
+.up-events li.is-letter { color: var(--muted); }
+.up-letters { display: grid; margin: 0; padding: 0; list-style: none; font-size: 14px; }
+.up-letters li { display: grid; grid-template-columns: 7.6em 1fr auto; align-items: center; gap: 2px 12px; padding: 8px 0; border-top: 1px solid rgba(244, 239, 230, 0.07); }
+.up-letters li:first-child { border-top: 0; }
+.up-letter-what { min-width: 0; overflow-wrap: anywhere; }
+.up-letter-marks { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.up-letter-error { grid-column: 2 / -1; color: var(--danger); font-size: 13px; overflow-wrap: anywhere; }
 .num { font-variant-numeric: tabular-nums; }
 .up-block > .adm-btn { justify-self: start; }
 .up-danger { border-bottom: 0; }

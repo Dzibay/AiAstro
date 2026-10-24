@@ -221,6 +221,7 @@ def _apply(row: dict) -> None:
     greets the opening once, whenever each of them comes to it.
     """
     told = []
+    extended = False
     with pool.connection() as conn:
         won = conn.execute(
             "UPDATE payments SET status = 'succeeded', paid_at = now() WHERE id = %s AND status <> 'succeeded' RETURNING id",
@@ -254,17 +255,21 @@ def _apply(row: dict) -> None:
                     ).fetchall()
         else:
             # Counted from the end of the current term if it still runs, as the offer says.
-            conn.execute(
+            term = conn.execute(
                 """
                 UPDATE users SET sky_until = GREATEST(COALESCE(sky_until, now()), now()) + make_interval(days => %s)
                 WHERE id = %s
+                RETURNING sky_until - make_interval(days => %s) > now() + interval '1 minute' AS extended
                 """,
-                (row["days"], row["user_id"]),
-            )
-    if told:
-        from app import notes
+                (row["days"], row["user_id"], row["days"]),
+            ).fetchone()
+            extended = bool(term and term["extended"])
+    from app import notes
 
-        # Letters go by SMTP, slowly: the answer to ЮKassa or to the page does not wait for them.
+    # Letters go by SMTP, slowly: the answer to ЮKassa or to the page does not wait for them.
+    # The one who paid hears what opened; the partner, that the pair's reading is open there too.
+    threading.Thread(target=notes.paid, args=(row["id"], extended), daemon=True).start()
+    if told:
         threading.Thread(target=notes.pair_bought, args=(told,), daemon=True).start()
 
 

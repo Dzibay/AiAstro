@@ -1,11 +1,13 @@
 import datetime as dt
+import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
-from app import faults, landing, legal
+from app import faults, landing, legal, outbox
 from app.astro import forecast
 from app.api.deps import as_http, optional_web_user
 from app.errors import DomainError
@@ -14,6 +16,7 @@ from app.settings_store import public_config
 from app.throttle import Window, address
 from app.track import BATCH, track, track_many
 
+log = logging.getLogger("aiastro")
 router = APIRouter(prefix="/site")
 
 
@@ -28,6 +31,23 @@ def _fill(value, names: dict):
     if isinstance(value, list):
         return [_fill(item, names) for item in value]
     return {key: _fill(item, names) for key, item in value.items()}
+
+
+@router.get("/go/{token}")
+def letter_button(token: str, to: str = Query(default="/", max_length=600)) -> RedirectResponse:
+    """The button of a letter: the press is written to the journal, and the person goes on to the page.
+
+    Only to a page of this site — the address cannot be turned into a way to somewhere else.
+    """
+    try:
+        outbox.click(token)
+    except Exception as exc:  # noqa: BLE001 — a count that failed must not stand between the person and the page
+        log.error("Переход из письма не засчитан: %s", exc)
+    return RedirectResponse(
+        outbox.safe_path(to),
+        status_code=302,
+        headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex", "Referrer-Policy": "no-referrer"},
+    )
 
 
 @router.get("/sky")

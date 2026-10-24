@@ -399,8 +399,9 @@ TIMELINE = 150
 
 def user_events(user_id: int, before: str = "") -> dict:
     """The latest actions of this account, newest first: what it did signed in, what its browsers did
-    before (the pages that led to the registration) and its payments. `before` — the moment of the
-    last action shown, for the earlier ones."""
+    before (the pages that led to the registration), its payments, the letters sent to it and the
+    first press of each letter's button. `before` — the moment of the last action shown, for the
+    earlier ones."""
     try:
         until = datetime.fromisoformat(before) if before else None
     except ValueError:
@@ -423,6 +424,15 @@ def user_events(user_id: int, before: str = "") -> dict:
             SELECT pa.created_at, 'payment', pa.product, pa.amount, pa.place, pa.status
             FROM payments pa
             WHERE pa.user_id = %(id)s AND (%(until)s::timestamptz IS NULL OR pa.created_at < %(until)s::timestamptz)
+            UNION ALL
+            SELECT l.created_at, 'letter', l.kind, l.clicks, '', l.status
+            FROM letters l
+            WHERE l.user_id = %(id)s AND (%(until)s::timestamptz IS NULL OR l.created_at < %(until)s::timestamptz)
+            UNION ALL
+            SELECT l.clicked_at, 'letter_click', l.kind, l.clicks, '', l.status
+            FROM letters l
+            WHERE l.user_id = %(id)s AND l.clicked_at IS NOT NULL
+              AND (%(until)s::timestamptz IS NULL OR l.clicked_at < %(until)s::timestamptz)
             ORDER BY at DESC LIMIT %(limit)s
             """,
             p,

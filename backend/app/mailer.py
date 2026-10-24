@@ -1,11 +1,11 @@
 """Letters: the email confirmation, the new password link, the end of «Небосвод», the partner's answer.
 
 Through the SMTP server set in the admin panel: plain text, and the site's look in HTML beside it
-(app.letters lays both out). A letter never holds up a request: the routes hand it to the
-background, and a server that does not answer is only written to the log.
+(app.letters lays both out and writes each to the journal, app.outbox). A letter never holds up
+a request: the routes hand it to the background, and a server that does not answer is only
+written to the log and the journal.
 """
 
-import logging
 import smtplib
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
@@ -13,9 +13,11 @@ from email.utils import formataddr, make_msgid
 from app.config import settings
 from app.settings_store import get_settings, setting
 
-log = logging.getLogger("aiastro")
-
 TIMEOUT = 15
+
+
+class MailOff(RuntimeError):
+    """The SMTP server is not set in the admin panel: the letter had nowhere to go."""
 
 
 def _sender(data: dict[str, str]) -> str:
@@ -48,10 +50,10 @@ def _letter(to: str, subject: str, text: str, data: dict[str, str], html: str | 
 
 
 def send(to: str, subject: str, text: str, html: str | None = None) -> None:
-    """Sends now and raises on failure: for the admin's test letter, which wants to know why."""
+    """Sends now and raises on failure (MailOff when there is no server to send through)."""
     data = get_settings()
     if not mail_on(data):
-        raise RuntimeError("SMTP не настроен")
+        raise MailOff("SMTP не настроен")
     message = _letter(to, subject, text, data, html)
     host = data["smtp_host"]
     port = int(data.get("smtp_port") or 465)
@@ -66,12 +68,3 @@ def send(to: str, subject: str, text: str, html: str | None = None) -> None:
             server.login(data["smtp_user"], data.get("smtp_password") or "")
         server.send_message(message)
 
-
-def send_quietly(to: str, subject: str, text: str, html: str | None = None) -> bool:
-    """For the background: a letter that did not leave is logged, never raised."""
-    try:
-        send(to, subject, text, html)
-        return True
-    except Exception as exc:  # noqa: BLE001 — any SMTP or network failure is the same to the person
-        log.error("Письмо «%s» не ушло: %s", subject, exc)
-        return False

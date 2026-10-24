@@ -272,7 +272,7 @@ def set_name(user_id: int, name: str) -> dict:
 def set_email(user_id: int, email: str, password: str) -> dict:
     """A new email for signing in: the letter goes to it, and it takes the old one's place once confirmed.
 
-    Gives what notes.confirm_letter needs: {email, name, token, change}.
+    Gives what notes.confirm_letter needs: {user_id, email, name, token, change}.
     """
     cleaned = _clean_email(email)
     row = _checked(user_id, password)
@@ -283,7 +283,7 @@ def set_email(user_id: int, email: str, password: str) -> dict:
         if taken:
             raise DomainError("exists", 409)
         token = _confirm_link(conn, user_id, cleaned)
-    return {"email": cleaned, "name": row["name"], "token": token, "change": True}
+    return {"user_id": user_id, "email": cleaned, "name": row["name"], "token": token, "change": True}
 
 
 def set_password(user_id: int, current: str, password: str) -> None:
@@ -361,7 +361,7 @@ def request_reset(email: str) -> dict | None:
             "INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (%s, %s, now() + make_interval(mins => %s))",
             (_reset_hash(token), row["id"], RESET_MINUTES),
         )
-    return {"email": cleaned, "name": row["name"], "token": token}
+    return {"user_id": row["id"], "email": cleaned, "name": row["name"], "token": token}
 
 
 def reset_password(token: str, password: str) -> dict:
@@ -434,7 +434,7 @@ def _confirm_link(conn, user_id: int, email: str, page: str = "") -> str:
 
 
 def confirm_request(user_id: int, page: str = "", email: str | None = None) -> dict | None:
-    """The letter for an account still waiting for its confirmation: {email, name, token, change}.
+    """The letter for an account still waiting for its confirmation: {user_id, email, name, token, change}.
 
     `email` corrects the address first (a slip in it, noticed on the «letter is flying» screen): the
     account is not open yet, so no password is asked. None when the email is already confirmed.
@@ -458,7 +458,7 @@ def confirm_request(user_id: int, page: str = "", email: str | None = None) -> d
             token = _confirm_link(conn, user_id, address, page)
     except UniqueViolation as exc:
         raise DomainError("exists", 409) from exc
-    return {"email": address, "name": row["name"], "token": token, "change": False}
+    return {"user_id": user_id, "email": address, "name": row["name"], "token": token, "change": False}
 
 
 def confirm_email(token: str) -> dict:

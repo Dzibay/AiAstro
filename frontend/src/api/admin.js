@@ -79,6 +79,14 @@ export const adminApi = {
   fault: (faultId) => get(`/api/admin/faults/${id(faultId)}`),
   setFaultResolved: (faultId, resolved) => send(`/api/admin/faults/${id(faultId)}`, 'PUT', { resolved }),
   resolveAllFaults: () => send('/api/admin/faults/resolve', 'POST'),
+  /** The journal of letters; status: '' | sent | failed | off | sending | clicked. */
+  letters: ({ q = '', kind = '', status = '', offset = 0 } = {}) => get(`/api/admin/letters?${query({ q, kind, status, offset })}`),
+  /** Every kind of letter the site sends: when and to whom, with the last 30 days of each; and whether the mail is set up. */
+  letterKinds: () => get('/api/admin/letters/kinds'),
+  /** A sample of one kind of letter: { subject, html }. */
+  letterPreview: (kind) => get(`/api/admin/letters/preview/${id(kind)}`),
+  /** The letters sent to this person, newest first. */
+  userLetters: (userId) => get(`/api/admin/users/${id(userId)}/letters`),
   /** Copies of the base on Яндекс Диск: whether they are on, the last good one, the last attempts. */
   backups: () => get('/api/admin/backups'),
   backupCopies: () => get('/api/admin/backups/copies'),

@@ -367,6 +367,31 @@ CREATE TABLE IF NOT EXISTS backup_runs (
 
 CREATE INDEX IF NOT EXISTS backup_runs_started_idx ON backup_runs (started_at DESC);
 
+-- Журнал писем: каждое письмо сайта — строка. status: sending → sent | failed (error — почему) |
+-- off (почта не настроена). Кнопка письма ведёт через /api/site/go/<token>: clicks — сколько раз
+-- нажали, clicked_at — когда впервые. Письма человека живут, пока жив кабинет; пробные письма
+-- оператора (user_id пуст) стираются через 90 дней.
+CREATE TABLE IF NOT EXISTS letters (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    email TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'sending',
+    error TEXT NOT NULL DEFAULT '',
+    token TEXT UNIQUE,
+    clicks INTEGER NOT NULL DEFAULT 0,
+    clicked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    sent_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS letters_user_idx ON letters (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS letters_created_idx ON letters (created_at DESC);
+
+-- Письмо о незавершённой оплате уходит по платежу не больше одного раза.
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ;
+
 INSERT INTO app_settings (key, value) VALUES
     ('site_name', 'Астра'),
     ('tagline', 'Натальная карта обычным языком'),

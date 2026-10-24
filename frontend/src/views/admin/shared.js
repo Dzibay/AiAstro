@@ -97,6 +97,30 @@ export const PRODUCTS = {
   synastry: 'Разбор пары',
 }
 
+/** The kinds of letters, as the server's journal names them (app/outbox.py). */
+export const LETTER_KINDS = {
+  confirm: 'Подтверждение почты',
+  confirm_change: 'Подтверждение новой почты',
+  reset: 'Новый пароль',
+  paid_sky: 'Оплата «Небосвода»',
+  paid_pair: 'Оплата разбора пары',
+  pay_left: 'Незавершённая оплата',
+  sky_end: 'Скорый конец «Небосвода»',
+  partner_filled: 'Партнёр ответил на приглашение',
+  pair_linked: 'Пара стала общей',
+  pair_bought: 'Партнёр открыл разбор пары',
+  pair_gift: 'Подарок: разбор пары',
+  pair_left: 'Партнёр удалил пару',
+  test: 'Пробное письмо',
+}
+
+export const LETTER_STATUS = {
+  sending: { text: 'отправляется', tone: 'is-warn' },
+  sent: { text: 'ушло', tone: 'is-ok' },
+  failed: { text: 'не ушло', tone: 'is-bad' },
+  off: { text: 'почта не настроена', tone: 'is-warn' },
+}
+
 export function plural(n, one, few, many) {
   const mod10 = n % 10
   const mod100 = n % 100
@@ -352,6 +376,8 @@ export function eventText(item) {
       return GAME_ACTS[act] || name
     }
     case 'payment': return `Платёж: ${PRODUCTS[name] || name} · ${fmt.rub(item.value)} · ${PAYMENT_STATUS[item.status] || item.status}`
+    case 'letter': return `Письмо: ${LETTER_KINDS[name] || name} · ${LETTER_STATUS[item.status]?.text || item.status}`
+    case 'letter_click': return `Нажал кнопку в письме: ${LETTER_KINDS[name] || name}`
     default: return `${item.kind}: ${name}`
   }
 }

@@ -6,11 +6,15 @@ show only text. Tables and inline styles, since mail programs know little else; 
 on their own too, so a program that drops the gradients still shows a dark sky and a gold button.
 """
 
-from dataclasses import dataclass, field
+import logging
+from dataclasses import dataclass, field, replace
 from html import escape
 
-from app.mailer import link, send_quietly
+from app import outbox
+from app.mailer import MailOff, link, send
 from app.settings_store import setting
+
+log = logging.getLogger("aiastro")
 
 _BG = "#0d1311"
 _CARD = "#151e1b"
@@ -35,6 +39,8 @@ class Letter:
     after: list[str] = field(default_factory=list)
     # The smallest print at the very bottom: why this letter came, how to switch such letters off.
     foot: str = ""
+    # Which of outbox.KINDS it is: the journal and the admin's catalogue go by it.
+    kind: str = ""
 
 
 def _support() -> tuple[str, str]:
@@ -157,6 +163,26 @@ def html(letter: Letter) -> str:
 </html>"""
 
 
-def deliver(to: str, letter: Letter) -> bool:
-    """Sends in the site's look with the plain text alongside; a failure is only logged."""
-    return send_quietly(to, letter.subject, text(letter), html(letter))
+def deliver(to: str, letter: Letter, user_id: int | None = None) -> str:
+    """Sends in the site's look with the plain text alongside and writes it to the journal; the
+    button goes through our address, so a press is counted. A failure is only logged and given
+    back as text ('' — the letter went), never raised: letters go from the background."""
+    entry = None
+    try:
+        entry = outbox.begin(user_id, letter.kind, to, letter.subject)
+        if letter.url:
+            letter = replace(letter, url=outbox.tracked(entry["token"], letter.url))
+    except Exception as exc:  # noqa: BLE001 — a journal that cannot write must not keep the letter back
+        log.error("Письмо «%s» не записано в журнал: %s", letter.subject, exc)
+    try:
+        send(to, letter.subject, text(letter), html(letter))
+        status, error = "sent", ""
+    except Exception as exc:  # noqa: BLE001 — any SMTP or network failure is the same to the person
+        log.error("Письмо «%s» не ушло: %s", letter.subject, exc)
+        status, error = ("off" if isinstance(exc, MailOff) else "failed"), str(exc)[:300] or type(exc).__name__
+    if entry:
+        try:
+            outbox.end(entry, status, error)
+        except Exception as exc:  # noqa: BLE001
+            log.error("Письмо «%s»: исход не записан в журнал: %s", letter.subject, exc)
+    return error
