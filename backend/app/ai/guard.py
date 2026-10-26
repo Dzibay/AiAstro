@@ -89,6 +89,8 @@ _PRIVATE = re.compile(
     r"|национальн|политич|ориентац|сексуал|интим|судим|паспорт|телефон|адрес|\d{4,}"
 )
 _LIST_MARK = re.compile(r"^\s*(#{1,6}|[-*•]|\d+[.)])\s+")
+# «Ключ — …» written into the answer itself, as a paragraph or its last sentence: the service adds that line.
+_KEY_LINE = re.compile(r"(?:^|(?<=[.!?…»)]))\s*ключ\s*[—–:-]\s*(?P<key>.+)$", re.I)
 _LETTERS = re.compile(r"[a-zа-яё]", re.I)
 _CYRILLIC = re.compile(r"[а-яё]", re.I)
 
@@ -108,6 +110,30 @@ def _paragraphs(text: str) -> str:
         if paragraph:
             paragraphs.append(paragraph)
     return "\n\n".join(paragraphs)
+
+
+def split_key(answer: str, key: str) -> tuple[str, str]:
+    """The paragraphs without a «Ключ — …» of their own, and the key: the model's, else the one taken out.
+
+    The service shows the key in a line of its own; a model that also ends the answer with it
+    (as the examples read: «Ответ: … Ключ: …») would show it twice."""
+    kept, found = [], ""
+    for paragraph in re.split(r"\n\s*\n", answer):
+        mark = _KEY_LINE.search(paragraph)
+        if mark:
+            found = mark.group("key").strip()
+            paragraph = paragraph[:mark.start()]
+        if paragraph.strip():
+            kept.append(paragraph.strip())
+    return "\n\n".join(kept), key.strip() or found
+
+
+def mend(reading: dict) -> dict:
+    """A stored answer of the model from before split_key, with its own «Ключ — …» taken out the same way."""
+    if reading.get("kind") != "talk":
+        return reading
+    answer, key = split_key("\n\n".join(part["text"] for part in reading["parts"]), reading.get("key", ""))
+    return {**reading, "key": key, "parts": [{"label": "", "text": paragraph} for paragraph in answer.split("\n\n") if paragraph]}
 
 
 def _strings(value, most: int, longest: int) -> list[str] | None:
@@ -151,7 +177,7 @@ def check(data: dict | None, canary: str) -> tuple[dict | None, str]:
         return {"category": category, "answer": "", "key": "", "follow": [], "remember": []}, ""
     if "```" in answer:
         return None, "без кода и разметки, только абзацы"
-    answer = _paragraphs(answer)
+    answer, key = split_key(_paragraphs(answer), key)
     key = re.sub(r"^ключ\s*[—–:-]\s*", "", " ".join(key.split()), flags=re.I)
     shortest = ANSWER_MIN if category == "astro" else 15
     if not shortest <= len(answer) <= ANSWER_MAX:
