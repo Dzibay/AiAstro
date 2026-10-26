@@ -2,77 +2,84 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SiteHeader from '../components/SiteHeader.vue'
-import PlaceInput from '../components/ui/PlaceInput.vue'
 import { webApi } from '../api/web.js'
 import { ApiError, errorText } from '../api/http.js'
-import { readSession, writeSession } from '../composables/useSession.js'
+import { readSession, webToken, writeSession } from '../composables/useSession.js'
+import { START_PLACES, forgetSignIn, keptLetter, savedBirth, startSignIn } from '../composables/useSignIn.js'
 import { supportOf, useSiteConfig } from '../composables/useSiteConfig.js'
 import { useSky } from '../composables/useSky.js'
 import { useHead } from '../utils/useHead.js'
 import { likelyMeant, mailbox } from '../utils/mailbox.js'
-import { birthSigns, skyOn } from '../utils/skyToday.js'
+import { skyOn } from '../utils/skyToday.js'
 import { queue, reachGoal } from '../utils/track.js'
 
 /**
- * Login lies on the same sky as the home page, in its own pose (router meta.sky: 'login').
- * Registration takes two steps: who you are, then your sky. The sky answers both: a star for
- * the name, the engraving of the Sun sign for the birth date (see NameMark.vue).
+ * The way into the cabinet, on the same sky as the home page (router meta.sky: 'login'). One
+ * address serves the sign-up and the sign-in alike: a letter with a link and six digits goes to
+ * it, and the cabinet opens by either — the link on any device, the code right on this page. The
+ * password is the second way, for those who have set one in the profile.
  *
- * The cabinet opens once the email is confirmed: after the sign-up the card shows the letter
- * flying off, the button to the person's mailbox, and waits; the link in the letter (`?confirm=`)
- * or this very page, once it sees the confirmation, leads on to the cabinet.
+ * The birth data, the name and the password are asked in the cabinet, after the first look at the
+ * chart. An account from before the letters, signed in but not yet confirmed, gets the same
+ * letter screen (`?mode=confirm`), its session watching for the link.
  */
 
-/** The home page form leaves the birth data here for the second step. */
-const BIRTH_KEY = 'astra-birth'
-/** The cabinet page the confirmation leads to, for the link opened on this device in another tab. */
-const NEXT_KEY = 'astra-confirm-next'
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-/** The confirmation screen asks the server this often whether the link has been opened. */
+/** The confirmation screen of a signed-in account asks the server this often whether the link has been opened. */
 const WATCH_MS = 4000
 
 const route = useRoute()
 const router = useRouter()
 const { config, load } = useSiteConfig()
-const { mark, markUser, clearMark } = useSky()
+const { markUser, clearMark } = useSky()
 
 /** The letter's link brings `?reset=<token>`: the card asks for the new password straight away. */
 const resetToken = typeof route.query.reset === 'string' ? route.query.reset : ''
-/** The confirmation letter's link brings `?confirm=<token>`: the email is confirmed on arrival. */
+/** The letter's link brings `?confirm=<token>`: the cabinet opens on arrival. */
 const confirmToken = typeof route.query.confirm === 'string' ? route.query.confirm : ''
-const QUERY_MODES = ['register', 'confirm']
+const QUERY_MODES = { register: 'email', password: 'password', sent: 'sent', confirm: 'confirm' }
 /**
- * login | register | forgot (the email for the link) | reset (the new password by the link)
- * | confirm (the letter is on its way) | confirming (the letter's link is being opened).
+ * email (the address for the letter) | password | forgot (the email for the reset link) | reset
+ * (the new password by the link) | sent (the letter is on its way) | confirm (the same, for an
+ * account signed in before the letters) | confirming (the letter's link is being opened).
  */
-const mode = ref(resetToken ? 'reset' : confirmToken ? 'confirming' : QUERY_MODES.includes(route.query.mode) ? route.query.mode : 'login')
-const step = ref(1)
+const mode = ref(resetToken ? 'reset' : confirmToken ? 'confirming' : QUERY_MODES[route.query.mode] || 'email')
+/** Came for the chart (the buttons «Получить карту», a landing's form): the page greets a newcomer. */
+/** The birth data typed on the home page wait for the new cabinet: the chart is ready on arrival. */
+const birthWaiting = Boolean(savedBirth())
+const fresh = route.query.mode === 'register' || birthWaiting
+/** Where the address was given, for the funnel: the page that sent here, else the login itself. */
+const place = START_PLACES.includes(route.query.from) ? route.query.from : 'login'
+
 const email = ref('')
 const password = ref('')
-const name = ref('')
-/** `place` holds the coordinates once a city is picked from the suggestions. */
-const birth = reactive({ date: '', time: '', noTime: false, city: '', place: null })
+const code = ref('')
 const consent = ref(false)
+/** The consent's tick: shown to a newcomer at once, to anyone else once the server asks for it. */
+const askConsent = ref(fresh)
 const showPassword = ref(false)
 const message = ref('')
 const pending = ref(false)
-/** A quiet answer that is not an error: the link is on its way. */
+/** A quiet answer that is not an error: the letter is on its way. */
 const note = ref('')
-/** Set once the sky is entered: the card dissolves and the star stays for the cabinet. */
+/** Set once the cabinet is entered: the card dissolves and the star stays for the cabinet. */
 const leaving = ref(false)
+/** Signing in has begun: the session's arrival is this page's own, not another tab's. */
+let entering = false
+const emailField = ref(null)
+const codeField = ref(null)
 
 /**
- * The confirmation screen: the address the letter went to, the seconds before another one may
- * leave, the flight's number (a new letter flies off again), the address being corrected.
+ * The letter screen: the address the letter went to, the seconds before another may leave, the
+ * flight's number (a new letter flies off again), the address being corrected (a signed-in account).
  */
 const letter = reactive({ email: '', wait: 0, flight: 0, editing: false, value: '' })
 
-const registering = computed(() => mode.value === 'register')
-const onSky = computed(() => registering.value && step.value === 2)
 const forgot = computed(() => mode.value === 'forgot')
 const resetting = computed(() => mode.value === 'reset')
-const confirming = computed(() => mode.value === 'confirm' || mode.value === 'confirming')
-const headKey = computed(() => (registering.value ? `step-${step.value}` : mode.value))
+const lettered = computed(() => ['sent', 'confirm', 'confirming'].includes(mode.value))
+const waiting = computed(() => mode.value === 'sent' || mode.value === 'confirm')
+const asksPassword = computed(() => mode.value === 'password' || resetting.value)
 
 /** Where the cabinet opens: the page asked for, never another site or the login itself. */
 const target = computed(() => {
@@ -83,149 +90,127 @@ const target = computed(() => {
 /** The person's mail service ({ label, url }) and a likely slip in the address. */
 const box = computed(() => mailbox(letter.email))
 const slip = computed(() => likelyMeant(letter.email))
+const typedSlip = computed(() => (EMAIL.test(email.value.trim()) ? likelyMeant(email.value.trim()) : ''))
 const waitText = computed(() => `${Math.floor(letter.wait / 60)}:${String(letter.wait % 60).padStart(2, '0')}`)
+const digits = computed(() => code.value.replace(/\D/g, ''))
 
 const sky = skyOn(new Date())
 const today = `Сегодня Луна ${sky.moon.in}, ${sky.phase}`
 
-function isoDay(date) {
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-}
-const latest = isoDay(new Date())
-
-const dateKnown = computed(() => /^\d{4}-\d{2}-\d{2}$/.test(birth.date) && birth.date >= '1900-01-01' && birth.date <= latest)
-const timeKnown = computed(() => !birth.noTime && /^\d{2}:\d{2}$/.test(birth.time))
-
-/**
- * Signs by the real longitudes, so a birthday on the cusp gets an honest answer. Without the
- * time the Sun is taken at noon; the Moon moves a sign in two days, so it waits for the time.
- */
-const signs = computed(() => (dateKnown.value ? birthSigns(birth.date, timeKnown.value ? birth.time : '') : null))
-
-watch([registering, name], ([on, value]) => { mark.name = on ? value : '' }, { immediate: true })
-watch([registering, signs], ([on, value]) => {
-  mark.sun = on && value ? value.sun : ''
-  mark.moon = on && value ? value.moon : ''
-}, { immediate: true })
-
-/** The star settles on its own point of the sky and flashes once the name is typed. */
-function settleStar() {
-  const value = name.value.trim()
-  if (!registering.value || !value || value === mark.place) return
-  mark.place = value
-  mark.flash += 1
-}
-
 const TITLES = {
-  register: 'Регистрация',
   forgot: 'Новый пароль',
   reset: 'Новый пароль',
-  confirm: 'Подтверждение почты',
-  confirming: 'Подтверждение почты',
+  sent: 'Письмо для входа',
+  confirm: 'Письмо для входа',
+  confirming: 'Открываем кабинет',
 }
 // Sync, so a note set right after the switch of the mode stays.
 watch(mode, (value) => {
   message.value = ''
   note.value = ''
-  step.value = 1
   letter.editing = false
   useHead({ title: TITLES[value] || 'Вход', noindex: true })
 }, { immediate: true, flush: 'sync' })
-watch(step, () => { message.value = '' })
-// The header leads here as well, to the login side.
+// The header leads here as well, to the address.
 watch(() => route.query.mode, (value) => {
-  if (!confirmToken || value) mode.value = QUERY_MODES.includes(value) ? value : 'login'
+  if ((!confirmToken && !resetToken) || value) mode.value = QUERY_MODES[value] || 'email'
 })
-// The steps of the sign-up, for the path from the first visit to the cabinet.
-watch(registering, (on) => { if (on) queue('act', 'reg:open') }, { immediate: true })
+watch(mode, (value) => {
+  if (value === 'password') queue('act', 'login:password')
+})
 
 /** The API's codes in the voice of the page; the rest falls back to the common texts. */
 function say(error) {
   if (error instanceof ApiError && error.status < 500) {
     if (error.code === 'unauthorized') return 'Не узнаём эту почту с этим паролем'
-    if (error.code === 'blocked') {
-      const support = supportOf(config.value)
-      return support ? `Кабинет закрыт. Напишите нам: ${support.label}` : 'Кабинет закрыт. Напишите в поддержку'
-    }
-    if (error.code === 'exists') return 'Эта почта уже открывала кабинет — войдите'
-    if (error.code === 'mail_off') {
-      const support = supportOf(config.value)
-      return support ? `Письма пока не отправляются. Напишите нам: ${support.label}` : 'Письма пока не отправляются — напишите в поддержку'
-    }
+    const support = supportOf(config.value)
+    if (error.code === 'blocked') return support ? `Кабинет закрыт. Напишите нам: ${support.label}` : 'Кабинет закрыт. Напишите в поддержку'
+    if (error.code === 'mail_off') return support ? `Письма пока не отправляются. Напишите нам: ${support.label}` : 'Письма пока не отправляются — напишите в поддержку'
   }
   return errorText(error)
-}
-
-/** Step one is checked here, so a typo does not surface only after the second step. */
-function checkWho() {
-  if (!name.value.trim()) return 'Скажите, как к вам обращаться'
-  if (!EMAIL.test(email.value.trim())) return 'Почта выглядит неполной'
-  if (password.value.length < 8) return 'Пароль — не короче 8 символов'
-  return ''
-}
-
-function toSky() {
-  message.value = checkWho()
-  if (message.value) return
-  settleStar()
-  step.value = 2
-  queue('act', 'reg:who')
 }
 
 /** The card dissolves first, then the sky flies on to the cabinet with the person's star. */
 async function fly(user, to) {
   leaving.value = true
   markUser(user)
-  mark.flash += 1
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   await new Promise((resolve) => setTimeout(resolve, reduce ? 0 : 320))
   router.push(to)
 }
 
-async function enter(request, { registered = false } = {}) {
-  message.value = ''
-  pending.value = true
-  try {
-    const result = await request()
-    writeSession('web', result.token)
+/**
+ * In, by any way — the link, the code, the password, a cabinet opened at once: the session, the
+ * goals, the birth data typed on the home page if the cabinet has none yet, then the cabinet.
+ */
+async function signedInto(result, to, { first = false } = {}) {
+  entering = true
+  writeSession('web', result.token)
+  let user = result.user
+  if (first) {
+    reachGoal('astra.registration@success')
+    if (user?.birth) reachGoal('astra.birth@save')
+  }
+  const birth = savedBirth()
+  if (birth && user && !user.birth && user.email_confirmed !== false) {
     try {
-      sessionStorage.removeItem(BIRTH_KEY)
+      user = await webApi.setBirth(birth)
+      reachGoal('astra.birth@save')
     } catch {
-      /* private mode */
+      /* the cabinet asks for them again */
     }
-    if (registered) reachGoal('astra.registration@success')
-    if (registered && result.user?.birth) reachGoal('astra.birth@save')
-    // The email waits for its letter: the sign-up has just sent one, a login asks for a fresh one.
-    if (result.user?.email_confirmed === false) openConfirm(result.user, { sent: registered })
-    else await fly(result.user, target.value)
+  }
+  forgetSignIn()
+  entering = false
+  if (user?.email_confirmed === false) openConfirm(user)
+  else await fly(user, to)
+}
+
+// ---- The letter: the address first ----
+
+let begun = false
+/** The first character of the address for the letter: the funnel's step «Начали вводить почту», from this
+ * page's place. The address typed for the password is a sign-in, not a start. */
+function begin() {
+  if (begun || mode.value !== 'email') return
+  begun = true
+  queue('act', `email:${place}`)
+}
+
+/** The same answer whether the address is known or new: the letter goes, the screen waits for it. */
+async function sendLetter() {
+  const address = email.value.trim()
+  message.value = ''
+  note.value = ''
+  if (!EMAIL.test(address)) {
+    message.value = 'Почта выглядит неполной'
+    return
+  }
+  if (askConsent.value && !consent.value) {
+    message.value = 'Отметьте согласие на обработку данных'
+    return
+  }
+  pending.value = true
+  queue('act', `start:${place}`)
+  try {
+    const answer = await startSignIn({ email: address, consent: consent.value, next: target.value, place })
+    // The site's mail is not set up: a new cabinet opens at once.
+    if (answer.token) await signedInto(answer, target.value, { first: true })
+    else openSent(address, answer)
   } catch (error) {
-    if (error instanceof ApiError && error.code === 'exists') step.value = 1
-    message.value = say(error)
+    if (error instanceof ApiError && error.code === 'consent') {
+      askConsent.value = true
+      message.value = 'Похоже, вы у нас впервые: отметьте согласие — и письмо уйдёт'
+    } else if (error instanceof ApiError && error.code === 'mail_off') {
+      mode.value = 'password'
+      note.value = 'Письма пока не отправляются — войдите с паролем'
+    } else if (error instanceof ApiError && error.code === 'confirm_wait') {
+      openSent(address, { sent: false, wait: 60 })
+    } else {
+      message.value = say(error)
+    }
   } finally {
     pending.value = false
-  }
-}
-
-// ---- The confirmation of the email ----
-
-function keepNext() {
-  try {
-    if (target.value === '/cabinet') localStorage.removeItem(NEXT_KEY)
-    else localStorage.setItem(NEXT_KEY, target.value)
-  } catch {
-    /* private mode: the link leads to the cabinet's start */
-  }
-}
-
-/** The page kept for the link opened on this device; it is spent once read. */
-function keptNext() {
-  try {
-    const kept = localStorage.getItem(NEXT_KEY) || ''
-    localStorage.removeItem(NEXT_KEY)
-    return kept.startsWith('/cabinet') && !kept.includes('//') ? kept : ''
-  } catch {
-    return ''
   }
 }
 
@@ -239,22 +224,126 @@ function startWait(seconds) {
   }, 1000)
 }
 
-/** The screen of the flying letter; `sent` when the sign-up has just sent it, else a fresh one goes. */
-function openConfirm(user, { sent }) {
-  letter.email = user.email
-  letter.flight += 1
-  mode.value = 'confirm'
-  // The person's star stays on the sky while the letter flies (after the sign-up's own marks let go).
-  nextTick(() => markUser(user))
-  keepNext()
-  // A reload keeps the screen: the address says what it is.
-  if (route.query.mode !== 'confirm') router.replace({ query: { mode: 'confirm', next: target.value === '/cabinet' ? undefined : target.value } })
-  if (sent) startWait(60)
-  else resend({ quiet: true })
+/** On a computer the code is typed at once; a phone keeps its keyboard down until the field is touched. */
+function focusCode() {
+  if (window.matchMedia('(pointer: fine)').matches) nextTick(() => codeField.value?.focus())
 }
 
-/** Another letter; `quiet` for the one sent on its own when the screen opens. */
-async function resend({ quiet = false } = {}) {
+/** The screen of the flying letter; `sent` false — the previous letter is still fresh and no new one went. */
+function openSent(address, { sent = true, wait = 60 } = {}) {
+  letter.email = address
+  letter.flight += 1
+  code.value = ''
+  mode.value = 'sent'
+  // A reload keeps the screen: the address says what it is (the email itself stays in this tab).
+  if (route.query.mode !== 'sent') router.replace({ query: { mode: 'sent', next: route.query.next, from: route.query.from } })
+  startWait(wait)
+  if (!sent) note.value = 'Письмо уже в пути — новое можно попросить через минуту'
+  focusCode()
+}
+
+/** Another letter to the same address; its code replaces the previous one. */
+async function resend() {
+  if (letter.wait > 0 || pending.value) return
+  if (mode.value === 'confirm') {
+    await resendConfirm()
+    return
+  }
+  message.value = ''
+  note.value = ''
+  pending.value = true
+  try {
+    const answer = await startSignIn({ email: letter.email, next: target.value, place })
+    if (answer.token) {
+      await signedInto(answer, target.value, { first: true })
+      return
+    }
+    if (answer.sent) {
+      letter.flight += 1
+      code.value = ''
+      note.value = 'Свежее письмо уже летит к вам — код в нём новый'
+      queue('act', 'confirm:resend')
+    } else {
+      note.value = 'Письмо уже в пути'
+    }
+    startWait(answer.wait)
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'confirm_wait') startWait(60)
+    else if (error instanceof ApiError && error.code === 'consent') {
+      // The cabinet was deleted meanwhile: the address is new again.
+      email.value = letter.email
+      mode.value = 'email'
+      askConsent.value = true
+    } else message.value = say(error)
+  } finally {
+    pending.value = false
+  }
+}
+
+/** A slip in the address: back to the address, as it was typed. */
+function otherAddress(value = letter.email) {
+  email.value = value
+  mode.value = 'email'
+  if (route.query.mode === 'sent') router.replace({ query: { next: route.query.next, from: route.query.from } })
+  nextTick(() => emailField.value?.focus())
+}
+
+/** The six digits typed here: the same as the letter's link, for a letter opened on another device. */
+async function submitCode() {
+  if (pending.value) return
+  message.value = ''
+  note.value = ''
+  if (digits.value.length !== 6) {
+    message.value = 'В коде шесть цифр — он в письме под кнопкой'
+    return
+  }
+  pending.value = true
+  try {
+    const result = await webApi.code({ email: letter.email, code: digits.value })
+    if (result.first) reachGoal('astra.email@confirm')
+    await signedInto(result, result.next || target.value, { first: result.first })
+  } catch (error) {
+    code.value = ''
+    if (error instanceof ApiError && error.code === 'code') message.value = 'Код не подошёл — проверьте цифры в последнем письме'
+    else if (error instanceof ApiError && error.code === 'code_old') message.value = 'Этот код больше не действует — попросите новое письмо'
+    else message.value = say(error)
+    focusCode()
+  } finally {
+    pending.value = false
+  }
+}
+
+// Six digits typed or pasted («482 915» too): the cabinet opens without a press of the button.
+watch(code, (value) => {
+  const clean = value.replace(/\D/g, '').slice(0, 6)
+  if (clean !== value) code.value = clean
+  else if (clean.length === 6 && waiting.value && !letter.editing) submitCode()
+})
+
+// The link opened in another tab of this browser: this page follows it into the cabinet.
+watch(webToken, async (token) => {
+  if (!token || mode.value !== 'sent' || leaving.value || entering) return
+  const me = await webApi.me().catch(() => null)
+  if (me?.email_confirmed && mode.value === 'sent' && !leaving.value && !entering) {
+    forgetSignIn()
+    await fly(me, target.value)
+  }
+})
+
+// ---- An account signed in before the letters: its confirmation ----
+
+/** The letter screen for the account's own address; a fresh letter goes unless one has just gone. */
+function openConfirm(user) {
+  letter.email = user.email
+  letter.flight += 1
+  code.value = ''
+  mode.value = 'confirm'
+  nextTick(() => markUser(user))
+  if (route.query.mode !== 'confirm') router.replace({ query: { mode: 'confirm', next: target.value === '/cabinet' ? undefined : target.value } })
+  resendConfirm({ quiet: true })
+}
+
+async function resendConfirm({ quiet = false } = {}) {
   if (letter.wait > 0 || pending.value) return
   message.value = ''
   note.value = ''
@@ -263,19 +352,20 @@ async function resend({ quiet = false } = {}) {
     const answer = await webApi.confirmSend({ next: target.value })
     if (!answer.sent) {
       // Confirmed meanwhile, in another tab or on another device.
-      await fly(answer.user, keptNext() || target.value)
+      await fly(answer.user, target.value)
       return
     }
     letter.email = answer.user.email
     if (!quiet) {
       letter.flight += 1
-      note.value = 'Свежее письмо уже летит к вам'
+      code.value = ''
+      note.value = 'Свежее письмо уже летит к вам — код в нём новый'
       queue('act', 'confirm:resend')
     }
     startWait(answer.pause || 60)
   } catch (error) {
     if (error instanceof ApiError && error.code === 'confirm_wait') startWait(60)
-    else if (error instanceof ApiError && error.status === 401) mode.value = 'login'
+    else if (error instanceof ApiError && error.status === 401) mode.value = 'email'
     else if (!quiet) message.value = say(error)
   } finally {
     pending.value = false
@@ -306,12 +396,13 @@ async function changeAddress(value = letter.value) {
   try {
     const answer = await webApi.confirmSend({ email: address, next: target.value })
     if (!answer.sent) {
-      await fly(answer.user, keptNext() || target.value)
+      await fly(answer.user, target.value)
       return
     }
     letter.email = answer.user.email
     letter.editing = false
     letter.flight += 1
+    code.value = ''
     note.value = 'Письмо летит на новый адрес'
     queue('act', 'confirm:change')
     startWait(answer.pause || 60)
@@ -325,22 +416,13 @@ async function changeAddress(value = letter.value) {
 }
 
 /** The page checks by itself whether the link has been opened, and leads on once it is. */
-async function checkConfirmed({ loud = false } = {}) {
+async function checkConfirmed() {
   if (mode.value !== 'confirm' || leaving.value || !readSession('web')) return
-  if (loud) {
-    message.value = ''
-    note.value = ''
-  }
   try {
     const me = await webApi.me()
-    if (me.email_confirmed) {
-      if (mode.value === 'confirm' && !leaving.value) await fly(me, keptNext() || target.value)
-    } else if (loud) {
-      note.value = 'Письмо ещё в пути — ссылка в нём откроет кабинет'
-    }
+    if (me.email_confirmed && mode.value === 'confirm' && !leaving.value) await fly(me, target.value)
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401) mode.value = 'login'
-    else if (loud) message.value = say(error)
+    if (error instanceof ApiError && error.status === 401) mode.value = 'email'
   }
 }
 
@@ -360,28 +442,28 @@ function onVisible() {
 /** Opened by `?mode=confirm` (the cabinet sent here): the address is the account's own. */
 async function resumeConfirm() {
   if (!readSession('web')) {
-    mode.value = 'login'
+    mode.value = 'email'
     return
   }
   try {
     const me = await webApi.me()
-    if (me.email_confirmed) await fly(me, keptNext() || target.value)
-    else openConfirm(me, { sent: false })
+    if (me.email_confirmed) await fly(me, target.value)
+    else openConfirm(me)
   } catch (error) {
-    mode.value = 'login'
+    mode.value = 'email'
     if (!(error instanceof ApiError && error.status === 401)) message.value = say(error)
   }
 }
 
-/** The letter's link: the email is the person's, and the cabinet opens on this device. */
+// ---- The letter's link ----
+
 async function confirmByLink() {
   message.value = ''
   pending.value = true
   try {
     const result = await webApi.confirm(confirmToken)
-    writeSession('web', result.token)
-    reachGoal('astra.email@confirm')
-    await fly(result.user, keptNext() || result.next || '/cabinet')
+    if (result.first) reachGoal('astra.email@confirm')
+    await signedInto(result, result.next || '/cabinet', { first: result.first })
   } catch (error) {
     if (!(error instanceof ApiError) || error.status >= 500) {
       // The link is still whole: the button tries it again.
@@ -391,43 +473,58 @@ async function confirmByLink() {
     router.replace({ name: 'login' })
     const known = readSession('web') ? await webApi.me().catch(() => null) : null
     if (known?.email_confirmed) {
-      await fly(known, keptNext() || '/cabinet')
+      // Opened twice — the first time has signed this browser in already.
+      await fly(known, '/cabinet')
       return
     }
     if (known) {
-      openConfirm(known, { sent: false })
+      openConfirm(known)
       note.value = 'Эта ссылка уже отслужила своё — свежая уже летит к вам'
       return
     }
-    mode.value = 'login'
-    if (error.code === 'confirm_link') note.value = 'Эта ссылка уже отслужила своё. Войдите — и, если почта ещё ждёт подтверждения, пришлём свежую'
+    mode.value = 'email'
+    if (error.code === 'confirm_link') note.value = 'Эта ссылка уже отслужила своё. Укажите почту — пришлём свежую'
     else message.value = say(error)
   } finally {
     pending.value = false
   }
 }
 
-/** Registers with the birth data, or without it when the person fills it in later. */
-function finish(withBirth) {
-  if (!consent.value) {
-    message.value = 'Отметьте согласие на обработку данных'
+// ---- The password: the second way ----
+
+async function signInWithPassword() {
+  const address = email.value.trim()
+  message.value = ''
+  note.value = ''
+  if (!EMAIL.test(address)) {
+    message.value = 'Почта выглядит неполной'
     return
   }
-  if (withBirth && !dateKnown.value) {
-    message.value = 'Укажите дату рождения — или заполните позже'
+  if (!password.value) {
+    message.value = 'Введите пароль — или войдите по письму'
     return
   }
-  // The letter's link leads where the person was going: the cabinet or the page of it they came for.
-  const body = { email: email.value.trim(), password: password.value, name: name.value.trim(), consent: true, next: target.value }
-  if (withBirth) {
-    body.birth = { date: birth.date, time: timeKnown.value ? birth.time : null, place: birth.city.trim() || null }
-    if (birth.place) Object.assign(body.birth, { lat: birth.place.lat, lon: birth.place.lon })
+  pending.value = true
+  let noPassword = false
+  try {
+    const result = await webApi.login({ email: address, password: password.value })
+    await signedInto(result, target.value)
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'no_password') noPassword = true
+    else message.value = say(error)
+  } finally {
+    pending.value = false
   }
-  enter(() => webApi.register(body), { registered: true })
+  if (noPassword) {
+    // The cabinet has never had a password: the letter goes instead, one press saved.
+    mode.value = 'email'
+    await sendLetter()
+    if (mode.value === 'sent') note.value = 'У этого кабинета нет пароля — письмо для входа уже летит к вам'
+  }
 }
 
 /** The same answer whether the mail is known or not: the form does not tell whose it is. */
-async function sendLink() {
+async function sendResetLink() {
   message.value = ''
   note.value = ''
   if (!EMAIL.test(email.value.trim())) {
@@ -437,7 +534,24 @@ async function sendLink() {
   pending.value = true
   try {
     await webApi.forgotPassword(email.value.trim())
-    note.value = 'Если кабинет с этой почтой есть, письмо со ссылкой уже летит к вам. Ссылка открыта час.'
+    note.value = 'Если у кабинета с этой почтой есть пароль, письмо со ссылкой уже летит к вам. Ссылка открыта час.'
+  } catch (error) {
+    message.value = say(error)
+  } finally {
+    pending.value = false
+  }
+}
+
+async function savePassword() {
+  if (password.value.length < 8) {
+    message.value = 'Пароль — не короче 8 символов'
+    return
+  }
+  message.value = ''
+  pending.value = true
+  try {
+    const result = await webApi.resetPassword({ token: resetToken, password: password.value })
+    await signedInto(result, target.value)
   } catch (error) {
     message.value = say(error)
   } finally {
@@ -447,47 +561,55 @@ async function sendLink() {
 
 function submit() {
   if (mode.value === 'confirming') confirmByLink()
-  else if (mode.value === 'confirm') {
+  else if (waiting.value) {
     if (letter.editing) changeAddress()
-    else checkConfirmed({ loud: true })
-  } else if (forgot.value) sendLink()
-  else if (resetting.value) {
-    if (password.value.length < 8) message.value = 'Пароль — не короче 8 символов'
-    else enter(() => webApi.resetPassword({ token: resetToken, password: password.value }))
-  } else if (!registering.value) enter(() => webApi.login({ email: email.value.trim(), password: password.value }))
-  else if (step.value === 1) toSky()
-  else finish(true)
+    else submitCode()
+  } else if (forgot.value) sendResetLink()
+  else if (resetting.value) savePassword()
+  else if (mode.value === 'password') signInWithPassword()
+  else sendLetter()
 }
 
 const cta = computed(() => {
   if (pending.value) return 'Минуту…'
-  if (mode.value === 'confirming') return 'Подтвердить почту'
-  if (mode.value === 'confirm') return letter.editing ? 'Отправить на этот адрес' : 'Проверить подтверждение'
+  if (mode.value === 'confirming') return 'Открыть кабинет'
+  if (waiting.value) return letter.editing ? 'Отправить на этот адрес' : 'Войти по коду'
   if (forgot.value) return 'Прислать ссылку'
   if (resetting.value) return 'Сохранить и войти'
-  if (!registering.value) return 'Войти'
-  return step.value === 1 ? 'Дальше' : 'Открыть моё небо'
+  if (mode.value === 'password') return 'Войти'
+  return fresh ? 'Получить карту бесплатно' : 'Получить письмо для входа'
 })
+/** While no digit is typed, the gold button leads to the person's mail, where the letter waits. */
+const toMailbox = computed(() => waiting.value && !letter.editing && box.value && !digits.value)
+
+const kicker = computed(() => {
+  if (lettered.value) return mode.value === 'confirming' ? '' : 'Последний шаг'
+  if (mode.value === 'email' && fresh) return 'Натальная карта · бесплатно'
+  return ''
+})
+const headKey = computed(() => mode.value)
 
 onMounted(() => {
   load()
-  try {
-    const saved = JSON.parse(sessionStorage.getItem(BIRTH_KEY) || 'null')
-    if (saved && typeof saved === 'object') {
-      for (const key of ['date', 'time', 'city']) if (typeof saved[key] === 'string') birth[key] = saved[key]
-      birth.noTime = saved.noTime === true
-      // A landing page also brings the city it found on the map.
-      const place = saved.place
-      if (place && place.label === birth.city && Number.isFinite(place.lat) && Number.isFinite(place.lon)) {
-        birth.place = { label: place.label, lat: place.lat, lon: place.lon, tz: typeof place.tz === 'string' ? place.tz : '' }
-      }
-    }
-  } catch {
-    /* private mode or a broken value */
-  }
   document.addEventListener('visibilitychange', onVisible)
   if (confirmToken) confirmByLink()
   else if (mode.value === 'confirm') resumeConfirm()
+  else {
+    const kept = keptLetter()
+    if (kept) email.value = kept.email
+    if (mode.value === 'sent') {
+      // A letter sent from the home page or a landing, or this screen reloaded.
+      if (kept) {
+        letter.email = kept.email
+        letter.flight += 1
+        startWait(kept.wait)
+        if (!kept.sent) note.value = 'Письмо уже в пути — новое можно попросить через минуту'
+        focusCode()
+      } else {
+        mode.value = 'email'
+      }
+    }
+  }
 })
 
 onUnmounted(() => {
@@ -506,41 +628,35 @@ onUnmounted(() => {
         <form class="login-card" novalidate @submit.prevent="submit">
           <span class="card-sheen" aria-hidden="true" />
 
-          <div v-if="!confirming" class="mode-toggle" role="group" aria-label="Вход или регистрация">
-            <span class="mode-thumb" :class="{ 'is-right': registering }" aria-hidden="true" />
-            <button type="button" :aria-pressed="!registering" @click="mode = 'login'">Вход</button>
-            <button type="button" :aria-pressed="registering" @click="mode = 'register'">Регистрация</button>
-          </div>
-
           <Transition name="swap" mode="out-in">
             <div :key="headKey" class="card-head">
-              <p v-if="registering" class="step-kicker">Шаг {{ step }} из 2</p>
-              <p v-else-if="confirming" class="step-kicker">Последний шаг</p>
+              <p v-if="kicker" class="step-kicker">{{ kicker }}</p>
               <h1>
-                <template v-if="mode === 'confirming'">Открываем <em>небо</em></template>
-                <template v-else-if="mode === 'confirm'">Письмо <em>летит</em> к вам</template>
+                <template v-if="mode === 'confirming'">Открываем <em>кабинет</em></template>
+                <template v-else-if="lettered">Письмо <em>летит</em> к вам</template>
                 <template v-else-if="forgot || resetting">Новый <em>пароль</em></template>
-                <template v-else-if="!registering">С <em>возвращением</em></template>
-                <template v-else-if="step === 1">Откройте <em>своё</em> небо</template>
-                <template v-else>Ваше <em>небо</em></template>
+                <template v-else-if="mode === 'password'">Вход <em>с паролем</em></template>
+                <template v-else-if="fresh">Ваша карта — <em>в одном письме</em></template>
+                <template v-else>Вход в <em>кабинет</em></template>
               </h1>
               <p>
-                <template v-if="mode === 'confirming'">Подтверждаем почту — ещё мгновение, и кабинет откроется.</template>
-                <template v-else-if="mode === 'confirm'">
-                  Ссылка ушла на <strong class="address">{{ letter.email || 'вашу почту' }}</strong>.
-                  Откройте письмо и нажмите «Подтвердить» — кабинет откроется сразу.
+                <template v-if="mode === 'confirming'">Проверяем ссылку — ещё мгновение, и кабинет откроется.</template>
+                <template v-else-if="lettered">
+                  Ссылка и код ушли на <strong class="address">{{ letter.email || 'вашу почту' }}</strong>.
+                  Нажмите кнопку в письме — или введите код здесь.
                 </template>
                 <template v-else-if="forgot">Назовите почту кабинета — пришлём ссылку, по которой можно задать новый пароль.</template>
-                <template v-else-if="resetting">Придумайте новый пароль — и небо откроется сразу.</template>
-                <template v-else-if="!registering">Ваше небо на месте. Войдите, чтобы продолжить.</template>
-                <template v-else-if="step === 1">Назовите себя — и на небе зажжётся ваша звезда.</template>
-                <template v-else>Дата покажет знак Солнца, время — Луну. Натальная карта бесплатна навсегда.</template>
+                <template v-else-if="resetting">Придумайте новый пароль — и кабинет откроется сразу.</template>
+                <template v-else-if="mode === 'password'">Если вы задавали пароль в профиле. Нет пароля — войдите по письму.</template>
+                <template v-else-if="fresh && birthWaiting">Укажите почту — пришлём ссылку, и кабинет откроется с готовой натальной картой. Пароль не нужен.</template>
+                <template v-else-if="fresh">Укажите почту — пришлём ссылку. В кабинете останется назвать дату рождения, и карта готова. Пароль не нужен.</template>
+                <template v-else>Укажите почту — пришлём ссылку и код. Кабинета ещё нет? Он откроется по тому же письму.</template>
               </p>
             </div>
           </Transition>
 
           <Transition name="swap" mode="out-in">
-            <div v-if="confirming" key="letter" class="fields">
+            <div v-if="lettered" key="letter" class="fields">
               <div class="flight" :class="{ 'is-opening': mode === 'confirming' }">
                 <svg :key="letter.flight" class="flight-sky" viewBox="0 0 300 150" aria-hidden="true">
                   <defs>
@@ -599,16 +715,37 @@ onUnmounted(() => {
                     </g>
                   </g>
                 </svg>
-                <p v-if="mode === 'confirm'" class="flight-status" role="status">
+                <p v-if="waiting" class="flight-status" role="status">
                   <span class="pulse" aria-hidden="true" />
-                  Ждём подтверждения — кабинет откроется сам
+                  Ждём вас — ссылка или код откроют кабинет
                 </p>
               </div>
 
-              <template v-if="mode === 'confirm'">
+              <template v-if="waiting">
+                <label v-if="!letter.editing" class="field">
+                  <span class="field-label">Код из письма</span>
+                  <input
+                    ref="codeField"
+                    v-model="code"
+                    class="code-input"
+                    type="text"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    maxlength="7"
+                    placeholder="······"
+                    aria-describedby="code-hint"
+                    :disabled="pending"
+                  />
+                  <span id="code-hint" class="field-hint">Шесть цифр под кнопкой в письме — для письма, открытого на другом устройстве</span>
+                </label>
                 <p v-if="slip && !letter.editing" class="slip">
                   Может быть, почта —
-                  <button type="button" class="forgot-link" :disabled="pending" @click="changeAddress(slip)">{{ slip }}</button>?
+                  <button
+                    type="button"
+                    class="forgot-link"
+                    :disabled="pending"
+                    @click="mode === 'confirm' ? changeAddress(slip) : otherAddress(slip)"
+                  >{{ slip }}</button>?
                 </p>
                 <label v-if="letter.editing" class="field">
                   <span class="field-label">Почта для письма</span>
@@ -617,37 +754,36 @@ onUnmounted(() => {
               </template>
             </div>
 
-            <div v-else-if="!onSky" key="who" class="fields">
-              <div class="reveal" :class="{ 'is-open': registering }" :inert="!registering">
-                <label class="field">
-                  <span class="field-label">Как вас зовут</span>
-                  <input
-                    v-model="name"
-                    type="text"
-                    autocomplete="given-name"
-                    placeholder="Имя"
-                    maxlength="40"
-                    :tabindex="registering ? 0 : -1"
-                    @blur="settleStar"
-                  />
-                </label>
-              </div>
+            <div v-else key="form" class="fields">
               <label v-if="!resetting" class="field">
                 <span class="field-label">Почта</span>
-                <input v-model="email" type="email" autocomplete="email" inputmode="email" required />
+                <input
+                  ref="emailField"
+                  v-model="email"
+                  type="email"
+                  autocomplete="email"
+                  inputmode="email"
+                  placeholder="name@mail.ru"
+                  required
+                  @input="begin"
+                />
               </label>
-              <div v-if="!forgot" class="field">
+              <p v-if="typedSlip && !asksPassword" class="slip is-left">
+                Может быть, почта —
+                <button type="button" class="forgot-link" @click="email = typedSlip">{{ typedSlip }}</button>?
+              </p>
+              <div v-if="asksPassword" class="field">
                 <span class="field-head">
                   <label class="field-label" for="login-password">{{ resetting ? 'Новый пароль' : 'Пароль' }}</label>
-                  <button v-if="mode === 'login'" type="button" class="forgot-link" @click="mode = 'forgot'">Забыли?</button>
+                  <button v-if="mode === 'password'" type="button" class="forgot-link" @click="mode = 'forgot'">Забыли?</button>
                 </span>
                 <span class="password">
                   <input
                     id="login-password"
                     v-model="password"
                     :type="showPassword ? 'text' : 'password'"
-                    :autocomplete="registering || resetting ? 'new-password' : 'current-password'"
-                    :placeholder="registering || resetting ? 'Не короче 8 символов' : ''"
+                    :autocomplete="resetting ? 'new-password' : 'current-password'"
+                    :placeholder="resetting ? 'Не короче 8 символов' : ''"
                     required
                   />
                   <button
@@ -665,43 +801,21 @@ onUnmounted(() => {
                   </button>
                 </span>
               </div>
-            </div>
-
-            <div v-else key="sky" class="fields">
-              <div class="form-row">
-                <label class="field">
-                  <span class="field-label">Дата рождения</span>
-                  <input v-model="birth.date" type="date" min="1900-01-01" :max="latest" />
-                </label>
-                <div class="field">
-                  <span class="field-head">
-                    <label class="field-label" for="login-time">Время</label>
-                    <label class="check">
-                      <input v-model="birth.noTime" type="checkbox" />
-                      <span class="check-box" aria-hidden="true" />
-                      <span>не знаю</span>
-                    </label>
+              <template v-if="mode === 'email' && askConsent">
+                <label class="check consent">
+                  <input v-model="consent" type="checkbox" />
+                  <span class="check-box" aria-hidden="true" />
+                  <span>
+                    Даю согласие на обработку
+                    <a href="/legal/consent" target="_blank" rel="noopener">персональных данных</a>
                   </span>
-                  <input id="login-time" v-model="birth.time" type="time" :disabled="birth.noTime" />
-                </div>
-              </div>
-              <div class="field">
-                <label class="field-label" for="login-city">Город рождения</label>
-                <PlaceInput id="login-city" v-model="birth.city" v-model:place="birth.place" />
-              </div>
-              <label class="check consent">
-                <input v-model="consent" type="checkbox" />
-                <span class="check-box" aria-hidden="true" />
-                <span>
-                  Даю согласие на обработку
-                  <a href="/legal/consent" target="_blank" rel="noopener">персональных данных</a>
-                </span>
-              </label>
-              <p class="terms">
-                Создавая кабинет, вы принимаете условия
-                <a href="/legal/offer" target="_blank" rel="noopener">оферты</a> и
-                <a href="/legal/privacy" target="_blank" rel="noopener">политики конфиденциальности</a>.
-              </p>
+                </label>
+                <p class="terms">
+                  Открывая кабинет, вы принимаете условия
+                  <a href="/legal/offer" target="_blank" rel="noopener">оферты</a> и
+                  <a href="/legal/privacy" target="_blank" rel="noopener">политики конфиденциальности</a>.
+                </p>
+              </template>
             </div>
           </Transition>
 
@@ -711,7 +825,7 @@ onUnmounted(() => {
           </Transition>
 
           <a
-            v-if="mode === 'confirm' && box && !letter.editing"
+            v-if="toMailbox"
             class="gold-cta"
             :href="box.url"
             target="_blank"
@@ -725,7 +839,20 @@ onUnmounted(() => {
             <span>{{ cta }}</span>
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4" /></svg>
           </button>
-          <template v-if="mode === 'confirm'">
+
+          <div v-if="mode === 'email'" class="step-actions is-center">
+            <button type="button" class="quiet" :disabled="pending" @click="mode = 'password'">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="2" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></svg>
+              Войти с паролем
+            </button>
+          </div>
+          <div v-else-if="mode === 'password'" class="step-actions is-center">
+            <button type="button" class="quiet" :disabled="pending" @click="mode = 'email'">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3.5" width="12" height="9" rx="2" /><path d="m2.5 4.5 5.5 4.5 5.5-4.5" /></svg>
+              Войти по письму, без пароля
+            </button>
+          </div>
+          <template v-else-if="waiting">
             <div v-if="letter.editing" class="step-actions">
               <button type="button" class="quiet" :disabled="pending" @click="letter.editing = false">
                 <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 8H3M7 4 3 8l4 4" /></svg>
@@ -739,23 +866,21 @@ onUnmounted(() => {
                   <template v-if="letter.wait > 0">Ещё раз — через {{ waitText }}</template>
                   <template v-else>Отправить ещё раз</template>
                 </button>
-                <button type="button" class="quiet" :disabled="pending" @click="editAddress()">Изменить почту</button>
+                <button
+                  type="button"
+                  class="quiet"
+                  :disabled="pending"
+                  @click="mode === 'confirm' ? editAddress() : otherAddress()"
+                >Другая почта</button>
               </div>
-              <p class="mail-tip">Если письма нет во «Входящих», загляните в «Спам» или «Промоакции» — иногда оно прячется там.</p>
+              <p class="mail-tip">Письма нет во «Входящих»? Загляните в «Спам» или «Промоакции» — иногда оно прячется там.</p>
             </template>
           </template>
           <div v-if="forgot || resetting" class="step-actions">
-            <button type="button" class="quiet" :disabled="pending" @click="mode = 'login'">
+            <button type="button" class="quiet" :disabled="pending" @click="mode = 'password'">
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 8H3M7 4 3 8l4 4" /></svg>
               Ко входу
             </button>
-          </div>
-          <div v-if="onSky" class="step-actions">
-            <button type="button" class="quiet" :disabled="pending" @click="step = 1">
-              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 8H3M7 4 3 8l4 4" /></svg>
-              Назад
-            </button>
-            <button type="button" class="quiet" :disabled="pending" @click="finish(false)">Заполню позже</button>
           </div>
         </form>
 
@@ -824,68 +949,23 @@ onUnmounted(() => {
   animation: card-sheen 1.8s ease 0.9s forwards;
 }
 
-.mode-toggle {
-  position: relative;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  padding: 3px;
-  border-radius: 999px;
-  border: 1px solid rgba(240, 210, 150, 0.22);
-  background: rgba(255, 240, 210, 0.03);
-}
-.mode-toggle button {
-  position: relative;
-  padding: 7px 14px;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  letter-spacing: 0.04em;
-  color: rgba(226, 220, 210, 0.7);
-  cursor: pointer;
-  transition: color 0.3s ease;
-}
-.mode-toggle button[aria-pressed='true'] { color: #2b1d0b; }
-.mode-toggle button:focus-visible { outline: 1px solid #f0cd8a; outline-offset: 2px; border-radius: 999px; }
-.mode-thumb {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: 3px;
-  width: calc(50% - 3px);
-  border-radius: 999px;
-  background: linear-gradient(180deg, #f4dba6, #dcb36c);
-  transition: transform 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
-}
-.mode-thumb.is-right { transform: translateX(100%); }
 
 .card-head { display: grid; gap: 6px; margin: 4px 0 2px; }
-.step-kicker { margin: 0; font-size: 10px; letter-spacing: 0.26em; text-transform: uppercase; color: rgba(233, 194, 124, 0.75); }
+.step-kicker { margin: 0; font-size: 11px; letter-spacing: 0.26em; text-transform: uppercase; color: rgba(233, 194, 124, 0.75); }
 .card-head h1 {
   margin: 0;
   font-family: var(--serif);
   font-weight: 500;
-  font-size: 32px;
-  line-height: 1.05;
+  font-size: 34px;
+  line-height: 1.08;
   color: #f6efe2;
 }
 .card-head em { font-style: italic; color: #f0cd8a; }
-.card-head p:not(.step-kicker) { margin: 0; font-size: 14px; line-height: 1.5; color: rgba(226, 220, 210, 0.7); }
+.card-head p:not(.step-kicker) { margin: 0; font-size: 15px; line-height: 1.55; color: rgba(236, 230, 220, 0.8); }
 
 .fields { display: grid; gap: 14px; }
 
-/* The name field opens as a row, so the card grows instead of jumping. */
-.reveal {
-  display: grid;
-  grid-template-rows: 0fr;
-  margin-bottom: -14px;
-  opacity: 0;
-  transition: grid-template-rows 0.45s cubic-bezier(0.3, 0.7, 0.2, 1), margin 0.45s cubic-bezier(0.3, 0.7, 0.2, 1), opacity 0.3s ease;
-}
-.reveal > * { min-height: 0; overflow: hidden; }
-.reveal.is-open { grid-template-rows: 1fr; margin-bottom: 0; opacity: 1; }
 
-.form-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 12px; }
 .field { display: grid; gap: 7px; min-width: 0; }
 .field-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .field-label { line-height: 16px; font-size: 10.5px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(226, 214, 192, 0.66); }
@@ -1065,6 +1145,23 @@ onUnmounted(() => {
 .quiet:disabled { opacity: 0.5; cursor: progress; }
 .quiet svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
+/* The letter's six digits: wide, in two breaths, like on the letter itself. */
+.field input.code-input {
+  height: 58px;
+  padding: 0 0 0 0.5em;
+  font-size: 28px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5em;
+  text-align: center;
+  color: #f4dba6;
+}
+.field input.code-input::placeholder { color: rgba(240, 210, 150, 0.28); letter-spacing: 0.5em; }
+.field-hint { font-size: 12px; line-height: 1.45; color: rgba(226, 220, 210, 0.55); }
+
+.step-actions.is-center { justify-content: center; }
+.slip.is-left { margin-top: -6px; text-align: left; }
+
 .sky-now {
   display: flex;
   align-items: center;
@@ -1085,7 +1182,7 @@ a.gold-cta { box-sizing: border-box; text-decoration: none; }
 /* ---- The letter: slides into the envelope, the flap closes, the seal lands, it flies off to a star. ---- */
 .card-head .address { font-weight: 600; color: #f6efe2; overflow-wrap: anywhere; }
 .flight { position: relative; margin: -4px 0 -2px; }
-.flight-sky { display: block; width: 100%; max-width: 320px; height: auto; margin: 0 auto; overflow: visible; }
+.flight-sky { display: block; width: 100%; max-width: 290px; height: auto; margin: 0 auto; overflow: visible; }
 
 .env-in { transform-box: fill-box; transform-origin: 50% 100%; animation: env-in 0.5s cubic-bezier(0.3, 0.7, 0.2, 1) 0.1s both; }
 .env-back { fill: #9a6d33; }
@@ -1191,30 +1288,15 @@ a.gold-cta { box-sizing: border-box; text-decoration: none; }
   .login { align-items: flex-end; justify-content: center; padding: 34vh 12px 16px; }
   .login-card { padding: 18px 18px 20px; }
   .card-head h1 { font-size: 28px; }
-  .form-row { gap: 10px; }
   /* 16px keeps iOS from zooming into a field on focus; the rest are thumb-sized targets. */
   .field input { font-size: 16px; }
-  .mode-toggle button { min-height: 40px; }
   .eye { width: 40px; height: 40px; right: 3px; }
   .quiet { min-height: 40px; }
   .check { padding-block: 8px; margin-block: -8px; }
-  .field-head .check { gap: 7px; white-space: nowrap; }
-  .field-head { gap: 6px; }
-  .field-head .field-label { letter-spacing: 0.18em; }
-  /* Phones draw date and time fields by their own rules, wider than the card: they keep to its width. */
-  .field input[type='date'],
-  .field input[type='time'] { display: block; -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; text-align: left; }
-  .field input::-webkit-date-and-time-value { text-align: left; }
-}
-
-/* Narrow phones: the date above the time, each the full width of the card. */
-@media (max-width: 560px) {
-  .form-row { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .login-card, .card-sheen, .sky-now { animation: none; }
-  .reveal, .mode-thumb { transition: none; }
   .login-side.is-leaving { filter: none; transform: none; }
   /* The letter is already on its way: the trail and the star, without the flight. */
   .flight *, .flight-status, .pulse::after { animation: none !important; }

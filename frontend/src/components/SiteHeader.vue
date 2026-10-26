@@ -111,7 +111,7 @@ onUnmounted(() => {
 
       <div class="header-actions">
         <!-- In the cabinet the way to the cabinet is not needed. -->
-        <RouterLink v-if="!inCabinet" class="nav-login" :to="webToken ? '/cabinet' : '/login'" data-track="header:login">
+        <RouterLink v-if="!inCabinet" class="nav-login" :to="webToken ? '/cabinet' : '/login?from=header'" data-track="header:login">
           <span>{{ webToken ? 'Кабинет' : 'Войти' }}</span>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" /></svg>
         </RouterLink>
@@ -146,7 +146,7 @@ onUnmounted(() => {
             <span>{{ link.label }}</span>
           </RouterLink>
         </nav>
-        <RouterLink v-if="!inCabinet" class="menu-cta" :style="{ '--i': links.length }" :to="webToken ? '/cabinet' : '/login'" data-track="menu:login" @click="menuOpen = false">
+        <RouterLink v-if="!inCabinet" class="menu-cta" :style="{ '--i': links.length }" :to="webToken ? '/cabinet' : '/login?from=header'" data-track="menu:login" @click="menuOpen = false">
           {{ webToken ? 'Открыть кабинет' : 'Войти в кабинет' }}
         </RouterLink>
       </div>

@@ -168,6 +168,7 @@ onMounted(async () => {
     user.value = me
     markUser(user.value)
     if (pendingInvite()) await joinPending()
+    askBirth(user.value)
     // Back from ЮKassa: wait for the notification, refresh the cabinet, fire the Metrika goal once.
     settlePendingPayment(async (pending) => {
       const me = await webApi.me()
@@ -263,6 +264,23 @@ async function joinPending() {
     // The invitation was taken by another cabinet or withdrawn: the cabinet opens as it is.
     if (!(error instanceof ApiError)) throw error
   }
+}
+
+/**
+ * A cabinet without the birth date opens on its form, once a tab: the sky has nothing to draw yet.
+ * Pushed, not replaced, so «Отмена» and the browser's back lead to the overview.
+ */
+function askBirth(me) {
+  if (!me || me.birth || route.name !== 'cabinet') return
+  const key = `astra-birth-asked:${me.id}`
+  try {
+    if (sessionStorage.getItem(key)) return
+    sessionStorage.setItem(key, '1')
+  } catch {
+    // Private mode: the overview's own button leads there.
+    return
+  }
+  router.push({ name: 'cabinet-birth' })
 }
 
 /** Back from the birth form: the way it came if it came from the overview, else to it. */

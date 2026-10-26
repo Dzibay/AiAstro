@@ -1,10 +1,12 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import SiteFrame from '../components/SiteFrame.vue'
 import HeroOrbit from '../components/HeroOrbit.vue'
 import StopHead from '../components/home/StopHead.vue'
 import PageSigns from '../components/home/PageSigns.vue'
+import ChartSample from '../components/home/ChartSample.vue'
+import StartForm from '../components/home/StartForm.vue'
 import { useSession } from '../composables/useSession.js'
 import { HOUSE_SECTORS, useSkyFocus } from '../composables/useSkyFocus.js'
 import { useSkyJourney } from '../composables/useSkyJourney.js'
@@ -16,10 +18,11 @@ import { siteApi } from '../api/site.js'
 import { POINTS } from '../components/cabinet/astro.js'
 import { PHASES, eventLine } from '../components/sky/forecastWords.js'
 
+// II. The way to your own chart, in the order the site asks: the address first, the birth after.
 const steps = [
-  { num: 'I', title: 'Дата, время и место', text: 'Чем точнее минута рождения, тем точнее дома и асцендент.' },
-  { num: 'II', title: 'Карта неба', text: 'Солнце, Луна и планеты встают туда, где стояли в ваш первый вдох.' },
-  { num: 'III', title: 'Разбор', text: 'Что эти положения значат для характера, работы и любви.' },
+  { num: 'I', title: 'Почта', text: 'Ссылка для входа вместо пароля' },
+  { num: 'II', title: 'Дата рождения', text: 'Время и город уточнят дома' },
+  { num: 'III', title: 'Ваша карта', text: 'С разбором — сразу и навсегда' },
 ]
 
 const spheres = [
@@ -33,7 +36,7 @@ const spheres = [
 
 // The spheres sit on an arc around the planet's orbit, lower left of the screen.
 // Row k moves right as the circle bends: x(y) = sqrt(ARC_R² - (ARC_DY - y)²).
-const ROW = 64
+const ROW = 70
 const ARC_R = 1000
 const ARC_DY = 453
 const arcX = (y) => Math.sqrt(ARC_R ** 2 - (ARC_DY - y) ** 2) - Math.sqrt(ARC_R ** 2 - ARC_DY ** 2)
@@ -146,31 +149,37 @@ const faq = [
   },
   {
     glyph: '♉︎',
+    q: 'Зачем почта и нужен ли пароль?',
+    a: 'Почта — ваш ключ: на неё приходит ссылка для входа и шесть цифр кода, а пароль не нужен. '
+      + 'Если удобнее входить с паролем, его можно задать в кабинете в любой момент.',
+  },
+  {
+    glyph: '♊︎',
     q: 'Чем это отличается от гороскопа по знаку?',
     a: 'Гороскоп по знаку смотрит только на Солнце и одинаков для двенадцатой части людей. '
       + 'Натальная карта учитывает все планеты, дома и связи между ними — она только ваша.',
   },
   {
-    glyph: '♊︎',
+    glyph: '♋︎',
     q: 'Натальная карта правда бесплатна?',
     a: 'Да, навсегда: планеты в знаках и домах с толкованием, аспекты, стихии и кресты — бесплатно. '
       + 'Портрет карты целиком и смысл каждого аспекта, полные прогнозы и ИИ-астролог каждый день входят в «Небосвод», '
       + 'а разбор пары оплачивается отдельно.',
   },
   {
-    glyph: '♋︎',
+    glyph: '♌︎',
     q: 'Что умеет ИИ-астролог и чем он не является?',
     a: 'Это нейросеть, которая знает вашу карту и сегодняшнее небо и объясняет их простыми словами. '
       + 'Она не врач, не юрист и не финансовый советник, а решения остаются за вами.',
   },
   {
-    glyph: '♌︎',
+    glyph: '♍︎',
     q: '«Небосвод» продлевается сам?',
     a: 'Нет: вы оплачиваете месяц, три месяца или год — и всё. Автоматических списаний нет, '
       + 'а за несколько дней до конца мы напомним письмом.',
   },
   {
-    glyph: '♍︎',
+    glyph: '♎︎',
     q: 'Где хранятся мои данные?',
     a: 'Дата, время и место рождения нужны только для расчёта карты. '
       + 'Мы не продаём и не передаём их третьим лицам.',
@@ -184,23 +193,11 @@ const principles = [
 ]
 
 const { webToken } = useSession()
-const chartTo = computed(() => (webToken.value ? '/cabinet' : '/login?mode=register'))
+// The compatibility link opens the login page's address step; its place counts in the funnel.
+const compatTo = computed(() => (webToken.value ? '/cabinet' : '/login?mode=register&from=compat'))
 const openFaq = ref(-1)
 
-// The form only collects for now: the chart itself is built in the cabinet. Registration
-// picks the data up for its second step (LoginView, same key).
-const router = useRouter()
-const birth = reactive({ date: '', time: '', noTime: false, city: '' })
-function buildChart() {
-  try {
-    if (birth.date || birth.time || birth.city) sessionStorage.setItem('astra-birth', JSON.stringify(birth))
-  } catch {
-    /* private mode */
-  }
-  router.push(chartTo.value)
-}
-
-// A stop's content shows once the page has mostly scrolled onto it, when the sky arrives too.
+// A stop's content shows once a fifth of it is on screen, when the sky arrives too.
 let arrival = null
 function watchArrival() {
   const stops = document.querySelectorAll('.stop')
@@ -214,7 +211,7 @@ function watchArrival() {
       entry.target.classList.add('is-here')
       arrival.unobserve(entry.target)
     })
-  }, { threshold: 0.35 })
+  }, { threshold: 0.2 })
   stops.forEach((node) => arrival.observe(node))
 }
 onBeforeUnmount(() => {
@@ -249,53 +246,28 @@ onMounted(async () => {
       <PageSigns :signs="['cancer', 'leo']" />
       <div class="wrap stop-grid">
         <div class="stop-body body-how">
-          <StopHead num="II" phone-signs="♋ ♌" signs="♌ ♍" label="Как это работает">Небо в <em>минуту</em> вашего рождения</StopHead>
+          <StopHead num="II" phone-signs="♋ ♌" signs="♌ ♍" label="Пример карты">Каждая планета — <em>о вас</em></StopHead>
           <p class="stop-lead" data-reveal style="--r: 3">
-            Звёзды не повторяют своего узора. Мы восстановим тот, что был над вами в первый вдох,
-            и прочтём его простыми словами.
+            Так выглядит натальная карта в Астре. Выберите планету — и прочтите её разбор.
           </p>
 
+          <ChartSample data-reveal style="--r: 4" />
+
           <ol class="steps">
-            <li v-for="(step, index) in steps" :key="step.num" data-reveal :style="{ '--r': 4 + index }">
+            <li v-for="(step, index) in steps" :key="step.num" data-reveal :style="{ '--r': 5 + index }">
               <span class="step-star" aria-hidden="true">
                 <svg viewBox="0 0 20 20"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
               </span>
-              <span class="step-num">{{ step.num }}</span>
               <span class="step-copy">
-                <strong>{{ step.title }}</strong>
+                <strong><span class="step-num">{{ step.num }}</span>{{ step.title }}</strong>
                 <span>{{ step.text }}</span>
               </span>
             </li>
           </ol>
 
-          <form class="chart-form" data-reveal style="--r: 7" @submit.prevent="buildChart">
-            <div class="form-row">
-              <label class="field">
-                <span class="field-label">Дата рождения</span>
-                <input v-model="birth.date" type="date" min="1900-01-01" />
-              </label>
-              <div class="field">
-                <span class="field-head">
-                  <label class="field-label" for="birth-time">Время</label>
-                  <label class="check">
-                    <input v-model="birth.noTime" type="checkbox" />
-                    <span class="check-box" aria-hidden="true" />
-                    <span>не знаю</span>
-                  </label>
-                </span>
-                <input id="birth-time" v-model="birth.time" type="time" :disabled="birth.noTime" />
-              </div>
-            </div>
-            <label class="field">
-              <span class="field-label">Город рождения</span>
-              <input v-model="birth.city" type="text" placeholder="Например, Казань" autocomplete="off" />
-            </label>
-            <button class="gold-cta form-cta" type="submit" data-track="home:form">Построить карту — бесплатно</button>
-            <p class="form-note">
-              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
-              Натальная карта бесплатна навсегда
-            </p>
-          </form>
+          <div class="how-start" data-reveal style="--r: 8">
+            <StartForm place="how" cta="Получить свою карту" />
+          </div>
         </div>
       </div>
     </section>
@@ -353,7 +325,7 @@ onMounted(async () => {
                 <p class="compat-text">Две карты рядом: где ваши ритмы совпадают, а где спорят.</p>
                 <div class="compat-foot">
                   <span class="compat-price">{{ prices.synastry.value }}</span>
-                  <RouterLink class="line-cta" :to="chartTo" data-track="home:sample">
+                  <RouterLink class="line-cta" :to="compatTo" data-track="home:sample">
                     Проверить совместимость
                     <span aria-hidden="true">→</span>
                   </RouterLink>
@@ -491,9 +463,11 @@ onMounted(async () => {
       <div class="stop-body start-copy">
         <StopHead num="VI" phone-signs="♓ ♈" signs="♈" label="Круг замкнулся" align="center">Солнце снова <em>в Овне</em></StopHead>
         <p data-reveal style="--r: 3">
-          Год прошёл за один вдох. Теперь — ваше небо: каким оно было в день, когда вы пришли в мир?
+          Год прошёл за один вдох. Укажите почту — и увидите небо, под которым родились.
         </p>
-        <RouterLink class="gold-cta" :to="chartTo" data-track="home:final" data-reveal style="--r: 4">Построить карту — бесплатно</RouterLink>
+        <div data-reveal style="--r: 4">
+          <StartForm place="final" />
+        </div>
       </div>
     </section>
   </SiteFrame>
@@ -538,47 +512,52 @@ onMounted(async () => {
   pointer-events: none;
 }
 
-/* Content rises in when the sky arrives at its stop, line after line. */
+/* Content rises in when the sky arrives at its stop, line after line, quickly enough not to be waited for. */
 .stop :deep([data-reveal]) {
   opacity: 0;
-  transform: translateY(12px);
-  transition: opacity 0.9s ease, transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1);
-  transition-delay: calc(var(--r, 0) * 90ms + 120ms);
+  transform: translateY(10px);
+  transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: calc(var(--r, 0) * 60ms + 40ms);
 }
 .stop.is-here :deep([data-reveal]) { opacity: 1; transform: none; }
 
 .stop-lead {
-  margin: 14px 0 24px;
-  max-width: 500px;
-  font-size: 15.5px;
-  line-height: 1.6;
-  color: rgba(232, 224, 210, 0.82);
+  margin: 16px 0 24px;
+  max-width: 520px;
+  font-size: 17px;
+  line-height: 1.55;
+  color: rgba(238, 231, 219, 0.88);
 }
+
+/* II. The sample, the way to your own chart and the address: one column on the sky's dark side. */
+.body-how { width: min(600px, 100%); }
+.how-start :deep(.start) { margin: 0; }
 
 /* The three steps are a small constellation: stars on one thread, lit one after another. */
 .steps {
   position: relative;
   display: grid;
-  gap: 15px;
-  margin: 0 0 26px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 26px 0 22px;
   padding: 0;
   list-style: none;
 }
 .steps::before {
   content: '';
   position: absolute;
-  top: 10px;
-  bottom: 10px;
-  left: 9.5px;
-  width: 1px;
-  background: linear-gradient(180deg, rgba(240, 205, 138, 0.7), rgba(240, 205, 138, 0.25));
-  transform: scaleY(0);
-  transform-origin: top;
-  transition: transform 1.4s cubic-bezier(0.3, 0.6, 0.2, 1) 0.5s;
+  top: 9.5px;
+  left: 10px;
+  right: 10px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(240, 205, 138, 0.7), rgba(240, 205, 138, 0.2));
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 1.2s cubic-bezier(0.3, 0.6, 0.2, 1) 0.4s;
 }
 .stop.is-here .steps::before { transform: none; }
-.steps li { display: grid; grid-template-columns: 20px 30px 1fr; align-items: baseline; column-gap: 12px; }
-.step-star { position: relative; align-self: start; width: 20px; height: 20px; margin-top: 2px; }
+.steps li { display: grid; gap: 10px; }
+.step-star { position: relative; width: 20px; height: 20px; }
 .step-star svg {
   width: 20px;
   height: 20px;
@@ -587,123 +566,18 @@ onMounted(async () => {
   transform: scale(0.6);
   transition: opacity 0.6s ease, transform 0.6s ease, filter 0.6s ease;
 }
-.steps li:nth-child(1) .step-star svg { transition-delay: 0.6s; }
-.steps li:nth-child(2) .step-star svg { transition-delay: 1.1s; }
-.steps li:nth-child(3) .step-star svg { transition-delay: 1.6s; }
+.steps li:nth-child(1) .step-star svg { transition-delay: 0.4s; }
+.steps li:nth-child(2) .step-star svg { transition-delay: 0.8s; }
+.steps li:nth-child(3) .step-star svg { transition-delay: 1.2s; }
 .stop.is-here .step-star svg {
   opacity: 1;
   transform: none;
   filter: drop-shadow(0 0 6px rgba(255, 200, 110, 0.9));
 }
-.step-num { font-family: var(--serif); font-size: 15px; letter-spacing: 0.12em; color: rgba(240, 205, 138, 0.85); }
-.step-copy { display: grid; gap: 2px; }
+.step-num { margin-right: 8px; font-size: 13px; letter-spacing: 0.12em; color: rgba(240, 205, 138, 0.9); }
+.step-copy { display: grid; gap: 3px; }
 .step-copy strong { font-family: var(--serif); font-size: 21px; font-weight: 500; line-height: 1.15; color: #f6efe2; }
-.step-copy span { font-size: 14px; line-height: 1.5; color: rgba(226, 220, 210, 0.72); }
-
-/* The form is the one thing here you can touch, so it alone is glass. */
-.chart-form {
-  display: grid;
-  gap: 12px;
-  padding: 18px 20px 14px;
-  border-radius: 20px;
-  border: 1px solid rgba(240, 210, 150, 0.2);
-  background: linear-gradient(160deg, rgba(26, 23, 26, 0.55), rgba(8, 10, 18, 0.66));
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 240, 210, 0.07);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-.form-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 12px; }
-.field { display: grid; gap: 7px; min-width: 0; transition: opacity 0.3s ease; }
-.field-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.field-label { line-height: 16px; font-size: 10.5px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(226, 214, 192, 0.66); }
-.field input {
-  min-width: 0;
-  height: 44px;
-  padding: 0 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(240, 210, 150, 0.18);
-  background: rgba(255, 240, 210, 0.04);
-  color: #f6efe2;
-  font: inherit;
-  font-size: 15px;
-  color-scheme: dark;
-  outline: none;
-  transition: border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
-}
-.field input::placeholder { color: rgba(226, 220, 210, 0.38); }
-.field input:hover:not(:disabled) { border-color: rgba(240, 210, 150, 0.32); }
-.field input:focus {
-  border-color: rgba(240, 205, 138, 0.7);
-  background: rgba(255, 240, 210, 0.06);
-  box-shadow: 0 0 0 3px rgba(240, 205, 138, 0.12);
-}
-.field input:disabled { opacity: 0.4; cursor: not-allowed; }
-.field input::-webkit-calendar-picker-indicator { opacity: 0.6; cursor: pointer; }
-
-.check {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  line-height: 16px;
-  color: rgba(226, 220, 210, 0.7);
-  cursor: pointer;
-}
-.check input { position: absolute; opacity: 0; pointer-events: none; }
-.check-box {
-  position: relative;
-  width: 13px;
-  height: 13px;
-  border-radius: 4px;
-  border: 1px solid rgba(240, 210, 150, 0.4);
-  transition: background 0.2s ease, border-color 0.2s ease;
-}
-.check-box::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 1.5px;
-  width: 3px;
-  height: 6px;
-  border: solid #2b1d0b;
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg) scale(0);
-  transition: transform 0.2s ease;
-}
-.check input:checked + .check-box { background: #e9c47e; border-color: #e9c47e; }
-.check input:checked + .check-box::after { transform: rotate(45deg) scale(1); }
-.check input:focus-visible + .check-box { box-shadow: 0 0 0 3px rgba(240, 205, 138, 0.25); }
-
-.gold-cta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 14px 34px;
-  border: 0;
-  border-radius: 999px;
-  text-decoration: none;
-  font: inherit;
-  font-weight: 600;
-  color: #2b1d0b;
-  background: linear-gradient(180deg, #f4dba6 0%, #e3bd78 55%, #cf9f55 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 248, 228, 0.8), 0 8px 30px rgba(230, 170, 80, 0.32);
-  cursor: pointer;
-  transition: box-shadow 0.3s ease, filter 0.3s ease;
-}
-.gold-cta:hover { filter: brightness(1.05); box-shadow: inset 0 1px 0 rgba(255, 248, 228, 0.8), 0 10px 38px rgba(230, 170, 80, 0.48); }
-.form-cta { width: 100%; margin-top: 2px; padding-block: 13px; }
-.form-note {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin: 0;
-  font-size: 11.5px;
-  letter-spacing: 0.06em;
-  color: rgba(226, 214, 192, 0.6);
-}
-.form-note svg { width: 9px; height: 9px; fill: #f0cd8a; }
+.step-copy > span { font-size: 14px; line-height: 1.45; color: rgba(232, 226, 214, 0.8); }
 
 /* III. The spheres hang on an arc around the orbit: each row slides right as the circle bends. */
 .spheres { position: relative; margin-top: 24px; }
@@ -722,7 +596,7 @@ onMounted(async () => {
   display: flex;
   align-items: flex-start;
   gap: 16px;
-  height: 64px;
+  height: 70px;
   margin-left: var(--shift);
   cursor: default;
 }
@@ -739,15 +613,15 @@ onMounted(async () => {
 .sphere-title { display: flex; align-items: baseline; gap: 10px; }
 .sphere-title strong {
   font-family: var(--serif);
-  font-size: 21px;
+  font-size: 23px;
   font-weight: 500;
   line-height: 1.1;
   color: #f6efe2;
   transition: color 0.3s ease;
 }
 .sphere.is-lit .sphere-title strong { color: #ffe2a8; }
-.sphere-house { font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(240, 205, 138, 0.7); }
-.sphere-text { font-size: 14px; line-height: 1.45; color: rgba(226, 220, 210, 0.72); }
+.sphere-house { font-size: 10.5px; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(240, 205, 138, 0.8); }
+.sphere-text { font-size: 15.5px; line-height: 1.45; color: rgba(236, 230, 218, 0.84); }
 
 /* Compatibility: a separate, paid reading, set apart by an ornamental rule. */
 .compat { margin-top: 8px; }
@@ -763,8 +637,8 @@ onMounted(async () => {
 .compat-orbits .compat-moon { fill: #cfdcf5; stroke: none; filter: drop-shadow(0 0 3px #9fb8e8); }
 .compat-spark { fill: #ffe7b8; filter: drop-shadow(0 0 5px rgba(255, 200, 110, 0.9)); }
 .compat-copy { display: grid; gap: 4px; }
-.compat-title { margin: 0; font-family: var(--serif); font-size: 24px; line-height: 1.1; color: #f6efe2; }
-.compat-text { margin: 0; font-size: 14px; line-height: 1.5; color: rgba(226, 220, 210, 0.75); }
+.compat-title { margin: 0; font-family: var(--serif); font-size: 26px; line-height: 1.1; color: #f6efe2; }
+.compat-text { margin: 0; font-size: 15.5px; line-height: 1.5; color: rgba(236, 230, 218, 0.84); }
 .compat-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; }
 .compat-price { font-family: var(--serif); font-size: 19px; color: #f0cd8a; white-space: nowrap; }
 
@@ -780,7 +654,7 @@ onMounted(async () => {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   color: #f3dcae;
-  font-size: 14px;
+  font-size: 14.5px;
   text-decoration: none;
   transition: border-color 0.3s ease, background 0.3s ease, color 0.3s ease;
 }
@@ -823,11 +697,11 @@ onMounted(async () => {
   color: #f0cd8a;
 }
 .plan p { margin: 0; }
-.plan-title { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(226, 214, 192, 0.7); }
-.plan-price { display: grid; margin: 8px 0 10px !important; font-family: var(--serif); font-size: 28px; line-height: 1; color: #f6efe2; }
+.plan-title { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232, 220, 198, 0.8); }
+.plan-price { display: grid; margin: 8px 0 10px !important; font-family: var(--serif); font-size: 30px; line-height: 1; color: #f6efe2; }
 .plan.is-star .plan-price { color: #ffe2a8; }
-.plan-price span { margin-top: 4px; font-family: var(--sans); font-size: 11.5px; letter-spacing: 0.04em; color: rgba(226, 214, 192, 0.6); }
-.plan-text { font-size: 13px; line-height: 1.45; color: rgba(226, 220, 210, 0.72); }
+.plan-price span { margin-top: 5px; font-family: var(--sans); font-size: 12.5px; letter-spacing: 0.04em; color: rgba(232, 220, 198, 0.72); }
+.plan-text { font-size: 14px; line-height: 1.45; color: rgba(236, 230, 218, 0.82); }
 
 .previews { display: grid; gap: 14px; }
 .sky-card {
@@ -840,7 +714,7 @@ onMounted(async () => {
   -webkit-backdrop-filter: blur(12px);
 }
 .card-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.card-kicker { font-size: 10.5px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(226, 214, 192, 0.66); }
+.card-kicker { font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(232, 220, 198, 0.74); }
 
 .span-toggle {
   position: relative;
@@ -877,17 +751,17 @@ onMounted(async () => {
 .span-thumb.is-week { transform: translateX(100%); }
 
 .forecast p { margin: 0; }
-.forecast-title { font-family: var(--serif); font-size: 22px; line-height: 1.15; color: #f6efe2; }
-.forecast-sky { margin-top: 4px !important; font-size: 12.5px; color: #f0cd8a; }
-.forecast-text { margin-top: 10px !important; font-size: 14px; line-height: 1.5; color: rgba(232, 224, 210, 0.82); }
+.forecast-title { font-family: var(--serif); font-size: 24px; line-height: 1.15; color: #f6efe2; }
+.forecast-sky { margin-top: 4px !important; font-size: 13.5px; color: #f0cd8a; }
+.forecast-text { margin-top: 10px !important; font-size: 15.5px; line-height: 1.5; color: rgba(238, 231, 219, 0.9); }
 .forecast-lines {
   margin: 10px 0 0;
   padding: 10px 0 0;
   list-style: none;
   border-top: 1px solid rgba(240, 205, 138, 0.12);
-  font-size: 12.5px;
+  font-size: 13.5px;
   line-height: 1.55;
-  color: rgba(232, 224, 210, 0.62);
+  color: rgba(232, 224, 210, 0.74);
 }
 .forecast-lines li::first-letter { text-transform: uppercase; }
 .swap-enter-active, .swap-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
@@ -903,7 +777,7 @@ onMounted(async () => {
   text-transform: uppercase;
   color: #f0cd8a;
 }
-.bubble { max-width: 88%; margin: 0 0 8px; padding: 9px 13px; font-size: 13.5px; line-height: 1.45; }
+.bubble { max-width: 88%; margin: 0 0 8px; padding: 9px 13px; font-size: 14.5px; line-height: 1.45; }
 .from-you {
   margin-left: auto;
   border-radius: 14px 14px 4px 14px;
@@ -946,12 +820,12 @@ onMounted(async () => {
   width: 100%;
   align-items: center;
   gap: 14px;
-  padding: 13px 0;
+  padding: 14px 0;
   border: 0;
   background: none;
   color: #f2ebdf;
   font: inherit;
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1.35;
   text-align: left;
   cursor: pointer;
@@ -964,7 +838,7 @@ onMounted(async () => {
   width: 18px;
   font-family: 'Segoe UI Symbol', 'Noto Sans Symbols', sans-serif;
   font-variant-emoji: text;
-  font-size: 15px;
+  font-size: 16px;
   text-align: center;
   color: rgba(240, 205, 138, 0.55);
   transition: color 0.3s ease, text-shadow 0.3s ease;
@@ -996,9 +870,9 @@ onMounted(async () => {
   min-height: 0;
   margin: 0;
   padding-left: 32px;
-  font-size: 14px;
+  font-size: 15.5px;
   line-height: 1.55;
-  color: rgba(226, 220, 210, 0.74);
+  color: rgba(236, 230, 218, 0.84);
 }
 .faq-item.is-open .faq-a p { padding-bottom: 14px; }
 
@@ -1011,7 +885,7 @@ onMounted(async () => {
   padding: 0;
   list-style: none;
 }
-.principles li { display: flex; gap: 8px; font-size: 12.5px; line-height: 1.45; color: rgba(232, 222, 204, 0.78); }
+.principles li { display: flex; gap: 8px; font-size: 13.5px; line-height: 1.45; color: rgba(236, 228, 212, 0.84); }
 .principles svg { flex: none; width: 10px; height: 10px; margin-top: 4px; fill: #f0cd8a; }
 
 .voices { display: flex; flex-wrap: wrap; gap: 18px; margin: 18px 0 0; padding: 0; list-style: none; }
@@ -1051,28 +925,21 @@ onMounted(async () => {
   padding-top: calc(max(13.7vh, 92px) + min(100vh / 8.89, 100vw / 15));
 }
 .start-copy { width: min(560px, calc(100% - 32px)); text-align: center; }
-.start-copy p { margin: 16px 0 26px; font-size: 16px; line-height: 1.6; color: rgba(226, 220, 210, 0.8); }
+.start-copy p { margin: 16px auto 24px; max-width: 470px; font-size: 17px; line-height: 1.55; color: rgba(238, 231, 219, 0.88); }
 
 @media (max-width: 760px) {
   /* The pair of signs takes the top of the screen and the planet waits in the corner. */
   .stop { align-items: flex-end; padding: 34svh 0 120px; }
   .stop-grid { justify-content: stretch !important; }
   .stop-body::before { inset: -50px -40px; }
-  .stop-lead { margin-bottom: 26px; font-size: 15px; }
-  .steps { gap: 18px; margin-bottom: 28px; }
-  .step-copy strong { font-size: 20px; }
-  .chart-form { padding: 18px 16px 16px; }
-  .form-cta { padding-inline: 12px; }
-  .form-row { gap: 10px; }
-  /* Phones draw date and time fields by their own rules, wider than the card: they keep to its width. */
-  .field input[type='date'],
-  .field input[type='time'] { display: block; width: 100%; -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; text-align: left; }
-  .field input::-webkit-date-and-time-value { text-align: left; }
+  .stop-lead { margin-bottom: 22px; font-size: 16px; }
+  .step-copy strong { font-size: 19px; }
+  .faq-q { font-size: 16px; }
   /* Too narrow for the arc: the spheres line up in a plain column. */
   .spheres-arc { display: none; }
   .sphere { height: auto; min-height: 0; margin: 0 0 14px; gap: 10px; }
   .sphere-star { width: 18px; height: 24px; }
-  .sphere-title strong { font-size: 20px; }
+  .sphere-title strong { font-size: 21px; }
   .compat-row { gap: 14px; }
   .compat-orbits { width: 76px; height: 54px; }
   .compat-foot { gap: 10px 14px; }
@@ -1087,9 +954,11 @@ onMounted(async () => {
   .stop-start { align-items: flex-start; padding-top: max(34svh, 270px); }
 }
 
-/* Narrow phones: the date above the time, each the full width of the card. */
+/* Narrow phones: the three steps stand one under another, the thread runs down. */
 @media (max-width: 560px) {
-  .form-row { grid-template-columns: minmax(0, 1fr); }
+  .steps { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .steps::before { top: 10px; bottom: 10px; left: 9.5px; right: auto; width: 1px; height: auto; transform: scaleY(0); transform-origin: top; background: linear-gradient(180deg, rgba(240, 205, 138, 0.7), rgba(240, 205, 138, 0.2)); }
+  .steps li { grid-template-columns: 20px minmax(0, 1fr); gap: 14px; align-items: start; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -3,15 +3,17 @@ import { pageName } from './shared.js'
 /**
  * The way from a first visit to a payment (pulse.py): the steps' names for the funnel (people in
  * plural), for one person's card, for the table heads, and the words the insights are put in.
+ * Registration begins with the address: the letter's link or code opens the cabinet, the birth
+ * data and the chart come there.
  */
 export const WAY = [
   { key: 'visit', label: 'Первый визит', one: 'Первый визит', short: 'Визит', hint: 'впервые открыли сайт за срок' },
-  { key: 'reg_open', label: 'Открыли регистрацию', one: 'Открыл регистрацию', short: 'Открыли рег.', hint: 'форма «Открыть небо»', verb: 'открывают регистрацию', of: 'зашедших на сайт' },
-  { key: 'reg_who', label: 'Прошли первый шаг', one: 'Первый шаг регистрации', short: '1-й шаг', hint: 'имя, почта и пароль', verb: 'проходят первый шаг регистрации', of: 'открывших регистрацию' },
-  { key: 'signup', label: 'Создали аккаунт', one: 'Аккаунт создан', short: 'Аккаунт', hint: 'второй шаг пройден', verb: 'создают аккаунт', of: 'прошедших первый шаг' },
-  { key: 'confirm', label: 'Подтвердили почту', one: 'Почта подтверждена', short: 'Почта', hint: 'открыли ссылку из письма', verb: 'подтверждают почту', of: 'создавших аккаунт' },
-  { key: 'cabinet', label: 'Вошли в кабинет', one: 'Вошёл в кабинет', short: 'Кабинет', hint: 'после подтверждения', verb: 'входят в кабинет', of: 'подтвердивших почту' },
-  { key: 'checkout', label: 'Начали оплату', one: 'Начал оплату', short: 'Оплата', hint: 'перешли в ЮKassa', verb: 'начинают оплату', of: 'вошедших в кабинет' },
+  { key: 'start', label: 'Начали вводить почту', one: 'Начал вводить почту', short: 'Почта', hint: 'в любой форме входа', verb: 'начинают вводить почту', of: 'зашедших на сайт' },
+  { key: 'signup', label: 'Запросили письмо', one: 'Запросил письмо', short: 'Письмо', hint: 'аккаунт создан, письмо ушло', verb: 'запрашивают письмо', of: 'начавших вводить почту' },
+  { key: 'confirm', label: 'Открыли кабинет', one: 'Открыл кабинет', short: 'Кабинет', hint: 'по ссылке или коду из письма', verb: 'открывают кабинет по письму', of: 'запросивших письмо' },
+  { key: 'birth', label: 'Указали рождение', one: 'Указал рождение', short: 'Рождение', hint: 'дата, время, город', verb: 'указывают данные рождения', of: 'открывших кабинет' },
+  { key: 'chart', label: 'Увидели карту', one: 'Увидел карту', short: 'Карта', hint: 'натальная карта построена', verb: 'смотрят свою карту', of: 'указавших рождение' },
+  { key: 'checkout', label: 'Начали оплату', one: 'Начал оплату', short: 'Оплата', hint: 'перешли в ЮKassa', verb: 'начинают оплату', of: 'увидевших карту' },
   { key: 'paid', label: 'Оплатили', one: 'Оплатил', short: 'Оплатили', hint: 'хоть что-нибудь', verb: 'оплачивают', of: 'начавших оплату' },
 ]
 export const WAY_BY_KEY = Object.fromEntries(WAY.map((step) => [step.key, step]))
@@ -96,9 +98,9 @@ export function insightText(item, period) {
 /* ---- Week by week (pulse.py, weeks): three shares, each its own small chart ---- */
 
 export const WEEK_LINES = [
-  { key: 'signup', from: 'visit', name: 'Визит → аккаунт', hint: 'создали аккаунт из новых посетителей недели', of: 'посетителей', color: '#3987e5' },
-  { key: 'confirm', from: 'signup', name: 'Аккаунт → почта', hint: 'подтвердили почту из создавших аккаунт', of: 'аккаунтов', color: '#d95926' },
-  { key: 'paid', from: 'cabinet', name: 'Кабинет → оплата', hint: 'оплатили из вошедших в кабинет', of: 'вошедших', color: '#199e70' },
+  { key: 'signup', from: 'visit', name: 'Визит → письмо', hint: 'запросили письмо из новых посетителей недели', of: 'посетителей', color: '#3987e5' },
+  { key: 'confirm', from: 'signup', name: 'Письмо → кабинет', hint: 'открыли кабинет по письму из запросивших его', of: 'запросивших', color: '#d95926' },
+  { key: 'paid', from: 'confirm', name: 'Кабинет → оплата', hint: 'оплатили из открывших кабинет', of: 'открывших', color: '#199e70' },
 ]
 
 const weekDay = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' })

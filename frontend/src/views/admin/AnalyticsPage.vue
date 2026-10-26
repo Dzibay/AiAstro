@@ -7,7 +7,8 @@ import WayFunnel from '../../components/admin/WayFunnel.vue'
 import WeekLines from '../../components/admin/WeekLines.vue'
 import { adminApi } from '../../api/admin.js'
 import {
-  GAME_STEPS, PERIODS, PRODUCTS, STEP_NAMES, buckets, clickName, duration, failed, fmt, offerName, pageName, pct, stepOf, tourName,
+  GAME_STEPS, LOGIN_WAYS, PERIODS, PRODUCTS, STEP_NAMES, buckets, clickName, duration, failed, fmt, offerName, pageName, pct, startPlaceName,
+  stepOf, tourName,
 } from './shared.js'
 import { MIN_BASE, periodName, points, share } from './way.js'
 
@@ -125,7 +126,9 @@ const way = part(() => ({ days: days.value, entry: wayEntry.value, device: wayDe
 const CABINET = {
   birth: 'Указали дату рождения',
   intro: 'Прошли знакомство',
-  chart: 'Открыли карту',
+  chart: 'Увидели свою карту',
+  name: 'Указали имя',
+  password: 'Задали пароль',
   game: 'Собрали карту в игре',
   forecast: 'Открыли прогноз',
   pair: 'Добавили пару',
@@ -159,6 +162,25 @@ const cabinet = computed(() => {
   const top = Math.max(...rows.flatMap((row) => [row.rates.did || 0, row.rates.not || 0]), 0.0001)
   for (const row of rows) row.width = { did: ((row.rates.did || 0) / top) * 100, not: ((row.rates.not || 0) / top) * 100 }
   return { people: c.people, paid: c.paid, rows }
+})
+
+/* ---- Where the address was given, and how people sign in ---- */
+
+/** Each start place: who began there, how many of them asked for the letter, opened the cabinet, paid. */
+const places = computed(() => {
+  const rows = way.data?.places || []
+  const top = Math.max(...rows.map((row) => row.starts), 1)
+  return rows.map((row) => ({
+    ...row,
+    label: startPlaceName(row.place),
+    width: (row.starts / top) * 100,
+    letter: row.starts ? Math.min(1, row.signups / row.starts) : null,
+  }))
+})
+const logins = computed(() => {
+  const rows = way.data?.logins || []
+  const total = rows.reduce((sum, row) => sum + row.times, 0)
+  return { total, rows: rows.map((row) => ({ ...row, ...(LOGIN_WAYS[row.way] || { label: row.way, hint: '' }), share: total ? row.times / total : 0 })) }
 })
 
 /* ---- Week by week, and the way split by source, first page or device ---- */
@@ -386,7 +408,63 @@ const gameSteps = computed(() => (data.value?.game?.steps || []).map((row) => ({
       </div>
       <p class="adm-note an-foot">
         Доля в полосе — от дошедших до прошлого шага; «к прошлому сроку» — та же доля тогда, в п.п.; время — медиана от первого визита.
-        Аккаунт считается за браузером, в котором его завели. Шаги регистрации записываются с этой версии сайта: аккаунт, заведённый раньше, прошёл их в любом случае.
+        Аккаунт считается за браузером, в котором его завели. Поздний шаг засчитывает ранние: аккаунт, заведённый до входа по письму, прошёл «Начали вводить почту» в любом случае.
+        Рождение, указанное на главной до письма, считается, когда кабинет открыт.
+      </p>
+    </section>
+
+    <section class="adm-panel">
+      <div class="adm-panel-head">
+        <h2>Где начинают и как входят</h2>
+        <p>те же браузеры: в какой форме начали вводить почту и докуда дошли; входы в кабинет за срок — по ссылке, коду или паролю</p>
+      </div>
+      <div v-if="way.data" class="an-pair" :class="{ 'adm-loading': way.loading }">
+        <div class="an-scroll">
+          <table v-if="places.length" class="adm-table an-table">
+            <thead>
+              <tr>
+                <th>Место</th>
+                <th class="num" title="начали вводить почту или отправили её в этой форме">Начали</th>
+                <th title="запросили письмо из начавших здесь">Письмо</th>
+                <th class="num" title="открыли кабинет по письму">Кабинет</th>
+                <th class="num" title="указали данные рождения в кабинете">Рождение</th>
+                <th class="num">Оплатили</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in places" :key="row.place">
+                <td>{{ row.label }}</td>
+                <td class="num">{{ fmt.count(row.starts) }}</td>
+                <td>
+                  <template v-if="row.letter != null">
+                    <span class="an-meter"><i :style="{ width: `${row.letter * 100}%` }" /></span>
+                    <span class="an-meter-value num">{{ fmt.count(row.signups) }} · {{ share(row.letter) }}</span>
+                  </template>
+                  <span v-else class="num">{{ fmt.count(row.signups) }}</span>
+                </td>
+                <td class="num">{{ fmt.count(row.confirms) }}</td>
+                <td class="num">{{ fmt.count(row.births) }}</td>
+                <td class="num">{{ fmt.count(row.paid) }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="adm-empty">За срок почту ни в одной форме не вводили.</p>
+        </div>
+        <div>
+          <h3 class="an-sub-title">Входы в кабинет · {{ fmt.count(logins.total) }}</h3>
+          <ul v-if="logins.rows.length" class="an-list an-logins">
+            <li v-for="row in logins.rows" :key="row.way" :title="row.hint">
+              <span>{{ row.label }} <span class="adm-dim">· {{ fmt.count(row.people) }} чел.</span></span>
+              <span class="num">{{ fmt.count(row.times) }}</span>
+              <span class="num adm-dim">{{ share(row.share) }}</span>
+            </li>
+          </ul>
+          <p v-else class="adm-empty">За срок входов не было.</p>
+        </div>
+      </div>
+      <p class="adm-note an-foot">
+        Браузер, начавший в одной форме и отправивший почту из другой, считается в обеих. «Письмо», «Кабинет», «Рождение» и «Оплатили» — по месту, откуда ушло первое письмо.
+        Вход по ссылке или коду в первый раз — это и подтверждение почты.
       </p>
     </section>
 
@@ -394,7 +472,7 @@ const gameSteps = computed(() => (data.value?.game?.steps || []).map((row) => ({
       <div class="adm-panel-head">
         <h2>Кабинет и оплата</h2>
         <p v-if="cabinet">
-          {{ fmt.count(cabinet.people) }} из этих браузеров вошли в кабинет, оплатили {{ fmt.count(cabinet.paid) }} · {{ share(cabinet.people ? cabinet.paid / cabinet.people : null) }};
+          {{ fmt.count(cabinet.people) }} из этих браузеров открыли кабинет по письму, оплатили {{ fmt.count(cabinet.paid) }} · {{ share(cabinet.people ? cabinet.paid / cabinet.people : null) }};
           кто что сделал до первой оплаты — и какая доля из них платит
         </p>
       </div>
@@ -433,7 +511,7 @@ const gameSteps = computed(() => (data.value?.game?.steps || []).map((row) => ({
           </tbody>
         </table>
       </div>
-      <p v-else-if="cabinet" class="adm-empty">Из браузеров этого среза в кабинет за срок никто не вошёл.</p>
+      <p v-else-if="cabinet" class="adm-empty">Из браузеров этого среза кабинет за срок никто не открыл.</p>
       <p class="adm-note an-foot">
         Действие считается, если сделано до первой оплаты (у не плативших — к сегодняшнему дню). Это связь, а не причина:
         кто и так собирался платить, мог делать больше. Бледные строки — меньше {{ MIN_BASE }} человек с одной из сторон.
@@ -983,6 +1061,8 @@ const gameSteps = computed(() => (data.value?.game?.steps || []).map((row) => ({
 .an-list { display: grid; margin: 0; padding: 0; list-style: none; font-size: 14px; }
 .an-list li { display: grid; grid-template-columns: minmax(0, 1fr) 4em 6em; gap: 10px; padding: 7px 0; border-top: 1px solid var(--panel-line); }
 .an-list li:first-child { border-top: 0; }
+.an-sub-title { margin: 0 0 6px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.an-logins li { grid-template-columns: minmax(0, 1fr) 4em 4em; }
 
 @media (max-width: 1200px) {
   .an-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }

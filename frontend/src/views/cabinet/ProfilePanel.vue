@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
+import GuardField from '../../components/cabinet/GuardField.vue'
 import { webApi } from '../../api/web.js'
 import { errorText } from '../../api/http.js'
 import { supportOf, useSiteConfig } from '../../composables/useSiteConfig.js'
@@ -10,8 +11,9 @@ import { startTour } from '../../utils/tour.js'
 
 /**
  * The profile: the name, the email, the password, «Небосвод» and, at the very end, the way to
- * delete the cabinet. Each part saves on its own; the email, the password and the deletion ask
- * for the password, so a forgotten open tab cannot change them.
+ * delete the cabinet. Each part saves on its own; the email, a new password and the deletion ask
+ * for the password or a code from a letter (GuardField), so a forgotten open tab cannot change
+ * them. An account that came in by the letter has no password: its first one asks nothing.
  */
 
 const props = defineProps({
@@ -42,33 +44,43 @@ async function send(target, action, doneText) {
   }
 }
 
-const name = form({ value: props.user.name })
+const name = form({ value: props.user.name || '' })
 const nameChanged = computed(() => name.value.trim() && name.value.trim() !== props.user.name)
 function saveName() {
+  const first = !props.user.name
   send(name, async () => {
     const next = await webApi.setName(name.value.trim())
     name.value = next.name
     emit('updated', next)
-  }, 'Имя сохранено')
+  }, first ? 'Приятно познакомиться' : 'Имя сохранено')
 }
 
-const email = form({ open: false, value: '', password: '' })
+/** The six digits as the API takes them: «123 456» and «123456» alike. */
+const digits = (code) => code.replace(/\D/g, '')
+/** Whichever proof is filled in: the password or a whole code. */
+const proven = (target, key = 'password') => Boolean(target[key] || digits(target.code).length === 6)
+
+const email = form({ open: false, value: '', password: '', code: '' })
 /** The new address takes the old one's place once the link in the letter to it is opened. */
 function saveEmail() {
   send(email, async () => {
-    const answer = await webApi.setEmail({ email: email.value.trim(), password: email.password })
-    Object.assign(email, { open: false, value: '', password: '' })
+    const answer = await webApi.setEmail({ email: email.value.trim(), password: email.password, code: digits(email.code) })
+    Object.assign(email, { open: false, value: '', password: '', code: '' })
     emit('updated', answer.user)
     return answer.pending
   }, (pending) => `Письмо ушло на ${pending}: откройте ссылку в нём — и входите с новой почтой. До тех пор вход — с прежней.`)
 }
 
-const password = form({ open: false, current: '', value: '' })
+const password = form({ open: false, current: '', code: '', value: '' })
+/** The first password asks nothing more: the person came in by the letter. */
+const firstPassword = computed(() => !props.user.has_password)
 function savePassword() {
+  const first = firstPassword.value
   send(password, async () => {
-    await webApi.setPassword({ current: password.current, password: password.value })
-    Object.assign(password, { open: false, current: '', value: '' })
-  }, 'Пароль изменён')
+    const answer = await webApi.setPassword({ current: password.current, code: digits(password.code), password: password.value })
+    Object.assign(password, { open: false, current: '', code: '', value: '' })
+    if (answer?.user) emit('updated', answer.user)
+  }, first ? 'Пароль задан — теперь можно входить и по письму, и с ним' : 'Пароль изменён')
 }
 
 /** The letters about «Небосвод» and the partners; the password link comes regardless. */
@@ -80,10 +92,10 @@ function toggleLetters() {
   }, on ? 'Письма снова будут приходить' : 'Больше не напишем')
 }
 
-const removal = form({ open: false, password: '' })
+const removal = form({ open: false, password: '', code: '' })
 function removeAccount() {
   send(removal, async () => {
-    await webApi.deleteAccount(removal.password)
+    await webApi.deleteAccount({ password: removal.password, code: digits(removal.code) })
     emit('logout')
   }, '')
 }
@@ -106,7 +118,7 @@ const showPassword = ref(false)
       <form class="line" novalidate @submit.prevent="saveName">
         <label class="field">
           <span class="visually-hidden">Имя</span>
-          <input v-model="name.value" type="text" maxlength="80" autocomplete="name" />
+          <input v-model="name.value" type="text" maxlength="80" autocomplete="given-name" placeholder="Как к вам обращаться" />
         </label>
         <button type="submit" class="soft" :disabled="!nameChanged || name.busy">Сохранить</button>
       </form>
@@ -126,13 +138,10 @@ const showPassword = ref(false)
           <span class="field-label">Новая почта</span>
           <input v-model="email.value" type="email" autocomplete="email" required />
         </label>
-        <label class="field">
-          <span class="field-label">Пароль — для подтверждения</span>
-          <input v-model="email.password" type="password" autocomplete="current-password" required />
-        </label>
+        <GuardField v-model:password="email.password" v-model:code="email.code" :has-password="user.has_password" />
         <div class="actions">
-          <button type="submit" class="soft" :disabled="!email.value || !email.password || email.busy">Сменить почту</button>
-          <button type="button" class="link" @click="Object.assign(email, { open: false, error: '' })">Отмена</button>
+          <button type="submit" class="soft" :disabled="!email.value || !proven(email) || email.busy">Сменить почту</button>
+          <button type="button" class="link" @click="Object.assign(email, { open: false, password: '', code: '', error: '' })">Отмена</button>
         </div>
       </form>
       <p v-if="email.error" class="error" role="alert">{{ email.error }}</p>
@@ -142,27 +151,38 @@ const showPassword = ref(false)
     <section class="block" aria-labelledby="password-title">
       <h3 id="password-title" class="block-title">Пароль</h3>
       <div v-if="!password.open" class="row">
-        <span class="value is-quiet">••••••••</span>
-        <button type="button" class="link" @click="password.open = true; password.done = ''">Сменить</button>
+        <span v-if="firstPassword" class="value">Не задан — вход по письму</span>
+        <span v-else class="value is-quiet">••••••••</span>
+        <button type="button" class="link" @click="password.open = true; password.done = ''">{{ firstPassword ? 'Задать' : 'Сменить' }}</button>
       </div>
       <form v-else class="stack" novalidate @submit.prevent="savePassword">
+        <GuardField
+          v-if="!firstPassword"
+          v-model:password="password.current"
+          v-model:code="password.code"
+          has-password
+          label="Текущий пароль"
+        />
         <label class="field">
-          <span class="field-label">Текущий пароль</span>
-          <input v-model="password.current" :type="showPassword ? 'text' : 'password'" autocomplete="current-password" required />
-        </label>
-        <label class="field">
-          <span class="field-label">Новый — от 8 символов</span>
+          <span class="field-label">{{ firstPassword ? 'Пароль — от 8 символов' : 'Новый — от 8 символов' }}</span>
           <input v-model="password.value" :type="showPassword ? 'text' : 'password'" autocomplete="new-password" minlength="8" required />
         </label>
         <label class="check">
           <input v-model="showPassword" type="checkbox" />
-          <span>Показать пароли</span>
+          <span>Показать пароль</span>
         </label>
         <div class="actions">
-          <button type="submit" class="soft" :disabled="!password.current || password.value.length < 8 || password.busy">Сменить пароль</button>
-          <button type="button" class="link" @click="Object.assign(password, { open: false, error: '' })">Отмена</button>
+          <button
+            type="submit"
+            class="soft"
+            :disabled="(!firstPassword && !proven(password, 'current')) || password.value.length < 8 || password.busy"
+          >
+            {{ firstPassword ? 'Задать пароль' : 'Сменить пароль' }}
+          </button>
+          <button type="button" class="link" @click="Object.assign(password, { open: false, current: '', code: '', value: '', error: '' })">Отмена</button>
         </div>
       </form>
+      <p v-if="firstPassword && !password.done" class="hint">По желанию: с паролем можно входить сразу, без письма.</p>
       <p v-if="password.error" class="error" role="alert">{{ password.error }}</p>
       <p v-else-if="password.done" class="done" role="status">✦ {{ password.done }}</p>
     </section>
@@ -227,13 +247,10 @@ const showPassword = ref(false)
         <p class="warning">
           Кабинет исчезнет вместе с картой, парами и разговорами с ИИ-астрологом. Вернуть их будет нельзя.
         </p>
-        <label class="field">
-          <span class="field-label">Пароль — для подтверждения</span>
-          <input v-model="removal.password" type="password" autocomplete="current-password" required />
-        </label>
+        <GuardField v-model:password="removal.password" v-model:code="removal.code" :has-password="user.has_password" />
         <div class="actions">
-          <button type="submit" class="danger-button" :disabled="!removal.password || removal.busy">Удалить навсегда</button>
-          <button type="button" class="link" @click="Object.assign(removal, { open: false, password: '', error: '' })">Оставить</button>
+          <button type="submit" class="danger-button" :disabled="!proven(removal) || removal.busy">Удалить навсегда</button>
+          <button type="button" class="link" @click="Object.assign(removal, { open: false, password: '', code: '', error: '' })">Оставить</button>
         </div>
         <p v-if="removal.error" class="error" role="alert">{{ removal.error }}</p>
       </form>
@@ -273,7 +290,7 @@ const showPassword = ref(false)
 .field input:focus { border-color: rgba(240, 205, 138, 0.7); background: rgba(255, 240, 210, 0.06); box-shadow: 0 0 0 3px rgba(240, 205, 138, 0.12); }
 
 .check { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: rgba(226, 220, 210, 0.7); cursor: pointer; }
-.check input { accent-color: #dcb36c; }
+.check input { width: auto; margin: 0; padding: 0; accent-color: #dcb36c; }
 
 .soft {
   padding: 0 18px;

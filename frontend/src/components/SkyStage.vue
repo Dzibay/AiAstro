@@ -34,7 +34,7 @@ import { LAST_STOP, POSES, STOPS, framed, mixScene, placeBand, poseScene, sceneA
 const STORE_KEY = 'astra-sun'
 
 const { webToken } = useSession()
-const chartTo = computed(() => (webToken.value ? '/cabinet' : '/login?mode=register'))
+const chartTo = computed(() => (webToken.value ? '/cabinet' : '/login?mode=register&from=sky'))
 
 const sky = ref(null)
 const size = ref({ w: 1280, h: 720 })

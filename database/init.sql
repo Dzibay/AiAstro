@@ -12,6 +12,10 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL
 );
 
+-- Вход по письму: аккаунт заводится по одной почте, пароль человек задаёт в кабинете, если захочет.
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+
+-- Имя необязательно: пустое — человек его ещё не указал.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
@@ -64,6 +68,11 @@ CREATE TABLE IF NOT EXISTS email_confirms (
 );
 
 CREATE INDEX IF NOT EXISTS email_confirms_user_idx ON email_confirms (user_id, created_at);
+-- Шесть цифр из того же письма — вход без ссылки, на другом устройстве. Хранится только их подпись,
+-- привязанная к адресу; tries — сколько раз их ввели неверно (после нескольких промахов код гаснет).
+ALTER TABLE email_confirms ADD COLUMN IF NOT EXISTS code_hash TEXT;
+ALTER TABLE email_confirms ADD COLUMN IF NOT EXISTS tries INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS email_confirms_email_idx ON email_confirms (email, created_at);
 
 -- Посчитанные натальные карты. Ключ — хеш данных рождения и версии расчёта: исправленные
 -- данные или новая версия просто не находят старую строку, её можно удалить в любой момент.
@@ -235,10 +244,12 @@ CREATE INDEX IF NOT EXISTS visitors_ref_idx ON visitors (ref_id);
 CREATE INDEX IF NOT EXISTS visitors_user_idx ON visitors (user_id);
 
 -- События для статистики: visit (начало визита), view (страница — имя маршрута), ref (переход по
--- реферальной ссылке), signup, confirm (почта подтверждена по ссылке), birth (дата рождения сохранена впервые), tour (name — тур и исход:
+-- реферальной ссылке), signup (почта указана впервые; name — где: hero, final, header, login, landing, invite),
+-- confirm (почта подтверждена — ссылкой или кодом из письма), login (вход; name — link, code или password),
+-- birth (дата рождения сохранена впервые), name (имя указано впервые), password (пароль задан впервые), tour (name — тур и исход:
 -- section-chart:done, intro:skip; value — шаг), goal (цель лендинга), click (кнопка с data-track),
 -- scroll (name — страница, value — глубина 25/50/75/100), time (name — страница, value — секунды
--- внимания), act (действие: game:play, game:land; value — шаг или секунды), offer (показ предложения
+-- внимания), act (действие: game:play, game:land, start:hero — почта отправлена из блока на главной; value — шаг или секунды), offer (показ предложения
 -- <продукт>:<место>), pick (выбор срока «Небосвода», value — месяцы).
 CREATE TABLE IF NOT EXISTS events (
     id BIGSERIAL PRIMARY KEY,

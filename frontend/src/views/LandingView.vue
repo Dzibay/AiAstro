@@ -103,7 +103,7 @@ function goOn() {
   }
   const next = page.value.focus && page.value.focus !== 'sun' ? `${NEXT.natal}/${page.value.focus}` : NEXT[page.value.form]
   if (webToken.value) router.push(next)
-  else router.push({ path: '/login', query: { mode: 'register', next } })
+  else router.push({ path: '/login', query: { mode: 'register', next, from: 'landing' } })
 }
 
 /* ---- The taste, in words ---- */

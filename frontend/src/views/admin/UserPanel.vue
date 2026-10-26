@@ -6,7 +6,10 @@ import ConfirmDialog from '../../components/admin/ConfirmDialog.vue'
 import UserChat from '../../components/admin/ai/UserChat.vue'
 import { adminApi } from '../../api/admin.js'
 import { useToast } from '../../composables/useToast.js'
-import { LETTER_KINDS, LETTER_STATUS, PAYMENT_STATUS, PRODUCTS, eventText, failed, fmt, moscowDay, offerName, pageName, plural, seen, tourName } from './shared.js'
+import {
+  LETTER_KINDS, LETTER_STATUS, LOGIN_WAYS, PAYMENT_STATUS, PRODUCTS, eventText, failed, fmt, moscowDay, offerName, pageName, plural, seen,
+  startPlaceName, tourName,
+} from './shared.js'
 import { DEVICE_NAMES, WAY } from './way.js'
 
 const route = useRoute()
@@ -62,7 +65,9 @@ const times = (n) => `${n} ${plural(n, 'раз', 'раза', 'раз')}`
 const ACTIONS = {
   birth: { label: 'Указал дату рождения' },
   intro: { label: 'Прошёл знакомство', part: 'Закрыл знакомство, не досмотрев' },
-  chart: { label: 'Открыл карту' },
+  chart: { label: 'Увидел свою карту' },
+  name: { label: 'Указал имя' },
+  password: { label: 'Задал пароль' },
   game: { label: 'Собрал карту в игре', part: 'Начал игру, не закончил', extra: (n) => (n > 1 ? times(n) : '') },
   forecast: { label: 'Открыл прогноз', extra: (n) => (n > 1 ? times(n) : '') },
   pair: { label: 'Добавил пару', extra: (n) => `${n} ${plural(n, 'пара', 'пары', 'пар')}` },
@@ -110,6 +115,10 @@ const way = computed(() => {
     landing: f?.landing ? pageName(f.landing) : '',
     device: f?.device ? DEVICE_NAMES[f.device] || f.device : '',
     firstAt: f?.at || null,
+    place: j.place ? startPlaceName(j.place) : '',
+    logins: j.logins
+      ? `${fmt.count(j.logins)} · ${j.login_ways.map((key) => LOGIN_WAYS[key]?.label.toLowerCase() || key).join(', ')}`
+      : '',
     tours: j.tours.map(tourName),
   }
 })
@@ -360,6 +369,14 @@ function remove() {
             <div v-if="way.landing || way.device">
               <dt>Вход</dt>
               <dd>{{ [way.landing, way.device].filter(Boolean).join(' · ') }}</dd>
+            </div>
+            <div v-if="way.place">
+              <dt>Почта</dt>
+              <dd>{{ way.place }}</dd>
+            </div>
+            <div v-if="way.logins">
+              <dt>Входы</dt>
+              <dd>{{ way.logins }}</dd>
             </div>
             <div>
               <dt>Визитов</dt>

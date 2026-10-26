@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
 import StarPassport from '../../components/sky/StarPassport.vue'
 import NewcomerPath from '../../components/sky/NewcomerPath.vue'
+import NextAsk from '../../components/cabinet/NextAsk.vue'
 import { useSky } from '../../composables/useSky.js'
 import { useForecast } from '../../composables/useForecast.js'
 import { ROMAN } from '../../components/cabinet/astro.js'
@@ -12,14 +13,14 @@ import { SIGNS } from '../../utils/skyToday.js'
 import { skyEnding, skyLine } from '../../utils/skyTerm.js'
 
 /**
- * The overview: a greeting, the star passport, the first steps, a line about «Небосвод» and the
- * way out. The sections themselves are on the sky.
+ * The overview: a greeting, what a new cabinet is asked next (the name, a password), the star
+ * passport, the first steps, a line about «Небосвод» and the way out. The sections themselves are on the sky.
  */
 
 const props = defineProps({
   user: { type: Object, required: true },
 })
-const emit = defineEmits(['logout'])
+const emit = defineEmits(['logout', 'updated'])
 
 const { mark } = useSky()
 const SIGN_BY_ID = Object.fromEntries(SIGNS.map((sign) => [sign.id, sign]))
@@ -68,8 +69,11 @@ const unplaced = computed(() => Boolean(props.user.birth?.place && props.user.bi
 <template>
   <div class="overview">
     <PanelHead :level="1" :lead="signLine || 'Добавьте дату рождения — и небо нарисует ваш знак.'">
-      Здравствуйте, <em>{{ user.name }}</em>
+      <template v-if="user.name">Здравствуйте, <em>{{ user.name }}</em></template>
+      <template v-else><em>Здравствуйте</em></template>
     </PanelHead>
+
+    <NextAsk :user="user" @updated="emit('updated', $event)" />
 
     <NewcomerPath :user="user" />
 
