@@ -43,7 +43,7 @@ def _public(row: dict) -> dict:
     """An answer is kept as a reading in JSON: the page gets it whole, and as plain text besides."""
     public = {"id": row["id"], "role": row["role"], "text": row["text"], "created_at": row["created_at"].isoformat()}
     if row["role"] == "astrologer":
-        public["reading"] = as_reading(row["text"])
+        public["reading"] = guard.mend(as_reading(row["text"]))
         public["text"] = reading_text(public["reading"])
     return public
 
@@ -52,7 +52,7 @@ def _plain(row: dict) -> dict:
     """The history as the model reads it: text, whoever wrote it; the model's own key apart."""
     if row["role"] != "astrologer":
         return {"role": row["role"], "text": row["text"]}
-    reading = as_reading(row["text"])
+    reading = guard.mend(as_reading(row["text"]))
     if reading.get("kind") == "talk":
         return {"role": "astrologer", "text": "\n\n".join(part["text"] for part in reading["parts"]), "key": reading.get("key", "")}
     return {"role": "astrologer", "text": reading_text(reading)}

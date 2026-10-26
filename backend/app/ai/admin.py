@@ -360,6 +360,6 @@ def runs(kind: str = "", only: str = "", before: int = 0) -> dict:
             "prompt": row["prompt_tokens"], "cached": row["cached_tokens"], "output": row["output_tokens"],
             "cost": float(row["cost"]), "ms": row["ms"], "error": row["error"], "flagged": row["flagged"],
             "question": row["question"] or row["note"],
-            "answer": reading_text(as_reading(row["answer"])) if row["answer"] else "",
+            "answer": reading_text(guard.mend(as_reading(row["answer"]))) if row["answer"] else "",
         })
     return {"items": items, "more": len(rows) > PAGE}
