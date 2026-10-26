@@ -33,6 +33,7 @@ import { birthSigns } from '../../utils/skyToday.js'
 const props = defineProps({
   user: { type: Object, required: true },
 })
+const emit = defineEmits(['updated'])
 const { prices, pay: payOn, synastry: pairPrice, synastrySky: pairSkyPrice } = usePrices()
 
 const route = useRoute()
@@ -187,6 +188,14 @@ function onEdited(changed) {
   router.replace({ name: 'cabinet-pair', query: { partner: changed.id } })
 }
 
+/** The invitation says who calls: a cabinet opened by the letter gives its name first. */
+const myName = ref('')
+const nameMissing = computed(() => !props.user.name && !myName.value.trim())
+async function introduce() {
+  if (props.user.name) return
+  emit('updated', await webApi.setName(myName.value.trim()))
+}
+
 const inviteName = ref('')
 const inviting = ref(false)
 const inviteMessage = ref('')
@@ -199,9 +208,14 @@ async function sendInvite() {
     inviteMessage.value = 'Укажите имя'
     return
   }
+  if (nameMissing.value) {
+    inviteMessage.value = 'Укажите и своё имя — партнёр увидит, от кого приглашение'
+    return
+  }
   inviteMessage.value = ''
   inviting.value = true
   try {
+    await introduce()
     const created = await add({ name })
     await invite(created.id)
     inviteName.value = ''
@@ -231,12 +245,15 @@ async function copyLink() {
 }
 const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
 function shareLink() {
-  navigator.share({ title: 'Астра', text: `${props.user.name} приглашает вас зажечь свою звезду рядом`, url: link.value }).catch(() => {})
+  const text = props.user.name ? `${props.user.name} приглашает вас зажечь свою звезду рядом` : 'Вас приглашают зажечь свою звезду рядом'
+  navigator.share({ title: 'Астра', text, url: link.value }).catch(() => {})
 }
 const relinking = ref(false)
 async function makeLink() {
+  if (nameMissing.value) return
   relinking.value = true
   try {
+    await introduce()
     await invite(partner.value.id)
   } catch (error) {
     push(errorText(error))
@@ -446,6 +463,10 @@ const rows = computed(() => partners.value.map((item) => {
         <span class="field-label">Как зовут партнёра</span>
         <input v-model="inviteName" type="text" maxlength="80" autocomplete="off" />
       </label>
+      <label v-if="!user.name" class="field">
+        <span class="field-label">Как вас представить</span>
+        <input v-model="myName" type="text" maxlength="80" autocomplete="given-name" placeholder="Ваше имя — его увидит партнёр" />
+      </label>
       <p v-if="inviteMessage" class="error" role="alert">{{ inviteMessage }}</p>
       <div class="actions">
         <button class="gold-cta" type="submit" :disabled="inviting">{{ inviting ? 'Минуту…' : 'Отправить приглашение' }}</button>
@@ -485,7 +506,13 @@ const rows = computed(() => partners.value.map((item) => {
           </div>
           <p class="hint">Ссылка ведёт только к этой паре: по ней видно лишь ваше имя, не ваши данные.</p>
         </div>
-        <button v-else type="button" class="soft-button" :disabled="relinking" @click="makeLink">Получить ссылку</button>
+        <form v-else class="name-ask" novalidate @submit.prevent="makeLink">
+          <label v-if="!user.name" class="field">
+            <span class="field-label">Как вас представить</span>
+            <input v-model="myName" type="text" maxlength="80" autocomplete="given-name" placeholder="Ваше имя — его увидит партнёр" />
+          </label>
+          <button type="submit" class="soft-button" :disabled="relinking || nameMissing">Получить ссылку</button>
+        </form>
       </template>
 
       <template v-else>
@@ -518,7 +545,7 @@ const rows = computed(() => partners.value.map((item) => {
           <section v-if="pair.data.spheres?.length" class="block" aria-labelledby="spheres-title">
             <h3 id="spheres-title" class="block-title">Пять сфер</h3>
             <PairSpheres :spheres="pair.data.spheres" />
-            <PairShare :mine="user.name" :theirs="partner.name" :phrase="pair.data.phrase" :spheres="pair.data.spheres" />
+            <PairShare :mine="user.name || 'Я'" :theirs="partner.name" :phrase="pair.data.phrase" :spheres="pair.data.spheres" />
           </section>
 
           <section class="block" aria-labelledby="aspects-title">
@@ -903,6 +930,8 @@ const rows = computed(() => partners.value.map((item) => {
 
 /* ---- Forms and buttons (as the birth form's) ---- */
 .invite-form { display: grid; gap: 14px; }
+.name-ask { display: grid; gap: 12px; justify-items: start; }
+.name-ask .field { justify-self: stretch; }
 .field { display: grid; gap: 7px; }
 .field-label { line-height: 16px; font-size: 10.5px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(226, 214, 192, 0.66); }
 .field input, .link {

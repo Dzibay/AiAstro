@@ -274,6 +274,9 @@ def invite(user_id: int, partner_id: int) -> dict:
     row = _own(user_id, partner_id)
     if row["birth_date"] is not None or row["joined_at"] is not None:
         raise DomainError("filled", 409)
+    # The invitation says who calls: an account that has not given its name yet gives it first.
+    if not get_user(user_id)["name"]:
+        raise DomainError("need_name", 409)
     if row["invite_token"]:
         return _one(user_id, partner_id)
     for _ in range(3):
@@ -433,6 +436,8 @@ def _link(user_id: int, row: dict) -> dict:
         ).fetchone()
         if won is None:
             raise DomainError("linked", 409)
+        # A cabinet opened by the letter has no name yet: the one given in the answer becomes it.
+        conn.execute("UPDATE users SET name = %s WHERE id = %s AND name = ''", (row["name"], user_id))
         if me["birth"] is None:
             # The cabinet opened from the invitation: the data the partner gave become their own.
             conn.execute(
@@ -505,7 +510,7 @@ def accept_invite(user_id: int, token: str, share_consent: bool) -> dict:
         filled = conn.execute(
             f"""
             UPDATE partners p
-            SET name = u.name, birth_date = u.birth_date, birth_time = u.birth_time, birth_place = u.birth_place,
+            SET name = COALESCE(NULLIF(u.name, ''), p.name), birth_date = u.birth_date, birth_time = u.birth_time, birth_place = u.birth_place,
                 birth_lat = u.birth_lat, birth_lon = u.birth_lon, birth_tz = u.birth_tz,
                 consent_at = now(), filled_at = now(), news = 'filled', news_at = now()
             FROM users u

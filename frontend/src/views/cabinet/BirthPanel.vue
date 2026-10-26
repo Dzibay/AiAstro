@@ -43,6 +43,15 @@ function saved(user) {
           </p>
         </header>
       </template>
+      <template v-else-if="!user.birth" #head>
+        <header class="form-head">
+          <h2>Нарисуем ваше <em>небо</em></h2>
+          <p>
+            Дата даст знак Солнца, время — Луну и дома, город — координаты. Точное время можно добавить и позже —
+            карта построится и без него.
+          </p>
+        </header>
+      </template>
       <template v-else-if="user.birth" #head>
         <header class="form-head">
           <h2>Данные <em>рождения</em></h2>

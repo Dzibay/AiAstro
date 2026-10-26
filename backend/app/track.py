@@ -13,13 +13,15 @@ from app.db import pool
 VISITOR = re.compile(r"^[a-z0-9-]{16,40}$")
 NAME = re.compile(r"^[a-z0-9][a-z0-9:_-]{0,47}$")
 TOKEN = re.compile(r"^[a-z0-9][a-z0-9_-]{1,39}$")
-# What a page may report; signup and birth are written by the server itself. A goal is a landing's step:
+# What a page may report; signup, confirm, login, birth, name and password are written by the server
+# itself (login's name — link | code | password). A goal is a landing's step:
 # «lp-natal:calc» (the calculation shown), «lp-natal:cta» (on to the registration).
 KINDS = {"view", "tour", "goal"}
 # What a page gathers and sends in batches (track_many), each with the page it happened on:
 # click — a button or a link («home:hero», «to:cabinet-sky»); scroll — the page reached 25/50/75/100 %;
 # time — seconds of attention on the page; act — a step of the game («game:found», value — the planet's
-# number); offer — an offer seen («sky:chat»); pick — a plan chosen in «Небосвод» (value — months).
+# number) or of the way in («email:hero» — the address begun, «start:hero» — sent, «chart:seen»);
+# offer — an offer seen («sky:chat»); pick — a plan chosen in «Небосвод» (value — months).
 QUEUED = {"tour", "goal", "click", "scroll", "time", "act", "offer", "pick"}
 BATCH = 40
 DEVICES = {"phone", "desktop"}
@@ -91,20 +93,22 @@ def track(
         )
 
 
-def attach(user_id: int, visitor: str | None, signup: bool = False) -> None:
+def attach(user_id: int, visitor: str | None, signup: bool = False, place: str = "") -> None:
     """The browser and the account meet: at the registration the account takes the browser's
     campaign link (the first one, for good); at a sign-in only the browser learns whose it is.
-    A registration that came with the date of birth is its first saving too (birth)."""
+    A registration that came with the date of birth is its first saving too (birth). `place` names
+    where the address was given (hero, final, login…): the signup event carries it."""
+    place = place if NAME.match(place or "") else ""
     if not visitor or not VISITOR.match(visitor):
         if signup:
             with pool.connection() as conn:
                 conn.execute(
                     """
-                    INSERT INTO events (user_id, kind)
-                    SELECT id, k FROM users, unnest(ARRAY['signup', 'birth']) AS k
+                    INSERT INTO events (user_id, kind, name)
+                    SELECT id, k, CASE WHEN k = 'signup' THEN %s ELSE '' END FROM users, unnest(ARRAY['signup', 'birth']) AS k
                     WHERE id = %s AND (k = 'signup' OR birth_date IS NOT NULL)
                     """,
-                    (user_id,),
+                    (place, user_id),
                 )
         return
     with pool.connection() as conn:
@@ -122,11 +126,12 @@ def attach(user_id: int, visitor: str | None, signup: bool = False) -> None:
             )
             conn.execute(
                 """
-                INSERT INTO events (visitor_id, user_id, ref_id, kind)
-                SELECT v.id, u.id, v.ref_id, k FROM visitors v, users u, unnest(ARRAY['signup', 'birth']) AS k
+                INSERT INTO events (visitor_id, user_id, ref_id, kind, name)
+                SELECT v.id, u.id, v.ref_id, k, CASE WHEN k = 'signup' THEN %s ELSE '' END
+                FROM visitors v, users u, unnest(ARRAY['signup', 'birth']) AS k
                 WHERE v.id = %s AND u.id = %s AND (k = 'signup' OR u.birth_date IS NOT NULL)
                 """,
-                (visitor, user_id),
+                (place, visitor, user_id),
             )
 
 

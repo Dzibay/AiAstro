@@ -9,6 +9,8 @@ import { clamp } from '../components/hero/sky.js'
 import { webApi } from '../api/web.js'
 import { ApiError, errorText } from '../api/http.js'
 import { keepInvite, linkPendingInvite, pendingInvite } from '../composables/usePartners.js'
+import { startSignIn } from '../composables/useSignIn.js'
+import { queue } from '../utils/track.js'
 import { webToken, writeSession } from '../composables/useSession.js'
 import { useSky } from '../composables/useSky.js'
 import { useHead } from '../utils/useHead.js'
@@ -103,7 +105,7 @@ async function accept() {
 
 // ---- Just answered: a cabinet of one's own, the pair already in it ----
 
-const signup = reactive({ email: '', password: '', consent: false, pending: false })
+const signup = reactive({ email: '', consent: false, pending: false })
 
 async function join() {
   if (!signup.consent) {
@@ -113,27 +115,19 @@ async function join() {
   message.value = ''
   signup.pending = true
   try {
-    let confirmed = true
     if (!webToken.value) {
-      const opened = await webApi.register({
-        email: signup.email.trim(),
-        password: signup.password,
-        name: invitation.value.name,
-        consent: true,
-        next: '/cabinet/pair',
-      })
+      // The letter opens the cabinet, and the pair kept on this device joins it there (CabinetView).
+      const opened = await startSignIn({ email: signup.email, consent: true, next: '/cabinet/pair', place: 'invite' })
+      if (!opened.token) {
+        router.push({ name: 'login', query: { mode: 'sent', next: '/cabinet/pair', from: 'invite' } })
+        return
+      }
       writeSession('web', opened.token)
-      confirmed = opened.user.email_confirmed !== false
     }
     const joined = await linkPendingInvite()
-    const pair = { path: '/cabinet/pair', query: { partner: joined?.partner, joined: 1 } }
-    // The pair is joined already; the cabinet opens with it once the email is confirmed.
-    if (confirmed) router.push(pair)
-    else router.push({ name: 'login', query: { mode: 'confirm', next: router.resolve(pair).fullPath } })
+    router.push({ path: '/cabinet/pair', query: { partner: joined?.partner, joined: 1 } })
   } catch (error) {
-    message.value = error instanceof ApiError && error.code === 'exists'
-      ? 'Эта почта уже открывала кабинет — войдите, и пара присоединится к нему'
-      : errorText(error)
+    message.value = error instanceof ApiError && error.code === 'email' ? 'Почта выглядит неполной' : errorText(error)
   } finally {
     signup.pending = false
   }
@@ -268,11 +262,7 @@ const stars = computed(() => {
             <template v-if="!webToken">
               <label class="field">
                 <span class="field-label">Почта</span>
-                <input v-model="signup.email" type="email" autocomplete="email" maxlength="254" />
-              </label>
-              <label class="field">
-                <span class="field-label">Пароль</span>
-                <input v-model="signup.password" type="password" autocomplete="new-password" minlength="8" maxlength="200" />
+                <input v-model="signup.email" type="email" autocomplete="email" maxlength="254" @input.once="queue('act', 'email:invite')" />
               </label>
             </template>
             <label class="check consent">
@@ -285,11 +275,12 @@ const stars = computed(() => {
             </label>
             <p v-if="message" class="error" role="alert">{{ message }}</p>
             <button class="gold-cta" type="submit" :disabled="signup.pending">
-              {{ signup.pending ? 'Минуту…' : webToken ? 'Добавить пару в мой кабинет' : 'Открыть кабинет' }}
+              {{ signup.pending ? 'Минуту…' : webToken ? 'Добавить пару в мой кабинет' : 'Получить ссылку на кабинет' }}
             </button>
+            <p v-if="!webToken" class="mini-note">Пришлём ссылку для входа — пароль не нужен.</p>
             <RouterLink v-if="!webToken" class="quiet-link" :to="login">У меня уже есть кабинет — войти</RouterLink>
           </form>
-          <RouterLink v-else class="gold-link" :to="{ name: 'login', query: { mode: 'register' } }">Открыть свою карту</RouterLink>
+          <RouterLink v-else class="gold-link" :to="{ name: 'login', query: { mode: 'register', from: 'invite' } }">Открыть свою карту</RouterLink>
         </template>
 
         <BirthForm
@@ -324,6 +315,7 @@ const stars = computed(() => {
 <style scoped>
 /* The sign-up right after the answer: the fields of BirthForm, which keeps its own scoped. */
 .mini-form { display: grid; gap: 14px; }
+.mini-note { margin: -4px 0 0; font-size: 12.5px; line-height: 1.45; color: rgba(226, 220, 210, 0.6); }
 .field { display: grid; gap: 7px; min-width: 0; }
 .field-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .field-label { line-height: 16px; font-size: 10.5px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(226, 214, 192, 0.66); }

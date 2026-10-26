@@ -2,12 +2,20 @@ import { request } from './http.js'
 import { visitorId } from '../utils/track.js'
 
 export const webApi = {
-  register: (body) => request('/api/web/register', { method: 'POST', body: { ...body, visitor: visitorId() || null }, audience: 'web' }),
+  /**
+   * The address, for a sign-up and a sign-in alike ({ email, consent, birth, next, place }): the letter with
+   * the link and six digits goes to it — { sent, wait, pause }; without the site's mail a new cabinet opens — { token, user }.
+   */
+  start: (body) => request('/api/web/start', { method: 'POST', body: { ...body, visitor: visitorId() || null }, audience: 'web' }),
+  /** The letter's six digits ({ email, code }): { token, user, next, first }, as the link would. */
+  code: (body) => request('/api/web/code', { method: 'POST', body: { ...body, visitor: visitorId() || null }, audience: 'web' }),
+  /** Six digits to the account's own address: they stand for the password in the profile. */
+  sendCode: () => request('/api/web/me/code', { method: 'POST', audience: 'web', auth: true }),
   login: (body) => request('/api/web/login', { method: 'POST', body: { ...body, visitor: visitorId() || null }, audience: 'web' }),
   me: () => request('/api/web/me', { audience: 'web', auth: true }),
   /** Another confirmation letter ({ email?, next }): { user, sent, pause }; email corrects a slip in the address. */
   confirmSend: (body) => request('/api/web/confirm/send', { method: 'POST', body, audience: 'web', auth: true }),
-  /** The letter's link: { token, user, next }, the person signed in on this device. */
+  /** The letter's link: { token, user, next, first }, the person signed in on this device. */
   confirm: (token) => request('/api/web/confirm', { method: 'POST', body: { token, visitor: visitorId() || null }, audience: 'web' }),
   setBirth: (body) => request('/api/web/me/birth', { method: 'PUT', body, audience: 'web', auth: true }),
   chart: () => request('/api/web/me/chart', { audience: 'web', auth: true }),
@@ -25,8 +33,9 @@ export const webApi = {
   forgotPassword: (email) => request('/api/web/password/forgot', { method: 'POST', body: { email }, audience: 'web' }),
   resetPassword: (body) => request('/api/web/password/reset', { method: 'POST', body, audience: 'web' }),
   setPassword: (body) => request('/api/web/me/password', { method: 'PUT', body, audience: 'web', auth: true }),
-  deleteAccount: (password) =>
-    request('/api/web/me/delete', { method: 'POST', body: { password }, audience: 'web', auth: true }),
+  /** With the password ({ password }) or a letter's code ({ code }). */
+  deleteAccount: (body) =>
+    request('/api/web/me/delete', { method: 'POST', body, audience: 'web', auth: true }),
   partners: () => request('/api/web/me/partners', { audience: 'web', auth: true }),
   addPartner: (body) => request('/api/web/me/partners', { method: 'POST', body, audience: 'web', auth: true }),
   removePartner: (id) =>

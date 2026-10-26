@@ -333,10 +333,36 @@ const GAME_ACTS = {
   finale: 'Игра: финал',
   fail: 'Игра: не запустилась на устройстве',
 }
-/** The steps on the way into the cabinet: registration and the confirmation letter. */
+/** Where the address was given (START_PLACES of useSignIn.js), for the table of start places. */
+export const START_PLACE_NAMES = {
+  hero: 'Первый экран',
+  how: 'Пример карты',
+  final: 'Конец главной',
+  compat: 'Совместимость',
+  header: 'Шапка сайта',
+  sky: 'Небо',
+  login: 'Страница входа',
+  landing: 'Лендинг',
+  invite: 'Приглашение партнёра',
+  unknown: 'Не записано',
+}
+export const startPlaceName = (key) => START_PLACE_NAMES[key] || key
+
+/** How people sign in (the event login of accounts.py). */
+export const LOGIN_WAYS = {
+  link: { label: 'Ссылка из письма', hint: 'открыли кнопку в письме' },
+  code: { label: 'Код из письма', hint: 'ввели шесть цифр на странице' },
+  password: { label: 'Пароль', hint: 'почта и пароль' },
+}
+
+/** The steps on the way into the cabinet: the address, the letter, the asks after the chart. */
 const WAY_ACTS = {
-  'reg:open': 'Открыл регистрацию',
-  'reg:who': 'Прошёл первый шаг регистрации',
+  'reg:open': 'Открыл регистрацию (старая форма)',
+  'reg:who': 'Прошёл первый шаг регистрации (старая форма)',
+  'login:password': 'Выбрал вход с паролем',
+  'chart:seen': 'Увидел свою карту',
+  'ask:name-later': 'Отложил имя («Не сейчас»)',
+  'ask:password-later': 'Отложил пароль («Не сейчас»)',
   'confirm:resend': 'Попросил письмо ещё раз',
   'confirm:change': 'Исправил почту для письма',
   'confirm:mailbox': 'Перешёл в свою почту',
@@ -352,9 +378,12 @@ export function eventText(item) {
     case 'view': return `Открыл: ${pageName(name)}`
     case 'visit': return `Новый визит — ${pageName(name)}`
     case 'ref': return 'Пришёл по рекламной ссылке'
-    case 'signup': return 'Зарегистрировался'
+    case 'signup': return name ? `Запросил письмо — ${startPlaceName(name)}` : 'Зарегистрировался'
     case 'confirm': return 'Подтвердил почту'
+    case 'login': return `Вошёл: ${LOGIN_WAYS[name]?.label.toLowerCase() || name}`
     case 'birth': return 'Указал дату рождения'
+    case 'name': return 'Указал имя'
+    case 'password': return 'Задал пароль'
     case 'tour': {
       const [tour, step] = name.split(':')
       return `Тур «${tourName(tour).replace(/[«»]/g, '')}»: ${TOUR_STEPS[step] || step}`
@@ -370,6 +399,8 @@ export function eventText(item) {
     case 'time': return `Провёл на странице ${duration(item.value)}`
     case 'act': {
       if (WAY_ACTS[name]) return WAY_ACTS[name]
+      if (name.startsWith('email:')) return `Начал вводить почту — ${startPlaceName(name.slice(6))}`
+      if (name.startsWith('start:')) return `Отправил почту — ${startPlaceName(name.slice(6))}`
       const [, act, step] = name.split(':')
       if (act === 'land') return `Игра: собрал карту за ${duration(item.value)}`
       if (step) return `Игра: ${GAME_STEP_ACTS[act] || act} — ${GAME_STEPS[step] || step}`

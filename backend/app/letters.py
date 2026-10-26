@@ -35,6 +35,9 @@ class Letter:
     lines: list[str]
     button: str = ""
     url: str = ""
+    # Six digits under the button, for a letter opened on another device than the page that waits.
+    code: str = ""
+    code_note: str = ""
     # Below the button: how long the link lives, a word of comfort.
     after: list[str] = field(default_factory=list)
     # The smallest print at the very bottom: why this letter came, how to switch such letters off.
@@ -74,6 +77,8 @@ def text(letter: Letter) -> str:
     parts = [letter.hello, *letter.lines]
     if letter.url:
         parts.append(f"{letter.button}:\n{letter.url}")
+    if letter.code:
+        parts.append(f"{letter.code_note}\n{letter.code}")
     parts += letter.after
     # Every letter says where to ask, if the operator has given a way.
     if support := _support_text():
@@ -102,6 +107,18 @@ def _button(label: str, url: str) -> str:
 </table>"""
 
 
+def _code(code: str, note: str) -> str:
+    # Two groups of three read and type more easily than six in a row.
+    shown = f"{escape(code[:3])}&nbsp;{escape(code[3:])}" if len(code) == 6 else escape(code)
+    return f"""
+<p style="margin:28px 0 10px;font-family:{_SANS};font-size:14px;line-height:1.5;color:{_MUTED};text-align:center;">{escape(note)}</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">
+  <tr>
+    <td align="center" bgcolor="#1c2622" style="background-color:#1c2622;border:1px solid #3a4a42;border-radius:16px;padding:14px 26px;font-family:{_SANS};font-size:34px;font-weight:600;letter-spacing:0.16em;line-height:1;color:#f4dba6;white-space:nowrap;">{shown}</td>
+  </tr>
+</table>"""
+
+
 def html(letter: Letter) -> str:
     site = setting("site_name")
     motto = setting("tagline")
@@ -111,6 +128,8 @@ def html(letter: Letter) -> str:
     body += [_paragraph(line) for line in letter.lines]
     if letter.url:
         body.append(_button(letter.button, letter.url))
+    if letter.code:
+        body.append(_code(letter.code, letter.code_note))
     body += [_paragraph(line, 14, _MUTED, 16) for line in letter.after]
     if letter.url:
         href = escape(letter.url, quote=True)

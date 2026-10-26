@@ -30,6 +30,12 @@ export function clearSession(audience) {
   writeSession(audience, '')
 }
 
+// The letter's link opened in another tab signs this one in too; a sign-out there signs it out here.
+window.addEventListener('storage', (event) => {
+  if (event.key === WEB_KEY) webToken.value = event.newValue || ''
+  if (event.key === ADMIN_KEY) adminToken.value = event.newValue || ''
+})
+
 export function useSession() {
   return { webToken, adminToken, readSession, writeSession, clearSession }
 }

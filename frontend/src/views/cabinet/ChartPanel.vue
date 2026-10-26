@@ -5,7 +5,7 @@ import PanelHead from '../../components/cabinet/PanelHead.vue'
 import ReadingText from '../../components/cabinet/ReadingText.vue'
 import LockedReading from '../../components/cabinet/LockedReading.vue'
 import SkyNudge from '../../components/sky/SkyNudge.vue'
-import { markStep } from '../../utils/newcomer.js'
+import { markStep, stepDone } from '../../utils/newcomer.js'
 import { gameSupported, startGame } from '../../components/game/state.js'
 import { queue } from '../../utils/track.js'
 import { useChart } from '../../composables/useChart.js'
@@ -27,6 +27,13 @@ const route = useRoute()
 const { chart, status, message, hot, load, reading, portrait: loadPortrait, forgetReadings } = useChart()
 
 onMounted(load)
+
+// The chart seen for the first time: the funnel's step, and the overview may ask what comes next (NextAsk).
+watch(() => status.value === 'ready', (ready) => {
+  if (!ready || stepDone(props.user.id, 'chart')) return
+  markStep(props.user.id, 'chart')
+  queue('act', 'chart:seen')
+}, { immediate: true })
 
 const item = computed(() => (typeof route.params.item === 'string' ? route.params.item : ''))
 const items = computed(() => (chart.value ? chartItems(chart.value) : []))

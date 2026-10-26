@@ -11,13 +11,13 @@ from app.db import pool
 from app.errors import DomainError
 from app.mailer import mail_on
 from app.places import timezone_at
-from app.security import hash_password, verify_password
+from app.security import hash_password, same_code, sign_code, verify_password
 from app.track import server_event
 
 _DUMMY_HASH = hash_password("not-a-real-password")
 _EARLIEST_BIRTH = date(1900, 1, 1)
 _USER_COLUMNS = (
-    "id, email, name, blocked, created_at, birth_date, birth_time, birth_place, birth_lat, birth_lon, birth_tz, sky_until, mail_notes, birth_edits, marks, email_confirmed_at"
+    "id, email, name, blocked, created_at, birth_date, birth_time, birth_place, birth_lat, birth_lon, birth_tz, sky_until, mail_notes, birth_edits, marks, email_confirmed_at, password_hash IS NOT NULL AS has_password"
 )
 
 
@@ -71,7 +71,10 @@ def _public(row: dict) -> dict:
         "email": row["email"],
         # The cabinet opens once the email is confirmed by the link in the letter (asked only while the site can write).
         "email_confirmed": row["email_confirmed_at"] is not None or not mail_on(),
+        # Empty until the person gives it: the account begins with the email alone.
         "name": row["name"],
+        # Signing in goes by the letter; a password is the person's own choice, made in the profile.
+        "has_password": row["has_password"],
         "created_at": row["created_at"],
         "birth": birth,
         # «Небосвод»: the forecasts' text and the astrologer. The date is shown, the flag decides.
@@ -98,47 +101,71 @@ def _require_web_secret() -> None:
         raise DomainError("unauthorized", 401)
 
 
-def register(
+def start_sign_in(
     email: str,
-    password: str,
-    name: str,
     consent: bool,
     birth_date: date | None = None,
     birth_time: time | None = None,
     birth_place: str | None = None,
     birth_lat: float | None = None,
     birth_lon: float | None = None,
+    page: str = "",
 ) -> dict:
+    """The address: the first step of a sign-up and of a sign-in alike. The letter with the link and
+    the six digits goes to it, and the cabinet opens by either of them, never before.
+
+    A new address becomes an account without a password (the consent is asked then, and the birth
+    data given on the way are kept); a known one gets its letter, its data untouched. Gives what
+    notes.confirm_letter needs — {user_id, email, name, token, code, change, first} — and new, open,
+    wait: no token while the pause after the previous letter lasts (wait is its seconds left), and
+    none for a blocked account, whose answer looks the same.
+
+    Without the site's mail nothing could prove the address: a new account opens at once (open),
+    a known one is entered with its password.
+    """
     _require_web_secret()
     cleaned = _clean_email(email)
-    if len(password) < 8:
-        raise DomainError("password")
-    # Email, name and birth data are personal data: no account without the consent.
-    if not consent:
-        raise DomainError("consent")
     if birth_date:
         birth = _clean_birth(birth_date, birth_time, birth_place, birth_lat, birth_lon)
     else:
         birth = (None, None, "", None, None, "")
-    display = " ".join(name.split())[:80] or cleaned.split("@", 1)[0][:80]
-    # Without the site's mail no letter could confirm anything: the cabinet opens at once.
-    confirmed = None if mail_on() else datetime.now(timezone.utc)
+    mail = mail_on()
     try:
         with pool.connection() as conn:
             row = conn.execute(
-                f"""
-                INSERT INTO users (
-                    email, password_hash, name,
-                    birth_date, birth_time, birth_place, birth_lat, birth_lon, birth_tz, consent_at, email_confirmed_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s)
-                RETURNING {_USER_COLUMNS}
-                """,
-                (cleaned, hash_password(password), display, *birth, confirmed),
+                "SELECT id, name, blocked, email_confirmed_at FROM users WHERE email = %s", (cleaned,)
             ).fetchone()
+            new = row is None
+            if new:
+                # The email and the birth data are personal data: no account without the consent.
+                if not consent:
+                    raise DomainError("consent")
+                row = conn.execute(
+                    """
+                    INSERT INTO users (
+                        email, name, birth_date, birth_time, birth_place, birth_lat, birth_lon, birth_tz,
+                        consent_at, email_confirmed_at
+                    )
+                    VALUES (%s, '', %s, %s, %s, %s, %s, %s, now(), %s)
+                    RETURNING id, name, blocked, email_confirmed_at
+                    """,
+                    (cleaned, *birth, None if mail else datetime.now(timezone.utc)),
+                ).fetchone()
+            elif not mail:
+                raise DomainError("mail_off", 409)
+            found = {
+                "user_id": row["id"], "email": cleaned, "name": row["name"], "token": None, "code": None,
+                "change": False, "first": row["email_confirmed_at"] is None, "new": new, "open": not mail, "wait": 0,
+            }
+            if not mail or row["blocked"]:
+                return found
+            found["wait"] = _pause_left(conn, row["id"], cleaned)
+            if not found["wait"]:
+                found.update(_confirm_link(conn, row["id"], cleaned, page, code=True))
     except UniqueViolation as exc:
-        raise DomainError("exists", 409) from exc
-    return _public(row)
+        # The same address sent twice at once: the other request has just made the account and its letter.
+        raise DomainError("confirm_wait", 429) from exc
+    return found
 
 
 def authenticate(email: str, password: str) -> dict:
@@ -160,6 +187,10 @@ def authenticate(email: str, password: str) -> dict:
     if row is None:
         verify_password(password, _DUMMY_HASH)
         raise DomainError("unauthorized", 401)
+    if row["password_hash"] is None:
+        # The account has never had a password: the page offers the letter instead.
+        verify_password(password, _DUMMY_HASH)
+        raise DomainError("no_password", 401)
     if not verify_password(password, row["password_hash"]):
         raise DomainError("unauthorized", 401)
     if row["blocked"]:
@@ -241,8 +272,13 @@ def set_birth(
 
 # ---- The person's own settings ----
 
-def _checked(user_id: int, password: str) -> dict:
-    """The person's row once the password is right: the email, the password and the account itself ask for it."""
+def _checked(user_id: int, password: str = "", code: str = "") -> dict:
+    """The person's row once they have shown it is them: a new email, a new password and the account's
+    deletion ask for it.
+
+    The password, or the six digits of a letter to the account's own address (request_code): the way
+    for an account without a password, or with a forgotten one. The code is spent here.
+    """
     with pool.connection() as conn:
         row = conn.execute(
             f"SELECT {_USER_COLUMNS}, password_hash FROM users WHERE id = %s",
@@ -250,9 +286,18 @@ def _checked(user_id: int, password: str) -> dict:
         ).fetchone()
     if row is None or row["blocked"]:
         raise DomainError("unauthorized", 401)
-    if not verify_password(password, row["password_hash"]):
-        raise DomainError("wrong_password", 403)
-    return row
+    if password and row["password_hash"] is not None:
+        if not verify_password(password, row["password_hash"]):
+            raise DomainError("wrong_password", 403)
+        return row
+    if code:
+        found = _code_row(row["email"], code)
+        if found["user_id"] != user_id:
+            raise DomainError("code")
+        with pool.connection() as conn:
+            conn.execute("DELETE FROM email_confirms WHERE token_hash = %s", (found["token_hash"],))
+        return row
+    raise DomainError("wrong_password" if row["password_hash"] is not None else "need_code", 403)
 
 
 def set_name(user_id: int, name: str) -> dict:
@@ -260,38 +305,55 @@ def set_name(user_id: int, name: str) -> dict:
     if not cleaned:
         raise DomainError("name")
     with pool.connection() as conn:
+        before = conn.execute("SELECT name FROM users WHERE id = %s", (user_id,)).fetchone()
         row = conn.execute(
             f"UPDATE users SET name = %s WHERE id = %s AND NOT blocked RETURNING {_USER_COLUMNS}",
             (cleaned, user_id),
         ).fetchone()
     if row is None:
         raise DomainError("unauthorized", 401)
+    if not before["name"]:
+        server_event(user_id, "name")
     return _public(row)
 
 
-def set_email(user_id: int, email: str, password: str) -> dict:
+def set_email(user_id: int, email: str, password: str = "", code: str = "") -> dict:
     """A new email for signing in: the letter goes to it, and it takes the old one's place once confirmed.
 
     Gives what notes.confirm_letter needs: {user_id, email, name, token, change}.
     """
     cleaned = _clean_email(email)
-    row = _checked(user_id, password)
+    row = _checked(user_id, password, code)
     if cleaned == row["email"]:
         raise DomainError("same_email")
     with pool.connection() as conn:
         taken = conn.execute("SELECT 1 FROM users WHERE email = %s AND id <> %s", (cleaned, user_id)).fetchone()
         if taken:
             raise DomainError("exists", 409)
-        token = _confirm_link(conn, user_id, cleaned)
+        token = _confirm_link(conn, user_id, cleaned)["token"]
     return {"user_id": user_id, "email": cleaned, "name": row["name"], "token": token, "change": True}
 
 
-def set_password(user_id: int, current: str, password: str) -> None:
+def set_password(user_id: int, current: str = "", password: str = "", code: str = "") -> dict:
+    """A password for signing in without the letter. The first one asks nothing more (the person came in
+    by the letter); a new one, the current password or a code from the letter (a forgotten one)."""
     if len(password) < 8:
         raise DomainError("password")
-    _checked(user_id, current)
     with pool.connection() as conn:
-        conn.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hash_password(password), user_id))
+        found = conn.execute("SELECT password_hash FROM users WHERE id = %s AND NOT blocked", (user_id,)).fetchone()
+    if found is None:
+        raise DomainError("unauthorized", 401)
+    first = found["password_hash"] is None
+    if not first:
+        _checked(user_id, current, code)
+    with pool.connection() as conn:
+        row = conn.execute(
+            f"UPDATE users SET password_hash = %s WHERE id = %s RETURNING {_USER_COLUMNS}",
+            (hash_password(password), user_id),
+        ).fetchone()
+    if first:
+        server_event(user_id, "password")
+    return _public(row)
 
 
 def set_mail_notes(user_id: int, on: bool) -> dict:
@@ -410,27 +472,36 @@ def _clean_next(page: str | None) -> str:
     return page if page and _NEXT.match(page) and "//" not in page else ""
 
 
-def _confirm_link(conn, user_id: int, email: str, page: str = "") -> str:
-    """A new link for the letter; a pause stands between two letters to one address."""
-    recent = conn.execute(
+def _pause_left(conn, user_id: int, email: str) -> int:
+    """Seconds until the next letter to this address may go; 0 — it may go now."""
+    row = conn.execute(
         """
-        SELECT 1 FROM email_confirms
-        WHERE user_id = %s AND email = %s AND created_at > now() - make_interval(secs => %s)
+        SELECT CEIL(EXTRACT(EPOCH FROM max(created_at) + make_interval(secs => %s) - now()))::int AS wait
+        FROM email_confirms WHERE user_id = %s AND email = %s
         """,
-        (user_id, email, CONFIRM_PAUSE_SECONDS),
+        (CONFIRM_PAUSE_SECONDS, user_id, email),
     ).fetchone()
-    if recent:
+    return max(row["wait"] or 0, 0)
+
+
+def _confirm_link(conn, user_id: int, email: str, page: str = "", code: bool = False) -> dict:
+    """A new link for the letter, with its six digits when the letter opens the cabinet: {token, code}.
+
+    A pause stands between two letters to one address.
+    """
+    if _pause_left(conn, user_id, email):
         raise DomainError("confirm_wait", 429)
     token = secrets.token_urlsafe(32)
+    digits = f"{secrets.randbelow(10**6):06d}" if code else None
     conn.execute("DELETE FROM email_confirms WHERE user_id = %s AND expires_at < now()", (user_id,))
     conn.execute(
         """
-        INSERT INTO email_confirms (token_hash, user_id, email, next, expires_at)
-        VALUES (%s, %s, %s, %s, now() + make_interval(hours => %s))
+        INSERT INTO email_confirms (token_hash, user_id, email, next, code_hash, expires_at)
+        VALUES (%s, %s, %s, %s, %s, now() + make_interval(hours => %s))
         """,
-        (_reset_hash(token), user_id, email, _clean_next(page), CONFIRM_HOURS),
+        (_reset_hash(token), user_id, email, _clean_next(page), sign_code(email, digits) if digits else None, CONFIRM_HOURS),
     )
-    return token
+    return {"token": token, "code": digits}
 
 
 def confirm_request(user_id: int, page: str = "", email: str | None = None) -> dict | None:
@@ -455,25 +526,89 @@ def confirm_request(user_id: int, page: str = "", email: str | None = None) -> d
                 conn.execute("DELETE FROM email_confirms WHERE user_id = %s", (user_id,))
                 conn.execute("DELETE FROM password_resets WHERE user_id = %s", (user_id,))
             address = cleaned or row["email"]
-            token = _confirm_link(conn, user_id, address, page)
+            link = _confirm_link(conn, user_id, address, page, code=True)
     except UniqueViolation as exc:
         raise DomainError("exists", 409) from exc
-    return {"user_id": user_id, "email": address, "name": row["name"], "token": token, "change": False}
+    return {"user_id": user_id, "email": address, "name": row["name"], "change": False, "first": True, **link}
 
 
 def confirm_email(token: str) -> dict:
-    """The letter's link: the address is the person's. Gives {user, next}; the link is spent.
+    """The letter's link: the address is the person's. Gives {user, next, first}; the link is spent.
 
     For a new address from the profile, it takes the old one's place here.
     """
     if not token or len(token) > 100:
         raise DomainError("confirm_link")
     _require_web_secret()
+    return _spend(_reset_hash(token))
+
+
+# The six digits of a letter live half an hour and forgive a few slips; only the newest letter's count.
+CODE_MINUTES = 30
+CODE_TRIES = 5
+
+
+def _code_row(email: str, code: str) -> dict:
+    """The newest letter to this address whose six digits these are: {token_hash, user_id}.
+
+    A slip is counted, and after CODE_TRIES of them the code goes out (code_old): a new letter then.
+    """
+    try:
+        cleaned = _clean_email(email)
+    except DomainError:
+        raise DomainError("code") from None
+    digits = "".join(ch for ch in code if ch.isdigit())
+    if len(digits) != 6:
+        raise DomainError("code")
+    with pool.connection() as conn:
+        found = conn.execute(
+            """
+            SELECT token_hash, user_id, code_hash, tries FROM email_confirms
+            WHERE email = %s AND code_hash IS NOT NULL AND expires_at > now()
+              AND created_at > now() - make_interval(mins => %s)
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (cleaned, CODE_MINUTES),
+        ).fetchone()
+        if found is None or found["tries"] >= CODE_TRIES:
+            raise DomainError("code_old")
+        if not same_code(found["code_hash"], sign_code(cleaned, digits)):
+            conn.execute("UPDATE email_confirms SET tries = tries + 1 WHERE token_hash = %s", (found["token_hash"],))
+            right = False
+        else:
+            right = True
+    if not right:
+        raise DomainError("code")
+    return found
+
+
+def sign_in_by_code(email: str, code: str) -> dict:
+    """The letter's six digits typed on the page: the same as its link. Gives {user, next, first}."""
+    _require_web_secret()
+    return _spend(_code_row(email, code)["token_hash"])
+
+
+def request_code(user_id: int) -> dict:
+    """Six digits to the account's own address, for the profile: they stand for a password the account
+    has not got (or the person has forgotten). Gives {user_id, email, name, token, code}."""
+    if not mail_on():
+        raise DomainError("mail_off", 409)
+    with pool.connection() as conn:
+        row = conn.execute("SELECT email, name, blocked FROM users WHERE id = %s", (user_id,)).fetchone()
+        if row is None or row["blocked"]:
+            raise DomainError("unauthorized", 401)
+        link = _confirm_link(conn, user_id, row["email"], code=True)
+    return {"user_id": user_id, "email": row["email"], "name": row["name"], **link}
+
+
+def _spend(token_hash: str) -> dict:
+    """The letter has done its work, by the link or the code: the address is the person's, the link is
+    spent. The sign-in itself (the event login) is counted where its session is made."""
     try:
         with pool.connection() as conn:
             found = conn.execute(
                 "DELETE FROM email_confirms WHERE token_hash = %s RETURNING user_id, email, next, expires_at",
-                (_reset_hash(token),),
+                (token_hash,),
             ).fetchone()
             if found is None or found["expires_at"] < datetime.now(timezone.utc):
                 raise DomainError("confirm_link")
@@ -496,12 +631,13 @@ def confirm_email(token: str) -> dict:
     except UniqueViolation as exc:
         # Someone else has signed up with this address since the letter left.
         raise DomainError("exists", 409) from exc
-    if before["email_confirmed_at"] is None:
+    first = before["email_confirmed_at"] is None
+    if first:
         server_event(row["id"], "confirm")
-    return {"user": _public(row), "next": found["next"] or "/cabinet"}
+    return {"user": _public(row), "next": found["next"] or "/cabinet", "first": first}
 
 
-def delete_account(user_id: int, password: str) -> list[dict]:
+def delete_account(user_id: int, password: str = "", code: str = "") -> list[dict]:
     """The account and everything of it: partners and the conversation go with it (ON DELETE CASCADE).
 
     A pair bought by the person stays bought for the partner who has it too: the purchase loses
@@ -509,7 +645,7 @@ def delete_account(user_id: int, password: str) -> list[dict]:
     The statistics forget the person too (see _remove); the payments stay for the books.
     Gives the partners to write to: [{user_id, partner_id}].
     """
-    _checked(user_id, password)
+    _checked(user_id, password, code)
     return _remove(user_id)
 
 

@@ -48,6 +48,15 @@ def _sign(secret: str, payload: str) -> str:
     return hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
 
 
+def sign_code(email: str, code: str) -> str:
+    """The letter's six digits as the database keeps them: bound to the address, nothing without the secret."""
+    return _sign(settings.web_session_secret or "", f"code.{email}.{code}")
+
+
+def same_code(left: str, right: str) -> bool:
+    return _equal(left, right)
+
+
 def make_web_session(user_id: int) -> str:
     if not settings.web_session_secret:
         raise DomainError("unauthorized", 401)

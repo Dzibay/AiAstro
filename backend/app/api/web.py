@@ -5,8 +5,9 @@ from pydantic import BaseModel, Field
 
 from app import notes
 from app.accounts import (
-    CONFIRM_PAUSE_SECONDS, add_marks, authenticate, confirm_email, confirm_request, delete_account, get_user, register,
-    request_reset, reset_password, set_birth, set_email, set_mail_notes, set_name, set_password,
+    CONFIRM_PAUSE_SECONDS, add_marks, authenticate, confirm_email, confirm_request, delete_account, get_user,
+    request_code, request_reset, reset_password, set_birth, set_email, set_mail_notes, set_name, set_password,
+    sign_in_by_code, start_sign_in,
 )
 from app.api.deps import as_http, optional_web_user, require_member, require_web_user
 from app.charts import chart_item, chart_of, forecast_of, mark_task, month_of, portrait_of
@@ -21,14 +22,19 @@ from app.partners import (
 from app.places import search
 from app.security import make_web_session
 from app.throttle import Window, address
-from app.track import attach
+from app.track import attach, server_event
 
 router = APIRouter(prefix="/web")
 
 # The doors open to anyone: a password is not guessed by the thousand, a mailbox is not flooded with letters.
 _login_by_address = Window(30, 15 * 60, "attempts")
 _login_by_email = Window(10, 15 * 60, "attempts")
-_register_by_address = Window(10, 60 * 60, "attempts")
+# A carrier's address is shared by many phones: the address's bound is wide, the mailbox's narrow.
+_start_by_address = Window(20, 60 * 60, "attempts")
+_start_by_email = Window(6, 60 * 60, "attempts")
+# Six digits are guessed by no one in a few tries: the code allows five per letter, these bound the letters' sum.
+_code_by_address = Window(30, 15 * 60, "attempts")
+_code_by_email = Window(10, 15 * 60, "attempts")
 _forgot_by_address = Window(10, 60 * 60, "attempts")
 _forgot_by_email = Window(3, 60 * 60, "attempts")
 
@@ -41,16 +47,24 @@ class BirthIn(BaseModel):
     lon: float | None = Field(default=None, ge=-180, le=180)
 
 
-class RegisterIn(BaseModel):
+class StartIn(BaseModel):
     email: str = Field(max_length=254)
-    password: str = Field(max_length=200)
-    name: str = Field(default="", max_length=80)
+    # Asked of a new address only: an account already open has given it.
     consent: bool = False
+    # The birth data typed on a landing before the address: a new account keeps them.
     birth: BirthIn | None = None
     # The browser's anonymous id: the account takes its campaign link.
     visitor: str | None = Field(default=None, max_length=40)
-    # The page of the cabinet the confirmation letter leads to.
+    # The page of the cabinet the letter leads to.
     next: str = Field(default="", max_length=200)
+    # Where the address was given (hero, how, final, compat, header, sky, login, landing, invite): the funnel's start places.
+    place: str = Field(default="", max_length=24)
+
+
+class CodeIn(BaseModel):
+    email: str = Field(max_length=254)
+    code: str = Field(max_length=16)
+    visitor: str | None = Field(default=None, max_length=40)
 
 
 class PartnerIn(BaseModel):
@@ -84,18 +98,23 @@ class NameIn(BaseModel):
     name: str = Field(max_length=80)
 
 
+# The profile's guarded steps take the password, or the six digits of a letter (POST /me/code) instead.
 class EmailIn(BaseModel):
     email: str = Field(max_length=254)
-    password: str = Field(max_length=200)
+    password: str = Field(default="", max_length=200)
+    code: str = Field(default="", max_length=16)
 
 
 class PasswordIn(BaseModel):
-    current: str = Field(max_length=200)
+    # Not asked for the first password: the person came in by the letter.
+    current: str = Field(default="", max_length=200)
     password: str = Field(max_length=200)
+    code: str = Field(default="", max_length=16)
 
 
 class DeleteIn(BaseModel):
-    password: str = Field(max_length=200)
+    password: str = Field(default="", max_length=200)
+    code: str = Field(default="", max_length=16)
 
 
 class PaymentIn(BaseModel):
@@ -148,38 +167,62 @@ class TaskIn(BaseModel):
     done: bool
 
 
-@router.post("/register")
-def register_user(body: RegisterIn, request: Request, background: BackgroundTasks) -> dict:
+@router.post("/start")
+def start(body: StartIn, request: Request, background: BackgroundTasks) -> dict:
+    """The address, for a sign-up and a sign-in alike: the letter with the link and the six digits
+    goes to it, and the cabinet opens by them. The answer does not say whose the address is.
+
+    Without the site's mail a new account opens at once (the old way), a known one asks its password.
+    """
     birth = body.birth
+    email = body.email.strip().lower()
     try:
-        _register_by_address.take(address(request))
-        user = register(
+        _start_by_address.take(address(request))
+        _start_by_email.take(email)
+        found = start_sign_in(
             body.email,
-            body.password,
-            body.name,
             body.consent,
             birth.date if birth else None,
             birth.time if birth else None,
             birth.place if birth else None,
             birth.lat if birth else None,
             birth.lon if birth else None,
+            body.next,
         )
-        token = make_web_session(user["id"])
+        opened = None
+        if found["open"]:
+            opened = {"token": make_web_session(found["user_id"]), "user": get_user(found["user_id"])}
     except DomainError as exc:
         raise as_http(exc) from exc
-    background.add_task(attach, user["id"], body.visitor, True)
-    if not user["email_confirmed"]:
-        background.add_task(_first_letter, user["id"], body.next)
-    return {"token": token, "user": user}
+    if found["new"]:
+        background.add_task(attach, found["user_id"], body.visitor, True, body.place)
+    if opened:
+        return opened
+    if found["token"]:
+        background.add_task(notes.confirm_letter, found)
+    return {"sent": True, "wait": found["wait"], "pause": CONFIRM_PAUSE_SECONDS}
 
 
-def _first_letter(user_id: int, page: str) -> None:
+@router.post("/code")
+def sign_in_code(body: CodeIn, request: Request, background: BackgroundTasks) -> dict:
+    """The letter's six digits typed on the page (the letter opened on another device): the same as its link."""
+    email = body.email.strip().lower()
     try:
-        found = confirm_request(user_id, page)
-    except DomainError:
-        return
-    if found:
-        notes.confirm_letter(found)
+        _code_by_address.take(address(request))
+        _code_by_email.take(email)
+        done = sign_in_by_code(body.email, body.code)
+        token = make_web_session(done["user"]["id"])
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    _code_by_email.forget(email)
+    _signed_in(background, done["user"]["id"], body.visitor, "code")
+    return {"token": token, "user": done["user"], "next": done["next"], "first": done["first"]}
+
+
+def _signed_in(background: BackgroundTasks, user_id: int, visitor: str | None, way: str) -> None:
+    """The browser learns whose it is, and the way in is counted: link, code or password."""
+    background.add_task(attach, user_id, visitor)
+    background.add_task(server_event, user_id, "login", way)
 
 
 @router.post("/confirm/send")
@@ -203,8 +246,8 @@ def confirm(body: ConfirmIn, background: BackgroundTasks) -> dict:
         token = make_web_session(done["user"]["id"])
     except DomainError as exc:
         raise as_http(exc) from exc
-    background.add_task(attach, done["user"]["id"], body.visitor)
-    return {"token": token, "user": done["user"], "next": done["next"]}
+    _signed_in(background, done["user"]["id"], body.visitor, "link")
+    return {"token": token, "user": done["user"], "next": done["next"], "first": done["first"]}
 
 
 @router.post("/login")
@@ -218,7 +261,7 @@ def login_user(body: LoginIn, request: Request, background: BackgroundTasks) -> 
     except DomainError as exc:
         raise as_http(exc) from exc
     _login_by_email.forget(email)
-    background.add_task(attach, user["id"], body.visitor)
+    _signed_in(background, user["id"], body.visitor, "password")
     return {"token": token, "user": user}
 
 
@@ -278,10 +321,11 @@ def update_name(body: NameIn, user_id: int = Depends(require_member)) -> dict:
 
 @router.put("/me/email")
 def update_email(body: EmailIn, background: BackgroundTasks, user_id: int = Depends(require_member)) -> dict:
-    """A new email for signing in: the password says it is the person themselves, the letter to the new
-    address that it is theirs; it takes the old one's place once the link in the letter is opened."""
+    """A new email for signing in: the password (or a code to the present address) says it is the person
+    themselves, the letter to the new address that it is theirs; it takes the old one's place once the
+    link in the letter is opened."""
     try:
-        found = set_email(user_id, body.email, body.password)
+        found = set_email(user_id, body.email, body.password, body.code)
         user = get_user(user_id)
     except DomainError as exc:
         raise as_http(exc) from exc
@@ -292,10 +336,20 @@ def update_email(body: EmailIn, background: BackgroundTasks, user_id: int = Depe
 @router.put("/me/password")
 def update_password(body: PasswordIn, user_id: int = Depends(require_member)) -> dict:
     try:
-        set_password(user_id, body.current, body.password)
+        return {"ok": True, "user": set_password(user_id, body.current, body.password, body.code)}
     except DomainError as exc:
         raise as_http(exc) from exc
-    return {"ok": True}
+
+
+@router.post("/me/code")
+def send_code(background: BackgroundTasks, user_id: int = Depends(require_member)) -> dict:
+    """Six digits to the account's own address: they stand for the password in the profile's guarded steps."""
+    try:
+        found = request_code(user_id)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+    background.add_task(notes.code_letter, found)
+    return {"sent": True, "pause": CONFIRM_PAUSE_SECONDS}
 
 
 @router.put("/me/mail")
@@ -318,9 +372,9 @@ def save_marks(body: MarksIn, user_id: int = Depends(require_web_user)) -> dict:
 
 @router.post("/me/delete")
 def remove_account(body: DeleteIn, background: BackgroundTasks, user_id: int = Depends(require_web_user)) -> dict:
-    """Deletes the account for good; a POST with the password, not a bare DELETE, so it is never an accident."""
+    """Deletes the account for good; a POST with the password or a letter's code, not a bare DELETE, so it is never an accident."""
     try:
-        told = delete_account(user_id, body.password)
+        told = delete_account(user_id, body.password, body.code)
     except DomainError as exc:
         raise as_http(exc) from exc
     background.add_task(notes.pair_left, told)

@@ -10,7 +10,7 @@ import { fmt } from '../../views/admin/shared.js'
 import { MIN_BASE, WAY, points, rateOf, share } from '../../views/admin/way.js'
 
 const props = defineProps({
-  /** { visit, reg_open, …, paid } — the period's browsers at each step. */
+  /** { visit, start, …, paid } — the period's browsers at each step. */
   now: { type: Object, required: true },
   /** The same for the period before, at the same age; null — no comparison. */
   before: { type: Object, default: null },

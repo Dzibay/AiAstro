@@ -4,10 +4,13 @@ Everything here follows the browsers that first came in a period (a cohort) and 
 gone. Compared with the period before, both are taken at the same age: the earlier period has the
 same length and ends the same time ago, and its steps count only up to that moment — so a day that
 has not ended yet never looks like a fall. A later step stands in for an earlier one that went
-unrecorded (a payer has been in the cabinet), so no step outgrows the one before.
+unrecorded (a payer has seen the chart), so no step outgrows the one before.
 
-Besides the way: the same steps week by week, by source, first page and device, the cabinet's
-actions beside the payments, the money each source brings, and one person's way for their card.
+The way begins with the address: the person starts typing it (or sends it) in one of the start
+places, the letter leaves (the account is made), its link or code opens the cabinet, the birth data
+follow there, then the chart. Besides the way: the same steps week by week, by source, first page
+and device, by start place, how people sign in, the cabinet's actions beside the payments, the
+money each source brings, and one person's way for their card.
 """
 
 from math import sqrt
@@ -17,11 +20,21 @@ from app.db import pool
 from app.errors import DomainError
 from app.partners import PRODUCT as PAIR
 
-# The steps in their order: the first view, registration opened, its first step, the account,
-# the email confirmed, the cabinet entered after that, a payment started, a payment made.
-STEPS = ("visit", "reg_open", "reg_who", "signup", "confirm", "cabinet", "checkout", "paid")
+# The steps in their order: the first view, the address begun in a start form, the letter asked
+# for (the account), its link or code opened (the cabinet), the birth data there, the chart seen,
+# a payment started, a payment made.
+STEPS = ("visit", "start", "signup", "confirm", "birth", "chart", "checkout", "paid")
 # The recorded moment behind each step after the visit, in the same order.
-RAW = ("opened", "named", "signed", "confirmed", "cabinet", "checkout", "paid")
+RAW = ("started", "signed", "confirmed", "birthed", "charted", "checkout", "paid")
+
+# The first saving of the birth data: its event, or the account's making when they came with it.
+BIRTH_AT = "COALESCE((SELECT min(b.created_at) FROM events b WHERE b.user_id = {u} AND b.kind = 'birth'), {signed})"
+# The chart seen: the act chart:seen (the chart drawn), before it the chart page's view — after the birth data.
+CHART_AT = (
+    "(SELECT min(e.created_at) FROM events e WHERE e.user_id = {u}"
+    " AND ((e.kind = 'act' AND e.name = 'chart:seen') OR (e.kind = 'view' AND e.name = 'cabinet-chart'))"
+    " AND e.created_at >= {birth})"
+)
 
 # The first page a browser opened: the home page, the landing pages for search and ads, the rest.
 ENTRIES = {
@@ -43,10 +56,12 @@ def _channel(ref: str) -> str:
 
 
 def _cohort(start: str, end: str, where: str = "TRUE") -> str:
-    """CTEs c, f, s: the browsers first seen in [start, end), each with the moment it reached every
+    """CTEs c, f, g, s: the browsers first seen in [start, end), each with the moment it reached every
     step (only before `end`), and its device, first page and channel."""
     cut = {raw: f"(CASE WHEN {raw} < {end} THEN {raw} END)" for raw in RAW}
     reach = ", ".join(f"LEAST({', '.join(cut[raw] for raw in RAW[i:])}) AS {key}_at" for i, key in enumerate(STEPS[1:]))
+    birth = BIRTH_AT.format(u="c.user_id", signed="c.signed")
+    chart = CHART_AT.format(u="f.user_id", birth="f.birth_first")
     return f"""
     c AS (
         SELECT v.id, v.first_at, COALESCE(NULLIF(v.device, ''), 'unknown') AS device,
@@ -61,15 +76,20 @@ def _cohort(start: str, end: str, where: str = "TRUE") -> str:
     ),
     f AS MATERIALIZED (
         SELECT c.*,
-            (SELECT min(e.created_at) FROM events e WHERE e.visitor_id = c.id AND e.kind = 'act' AND e.name = 'reg:open') AS opened,
-            (SELECT min(e.created_at) FROM events e WHERE e.visitor_id = c.id AND e.kind = 'act' AND e.name = 'reg:who') AS named,
-            (SELECT min(e.created_at) FROM events e
-                WHERE e.user_id = c.user_id AND e.kind = 'view' AND e.name LIKE 'cabinet%%' AND e.created_at >= c.confirmed) AS cabinet,
+            (SELECT min(e.created_at) FROM events e WHERE e.visitor_id = c.id AND e.kind = 'act'
+                AND (e.name LIKE 'email:%%' OR e.name LIKE 'start:%%')) AS started,
+            CASE WHEN c.birth_date IS NOT NULL THEN {birth} END AS birth_first,
             (SELECT min(pa.created_at) FROM payments pa WHERE pa.user_id = c.user_id) AS checkout,
             (SELECT min(pa.paid_at) FROM payments pa WHERE pa.user_id = c.user_id AND pa.status = 'succeeded') AS paid
         FROM c
     ),
-    s AS (SELECT f.*, f.first_at AS visit_at, {reach} FROM f)
+    g AS (
+        -- Birth data typed on the home page come with the account: in the cabinet they count once it is open.
+        SELECT f.*, CASE WHEN f.confirmed IS NOT NULL AND f.birth_first IS NOT NULL THEN GREATEST(f.birth_first, f.confirmed) END AS birthed,
+               CASE WHEN f.birth_first IS NOT NULL THEN {chart} END AS charted
+        FROM f
+    ),
+    s AS (SELECT g.*, g.first_at AS visit_at, {reach} FROM g)
     """
 
 
@@ -93,12 +113,13 @@ def _check(days: int, entry: str = "", device: str = "") -> None:
 
 # ---- The way, now and before ----
 
-# What a person can do in the cabinet, each with its first moment (for those who reached the cabinet).
+# What a person can do in the cabinet, each with its first moment (for those whose cabinet opened).
 ACTIONS = (
-    ("birth", "COALESCE((SELECT min(e.created_at) FROM events e WHERE e.user_id = s.user_id AND e.kind = 'birth'),"
-              " CASE WHEN s.birth_date IS NOT NULL THEN s.signed END)"),
+    ("birth", "s.birth_first"),
     ("intro", "(SELECT min(e.created_at) FROM events e WHERE e.user_id = s.user_id AND e.kind = 'tour' AND e.name = 'intro:done')"),
-    ("chart", "(SELECT min(e.created_at) FROM events e WHERE e.user_id = s.user_id AND e.kind = 'view' AND e.name = 'cabinet-chart')"),
+    ("chart", "s.charted"),
+    ("name", "(SELECT min(e.created_at) FROM events e WHERE e.user_id = s.user_id AND e.kind = 'name')"),
+    ("password", "(SELECT min(e.created_at) FROM events e WHERE e.user_id = s.user_id AND e.kind = 'password')"),
     ("game", "(SELECT min(e.created_at) FROM events e WHERE e.user_id = s.user_id AND e.kind = 'act' AND e.name = 'game:land')"),
     ("forecast", "(SELECT min(e.created_at) FROM events e WHERE e.user_id = s.user_id AND e.kind = 'view' AND e.name = 'cabinet-forecast')"),
     ("pair", "(SELECT min(p.created_at) FROM partners p WHERE p.user_id = s.user_id)"),
@@ -110,9 +131,10 @@ ACTIONS = (
 
 def way(days: int, entry: str = "", device: str = "") -> dict:
     """The browsers that first came in the period (by first page and device): how many reached each
-    step, the same for the period before, the median hours from the first visit to each step — and,
-    for those who reached the cabinet, who did each of its actions before paying (or by now) and how
-    many of them paid, beside those who did not."""
+    step, the same for the period before, the median hours from the first visit to each step; for
+    those whose cabinet opened, who did each of its actions before paying (or by now) and how many of
+    them paid, beside those who did not; each start place with its starts, letters, opened cabinets
+    and payments; and how people signed in during the period (link, code, password)."""
     _check(days, entry, device)
     where = f"{ENTRIES[entry]} AND {DEVICES[device]}"
     p = {"days": days}
@@ -135,11 +157,40 @@ def way(days: int, entry: str = "", device: str = "") -> dict:
         acts = conn.execute(
             f"""
             WITH {_cohort(*NOW, where)},
-            a AS (SELECT s.paid_at, {moments} FROM s WHERE s.cabinet_at IS NOT NULL)
+            a AS (SELECT s.paid_at, {moments} FROM s WHERE s.confirm_at IS NOT NULL)
             SELECT count(*) AS people, count(paid_at) AS paid, {did} FROM a
             """,
             p,
         ).fetchone()
+        # A browser may begin in one place and send from another: it counts in both.
+        places = conn.execute(
+            f"""
+            WITH {_cohort(*NOW, where)},
+            st AS (
+                SELECT split_part(e.name, ':', 2) AS place, count(DISTINCT s.id) AS starts
+                FROM s JOIN events e ON e.visitor_id = s.id AND e.kind = 'act' AND (e.name LIKE 'email:%%' OR e.name LIKE 'start:%%')
+                GROUP BY 1
+            ),
+            sg AS (
+                SELECT COALESCE(NULLIF((SELECT e.name FROM events e WHERE e.user_id = s.user_id AND e.kind = 'signup'
+                                        ORDER BY e.created_at LIMIT 1), ''), 'unknown') AS place,
+                       count(*) AS signups, count(s.confirm_at) AS confirms, count(s.birth_at) AS births, count(s.paid_at) AS paid
+                FROM s WHERE s.signup_at IS NOT NULL GROUP BY 1
+            )
+            SELECT place, COALESCE(starts, 0) AS starts, COALESCE(signups, 0) AS signups, COALESCE(confirms, 0) AS confirms,
+                   COALESCE(births, 0) AS births, COALESCE(paid, 0) AS paid
+            FROM st FULL JOIN sg USING (place)
+            ORDER BY starts DESC, signups DESC
+            """,
+            p,
+        ).fetchall()
+        logins = conn.execute(
+            f"""
+            SELECT name AS way, count(*) AS times, count(DISTINCT user_id) AS people
+            FROM events WHERE kind = 'login' AND created_at >= {SINCE} GROUP BY 1 ORDER BY 2 DESC
+            """,
+            p,
+        ).fetchall()
     return {
         "days": days,
         "entry": entry,
@@ -152,6 +203,8 @@ def way(days: int, entry: str = "", device: str = "") -> dict:
             "paid": int(acts["paid"]),
             "actions": [{"key": key, "did": int(acts[key]), "paid": int(acts[f"{key}_paid"])} for key, _ in ACTIONS],
         },
+        "places": [{key: (row[key] if key == "place" else int(row[key])) for key in row} for row in places],
+        "logins": [{"way": row["way"] or "unknown", "times": int(row["times"]), "people": int(row["people"])} for row in logins],
     }
 
 
@@ -446,17 +499,21 @@ def journey(user_id: int) -> dict:
                 (SELECT min(first_at) FROM vs) AS visit,
                 (SELECT COALESCE(sum(visits), 0) FROM vs) AS visits,
                 (SELECT max(last_at) FROM vs) AS last_at,
-                (SELECT min(created_at) FROM ev WHERE kind = 'act' AND name = 'reg:open') AS reg_open,
-                (SELECT min(created_at) FROM ev WHERE kind = 'act' AND name = 'reg:who') AS reg_who,
-                (SELECT min(created_at) FROM ev WHERE kind = 'view' AND name LIKE 'cabinet%%'
-                    AND created_at >= (SELECT email_confirmed_at FROM users WHERE id = %(id)s)) AS cabinet,
+                (SELECT min(created_at) FROM ev WHERE kind = 'act' AND (name LIKE 'email:%%' OR name LIKE 'start:%%')) AS start,
+                (SELECT name FROM ev WHERE kind = 'signup' ORDER BY created_at LIMIT 1) AS place,
+                (SELECT array_agg(DISTINCT name) FROM ev WHERE kind = 'login') AS login_ways,
+                (SELECT count(*) FROM ev WHERE kind = 'login') AS logins,
                 (SELECT min(created_at) FROM pay) AS checkout,
                 (SELECT count(*) FROM pay WHERE status <> 'succeeded') AS unfinished,
                 (SELECT min(paid_at) FROM pay WHERE status = 'succeeded') AS paid,
                 (SELECT min(created_at) FROM ev WHERE kind = 'birth') AS birth,
                 (SELECT min(created_at) FROM ev WHERE kind = 'tour' AND name = 'intro:done') AS intro,
                 (SELECT min(created_at) FROM ev WHERE kind = 'tour' AND name = 'intro:skip') AS intro_skip,
-                (SELECT min(created_at) FROM ev WHERE kind = 'view' AND name = 'cabinet-chart') AS chart,
+                (SELECT min(created_at) FROM ev WHERE ((kind = 'act' AND name = 'chart:seen') OR (kind = 'view' AND name = 'cabinet-chart'))
+                    AND created_at >= COALESCE((SELECT min(created_at) FROM ev WHERE kind = 'birth'),
+                                               (SELECT created_at FROM users WHERE id = %(id)s))) AS chart,
+                (SELECT min(created_at) FROM ev WHERE kind = 'name') AS named,
+                (SELECT min(created_at) FROM ev WHERE kind = 'password') AS password,
                 (SELECT min(created_at) FROM ev WHERE kind = 'act' AND name = 'game:begin') AS game_begin,
                 (SELECT min(created_at) FROM ev WHERE kind = 'act' AND name = 'game:land') AS game,
                 (SELECT count(*) FROM ev WHERE kind = 'act' AND name = 'game:land') AS game_n,
@@ -492,13 +549,16 @@ def journey(user_id: int) -> dict:
     def at(value):
         return value.isoformat() if value else None
 
+    birth = row["birth"] or (user["created_at"] if user["birth_date"] else None)
+    confirmed = user["email_confirmed_at"]
     moments = {
         "visit": row["visit"],
-        "reg_open": row["reg_open"],
-        "reg_who": row["reg_who"],
+        "start": row["start"],
         "signup": user["created_at"],
-        "confirm": user["email_confirmed_at"],
-        "cabinet": row["cabinet"],
+        "confirm": confirmed,
+        # Birth data from the home page count in the cabinet, once it is open.
+        "birth": max(birth, confirmed) if birth and confirmed else None,
+        "chart": row["chart"] if birth else None,
         "checkout": row["checkout"],
         "paid": row["paid"],
     }
@@ -512,11 +572,12 @@ def journey(user_id: int) -> dict:
     def action(key, moment, count=None, note=""):
         return {"key": key, "done": moment is not None, "at": at(moment), "count": count, "note": note}
 
-    birth = row["birth"] or (user["created_at"] if user["birth_date"] else None)
     actions = [
         action("birth", birth),
         action("intro", row["intro"] or row["intro_skip"], note="skip" if not row["intro"] and row["intro_skip"] else ""),
         action("chart", row["chart"]),
+        action("name", row["named"]),
+        action("password", row["password"]),
         action("game", row["game"], int(row["game_n"]), note="begin" if not row["game"] and row["game_begin"] else ""),
         action("forecast", row["forecast"], int(row["forecast_n"])),
         action("pair", row["pair"], int(row["pair_n"])),
@@ -539,6 +600,9 @@ def journey(user_id: int) -> dict:
         "visits": int(row["visits"]),
         "last_at": at(row["last_at"]),
         "steps": steps,
+        "place": row["place"] or "",
+        "logins": int(row["logins"]),
+        "login_ways": [name for name in (row["login_ways"] or []) if name],
         "unfinished": int(row["unfinished"]),
         "actions": actions,
         "tours": sorted(name for name in (row["tours"] or []) if name),

@@ -65,12 +65,15 @@ const birthLine = computed(() => {
 
 /* ---- The picture ---- */
 
+/** The picture's big line: the name, or «Моё небо» for a cabinet that has not given one. */
+const signature = computed(() => props.user.name || 'Моё небо')
+
 const busy = ref(false)
 const canShare = canSharePictures
 
 async function draw() {
   const { W, H } = PICTURE
-  const { canvas, ctx } = await startPicture(props.user.name)
+  const { canvas, ctx } = await startPicture(signature.value)
   const caps = cssFont('--caps')
   const serif = cssFont('--serif')
   const book = cssFont('--book')
@@ -83,7 +86,7 @@ async function draw() {
 
   ctx.fillStyle = '#f6efe2'
   ctx.font = `italic 500 104px ${serif}`
-  ctx.fillText(props.user.name, W / 2, 430, W - 220)
+  ctx.fillText(signature.value, W / 2, 430, W - 220)
   if (birthLine.value) {
     ctx.fillStyle = 'rgba(226, 220, 210, 0.7)'
     ctx.font = `34px ${book}`
@@ -147,7 +150,7 @@ async function share() {
   busy.value = true
   try {
     const blob = await draw()
-    const text = `${props.user.name}: ${three.value.filter((entry) => entry.info).map((entry) => `${entry.name} ${entry.info.in}`).join(', ')}`
+    const text = `${signature.value}: ${three.value.filter((entry) => entry.info).map((entry) => `${entry.name} ${entry.info.in}`).join(', ')}`
     if (blob) await sharePicture(blob, fileName(), 'Звёздный паспорт', text)
   } finally {
     busy.value = false

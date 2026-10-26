@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app import outbox
-from app.accounts import CONFIRM_HOURS, RESET_MINUTES
+from app.accounts import CODE_MINUTES, CONFIRM_HOURS, RESET_MINUTES
 from app.db import pool
 from app.letters import Letter, deliver, html
 from app.mailer import link, mail_on
@@ -36,6 +36,7 @@ _MONTHS = ("января", "февраля", "марта", "апреля", "ма
 _SIGN_OFF = ("Напоминания о «Небосводе», о незавершённой оплате и о партнёрах можно отключить в кабинете, "
              "в разделе «Профиль».")
 _RECEIPT = "Кассовый чек придёт отдельным письмом."
+_CODE_NOTE = "Открываете письмо на другом устройстве? Введите этот код на странице, где ждёт вход:"
 _SKY_OPENS = ("Вам открыты полные прогнозы на день и на неделю, звёздный календарь на тридцать дней, портрет "
               "вашей карты, ИИ-астролог каждый день и разбор пары по особой цене.")
 
@@ -70,20 +71,51 @@ def _confirm(found: dict) -> Letter:
             after=[f"Ссылка открыта {days} дня и сработает один раз. До подтверждения вход — с прежней почтой."],
             foot="Письмо пришло, потому что этот адрес указали в профиле на нашем сайте.",
         )
+    # The same letter opens the cabinet by its button here and by its six digits on another device.
+    shared = {
+        "hello": _hello(found["name"]),
+        "url": url,
+        "code": found.get("code") or "",
+        "code_note": _CODE_NOTE,
+        "after": [f"Ссылка действует {days} дня и сработает один раз, код — {CODE_MINUTES} минут."],
+    }
+    if found.get("first", True):
+        return Letter(
+            kind="confirm",
+            subject="Ваша натальная карта — в одном шаге",
+            title="Ваше небо почти готово",
+            lines=[
+                "Остался один шаг: откройте кабинет по кнопке ниже — там вы укажете дату рождения "
+                "и сразу увидите свою натальную карту.",
+            ],
+            button="Открыть кабинет",
+            foot="Письмо пришло, потому что этот адрес указали на нашем сайте. Если это были не вы, просто "
+                 "оставьте письмо без ответа: без ссылки и кода кабинет не откроется.",
+            **shared,
+        )
     return Letter(
-        kind="confirm",
-        subject="Подтвердите почту — и кабинет откроется",
-        title="Ваше небо почти готово",
+        kind="sign_in",
+        subject="Вход в кабинет",
+        title="С возвращением",
+        lines=["Ваш кабинет ждёт: нажмите кнопку — и он откроется."],
+        button="Войти в кабинет",
+        foot="Письмо пришло, потому что на нашем сайте попросили вход с этим адресом. Если это были не вы, "
+             "просто оставьте письмо: без ссылки и кода в кабинет никто не войдёт.",
+        **shared,
+    )
+
+
+def _proof(found: dict) -> Letter:
+    return Letter(
+        kind="code",
+        subject="Код подтверждения",
+        title="Ваш код",
         hello=_hello(found["name"]),
-        lines=[
-            "Спасибо, что вы с нами! Остался один шаг: подтвердите, что это ваша почта, — и кабинет откроется.",
-            "Там вас ждут натальная карта, толкования планет и всё, что мы приготовили именно для вас.",
-        ],
-        button="Подтвердить и перейти в кабинет",
-        url=url,
-        after=[f"Ссылка открыта {days} дня и сработает один раз."],
-        foot="Письмо пришло, потому что этот адрес указали при регистрации на нашем сайте. "
-             "Если регистрировались не вы, просто оставьте его без ответа.",
+        lines=["Введите этот код в кабинете — он подтвердит, что это вы."],
+        code=found.get("code") or "",
+        code_note="Код подтверждения:",
+        after=[f"Код действует {CODE_MINUTES} минут."],
+        foot="Если вы ничего не подтверждали, просто оставьте письмо без ответа: без кода ничего не изменится.",
     )
 
 
@@ -293,9 +325,15 @@ def _test(_row: dict | None = None) -> Letter:
 
 
 def confirm_letter(found: dict) -> None:
-    """`found` is what accounts.confirm_request or set_email gave: user_id, email, name, the token
-    and whether it is a new address for an account already open."""
+    """`found` is what accounts.start_sign_in, confirm_request or set_email gave: user_id, email, name,
+    the token and the code, whether the address is still to be confirmed (first) and whether it is a
+    new address for an account already open (change)."""
     deliver(found["email"], _confirm(found), found.get("user_id"))
+
+
+def code_letter(found: dict) -> None:
+    """`found` is what accounts.request_code gave: the six digits for the profile's guarded steps."""
+    deliver(found["email"], _proof(found), found.get("user_id"))
 
 
 def reset_letter(found: dict) -> None:
@@ -471,10 +509,12 @@ def remind_pay() -> int:
 def _samples() -> dict:
     soon = datetime.now(timezone.utc) + timedelta(days=SKY_AHEAD_DAYS)
     later = datetime.now(timezone.utc) + timedelta(days=30)
-    found = {"name": "Анна", "token": "пример", "change": False}
+    found = {"name": "Анна", "token": "пример", "code": "482915", "change": False, "first": True}
     side = {"id": 0, "name": "Михаил", "inviter": "Анна", "share_at": None}
     return {
-        "confirm": lambda: _confirm(found),
+        "confirm": lambda: _confirm({**found, "name": ""}),
+        "sign_in": lambda: _confirm({**found, "first": False}),
+        "code": lambda: _proof(found),
         "confirm_change": lambda: _confirm({**found, "change": True}),
         "reset": lambda: _reset(found),
         "paid_sky": lambda: _paid_sky({"name": "Анна", "sky_until": later, "extended": False}),
