@@ -9,7 +9,7 @@ import PairSky from '../components/cabinet/PairSky.vue'
 import SkyDome from '../components/sky/SkyDome.vue'
 import GameOffer from '../components/game/GameOffer.vue'
 import { closeGame, game, gameSupported, landGame, startGame } from '../components/game/state.js'
-import { ROUTE_ORDER, SECTION_BY_ID } from '../components/cabinet/layout.js'
+import { ROUTE_ORDER, SECTION_BY_ID, talkWheelSpot } from '../components/cabinet/layout.js'
 import { webApi } from '../api/web.js'
 import { ApiError, errorText } from '../api/http.js'
 import { clearSession } from '../composables/useSession.js'
@@ -35,7 +35,7 @@ const NatalGame = defineAsyncComponent(() => import('../components/game/NatalGam
 
 const route = useRoute()
 const router = useRouter()
-const { mark, markUser, clearMark } = useSky()
+const { geo, mark, markUser, clearMark } = useSky()
 const { chart, load: loadChart, forget: forgetChart } = useChart()
 const { forecasts, forget: forgetForecast } = useForecast()
 const { partners, draft, hot, hotAspect, lit, syntheses, opening, load: loadPartners, forgetSyntheses } = usePartners()
@@ -60,7 +60,7 @@ watch(
 /** The wheel stands on the sky while the chart is open; its points choose the panel's reading. */
 const selected = computed(() => (typeof route.params.item === 'string' ? route.params.item : ''))
 watch(section, (id) => {
-  if (id === 'chart' || id === 'forecast') loadChart()
+  if (id === 'chart' || id === 'forecast' || id === 'chat') loadChart()
 }, { immediate: true })
 /**
  * The chart's first visit asks whether to build it by hand (GameOffer → NatalGame): after the
@@ -94,9 +94,13 @@ watch(() => gamePending.value || game.open, (busy, was) => {
   if (was && !busy) offerTour()
 })
 
-/** In the forecast the same wheel carries the sky of the day or the week around it. */
+/**
+ * In the forecast the same wheel carries the sky of the day or the week around it; beside the
+ * conversation on a desktop it stands aside, for the planets the answers name to light on it.
+ */
+const talkWheel = computed(() => section.value === 'chat' && Boolean(talkWheelSpot(geo.value)))
 const showWheel = computed(() => Boolean(
-  user.value && chart.value && (section.value === 'chart' || section.value === 'forecast')
+  user.value && chart.value && (section.value === 'chart' || section.value === 'forecast' || talkWheel.value)
   && !(section.value === 'chart' && (gameOffer.value || gameAway.value)),
 ))
 const transitSky = computed((previous) => {
@@ -450,6 +454,7 @@ const sheetStyle = computed(() => {
         :selected="selected"
         :forecast="transitSky"
         :landing="game.landing"
+        :aside="section === 'chat'"
         @select="selectPoint"
       />
     </Transition>
@@ -459,7 +464,7 @@ const sheetStyle = computed(() => {
     <CabinetSky v-if="user" :section="section" :birth-open="birthOpen" :lit="Boolean(user.sky)" :flare="tour.flare" />
     <CabinetTour v-if="user" :user="user" />
 
-    <main class="cabinet" :class="{ 'is-away': gameAway }" :inert="gameAway || undefined">
+    <main class="cabinet" :class="{ 'is-away': gameAway, 'is-talk': section === 'chat' }" :inert="gameAway || undefined">
       <section
         ref="panel"
         class="cabinet-panel"
@@ -537,7 +542,7 @@ const sheetStyle = computed(() => {
   min-height: 100svh;
   padding: 110px clamp(20px, 8vw, 150px) 40px;
   pointer-events: none;
-  transition: opacity 0.8s ease;
+  transition: opacity 0.8s ease, padding-right 0.9s cubic-bezier(0.3, 0.7, 0.2, 1);
 }
 /* Under the game: gone while it plays, back as its sky becomes the wheel. */
 .cabinet.is-away { opacity: 0; transition-duration: 0.4s; }
@@ -566,6 +571,20 @@ const sheetStyle = computed(() => {
   animation: card-in 0.9s cubic-bezier(0.3, 0.7, 0.2, 1) 0.9s both;
 }
 .cabinet-panel.is-full { height: calc(100vh - 150px); }
+/*
+ * The conversation on a desktop: a wide column in the middle of the free sky, read like a page
+ * (layout.js, talkColumn: right of the fan of sections where the middle would touch it).
+ * The panel glides there from the right edge and back.
+ */
+@media (min-width: 761px) {
+  .cabinet.is-talk {
+    --talk-w: clamp(420px, calc(100vw - 450px), 700px);
+    --talk-left: min(max(calc((100vw - var(--talk-w)) / 2), 410px), calc(100vw - 20px - var(--talk-w)));
+    padding-right: calc(100vw - var(--talk-left) - var(--talk-w));
+  }
+  .cabinet-panel { transition: width 0.9s cubic-bezier(0.3, 0.7, 0.2, 1); }
+  .cabinet.is-talk .cabinet-panel { width: var(--talk-w); }
+}
 .cabinet-panel::before {
   content: '';
   position: absolute;
@@ -707,6 +726,7 @@ const sheetStyle = computed(() => {
 @keyframes sheet-in { from { transform: translateY(40px); opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
+  .cabinet { transition: opacity 0.8s ease; }
   .cabinet-panel { animation: card-fade 0.4s ease both; transition: none; }
   .card-sheen { animation: none; }
   .next-enter-from, .next-leave-to, .prev-enter-from, .prev-leave-to, .swap-enter-from, .swap-leave-to { transform: none; }

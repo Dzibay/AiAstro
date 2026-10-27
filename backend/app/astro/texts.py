@@ -489,6 +489,24 @@ def _cap(text: str) -> str:
     return text[0].upper() + text[1:]
 
 
+def _planets(count: int) -> str:
+    """«1 планета», «3 планеты», «5 планет»."""
+    if count % 10 == 1 and count % 100 != 11:
+        word = "планета"
+    elif 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14:
+        word = "планеты"
+    else:
+        word = "планет"
+    return f"{count} {word}"
+
+
+def _focus(points: list | None = None, signs: list | None = None, houses: list | None = None) -> dict:
+    """What a chapter of the portrait speaks of, for the wheel to light: points, signs and houses, each once."""
+    focus = {"points": list(dict.fromkeys(points or [])), "signs": list(dict.fromkeys(signs or [])),
+             "houses": list(dict.fromkeys(houses or []))}
+    return {key: value for key, value in focus.items() if value}
+
+
 _EXIT = re.compile(r"\s*Ключ — ")
 
 
@@ -660,7 +678,7 @@ class Interpreter:
 class StubInterpreter(Interpreter):
     """Templates until the AI is connected. The chat answers with facts of the chart, not with wit."""
 
-    version = 23
+    version = 24
 
     def natal_item(self, point: str, sign: str, house: int | None, retro: bool = False) -> dict:
         name, pronoun, theme = POINTS[point]
@@ -686,8 +704,10 @@ class StubInterpreter(Interpreter):
         return {"essence": f"{essence}.", "parts": parts}
 
     def portrait(self, facts: dict) -> dict:
+        """A walk around the wheel: each chapter names what it speaks of in `focus`, and the wheel lights it."""
         sun, moon = facts["sun"], facts["moon"]
-        core = [f"Солнце {SIGNS[sun][0]} — сердцевина вашей карты. {_SIGN_VOICE[sun]}"]
+        core = [f"Солнце {SIGNS[sun][0]} — сердцевина вашей карты: {N.SUN_CORE[sun]}"]
+        term = [f"Солнце {SIGNS[sun][0]}"]
         if moon:
             sun_element, moon_element = element_of(sun), element_of(moon)
             if sun_element == moon_element:
@@ -696,77 +716,164 @@ class StubInterpreter(Interpreter):
                 relation = "kindred"
             else:
                 relation = "foreign"
+            core.append(N.MOON_NEED[moon])
             core.append(N.SUN_MOON[relation].format(
                 element=N.ELEMENT_NAMES[sun_element],
                 sun_element=N.ELEMENT_NAMES[sun_element],
                 moon_element=N.ELEMENT_NAMES[moon_element],
             ))
-        parts = [_part("Ядро", " ".join(core))]
+            term.append(f"Луна {SIGNS[moon][0]}")
+        parts = [_part(
+            "Ядро", " ".join(core), title=N.SUN_TITLE[sun], term=" · ".join(term),
+            todo=N.MOON_TODO[moon] if moon else N.SUN_TODO[sun],
+            focus=_focus(points=["sun", "moon"] if moon else ["sun"]),
+        )]
 
-        ruler = facts["ruler"]
-        if facts["asc"] and ruler:
-            name, pronoun, _ = POINTS[ruler["id"]]
-            template = {"он": N.RULER, "она": N.RULER_FEMININE, "оно": N.RULER_NEUTER}[pronoun]
-            rising = [N.RISING[facts["asc"]], template.format(rising=SIGNS[facts["asc"]][0], ruler=name)]
-            where = f"{_cap(pronoun)} стоит {SIGNS[ruler['sign']][0]}"
+        ruler, rising = facts["ruler"], facts["asc"]
+        if rising and ruler:
+            name = POINTS[ruler["id"]][0]
+            where = SIGNS[ruler["sign"]][0]
+            text = [N.RISING[rising], N.RULER.format(ruler=name)]
+            term = f"Асцендент {SIGNS[rising][0]} · управитель — {name} {where}"
             if ruler["house"]:
-                where += f", в {ROMAN[ruler['house'] - 1]} доме — {HOUSES[ruler['house'] - 1]}: туда и тянется ваша жизнь"
-            rising.append(f"{where}.")
-            parts.append(_part("Восход", " ".join(rising)))
+                house = ruler["house"]
+                text.append(f"{name} стоит {where}, в {ROMAN[house - 1]} доме, а это {HOUSES[house - 1]}.")
+                term += f", {ROMAN[house - 1]} дом"
+            else:
+                text.append(f"{name} стоит {where} и действует {SIGNS[ruler['sign']][1]}.")
+            parts.append(_part(
+                "Восход", " ".join(text), title=N.RISING_TITLE[rising], term=term, todo=N.RISING_TODO[rising],
+                focus=_focus(points=["asc", ruler["id"]], houses=[ruler["house"]] if ruler["house"] else []),
+            ))
 
-        pair = facts.get("element_pair") or []
-        if facts["element"]:
-            temperament = [N.ELEMENT_LEAD[facts["element"]]]
+        element, pair, by_element = facts["element"], facts.get("element_pair") or [], facts["element_points"]
+        mode = N.MODE_NAMES[facts["mode"]] if facts["mode"] else "кресты в равновесии"
+        if element:
+            lead = [element]
+            temperament = [N.ELEMENT_LEAD[element]]
+            title, todo = N.ELEMENT_TITLE[element], N.ELEMENT_TODO[element]
+            term = f"{N.ELEMENT_NOMINATIVE[element]} — {_planets(len(by_element[element]))} из 10 · {mode}"
         elif pair:
-            temperament = [N.ELEMENTS_PAIR.format(a=N.ELEMENT_NAMES[pair[0]], b=N.ELEMENT_NAMES[pair[1]],
-                                                  first=N.ELEMENT_GIFT[pair[0]], second=N.ELEMENT_GIFT[pair[1]])]
+            lead = pair
+            a, b = pair
+            temperament = [N.ELEMENTS_PAIR.format(a=N.ELEMENT_NAMES[a], b=N.ELEMENT_NAMES[b],
+                                                  first=N.ELEMENT_GIFT[a], second=N.ELEMENT_GIFT[b])]
+            title = N.ELEMENTS_PAIR_TITLE.format(a=_cap(N.ELEMENT_NOMINATIVE[a]), b=N.ELEMENT_NOMINATIVE[b])
+            todo = N.ELEMENTS_PAIR_TODO.format(a=N.ELEMENT_QUESTION[a], b=N.ELEMENT_QUESTION[b])
+            term = f"{N.ELEMENT_NOMINATIVE[a]} и {N.ELEMENT_NOMINATIVE[b]} — по {_planets(len(by_element[a]))} · {mode}"
         else:
+            lead = []
             temperament = [N.ELEMENTS_EVEN]
-        temperament += [N.ELEMENT_MISSING[element] for element in facts["missing"]]
+            title, todo = N.ELEMENTS_EVEN_TITLE, N.ELEMENTS_EVEN_TODO
+            term = f"стихии в равновесии · {mode}"
+        temperament += [N.ELEMENT_MISSING[missing] for missing in facts["missing"]]
         temperament.append(N.MODE_LEAD[facts["mode"]] if facts["mode"] else N.MODES_EVEN)
-        parts.append(_part("Темперамент", " ".join(temperament)))
+        parts.append(_part(
+            "Темперамент", " ".join(temperament), title=title, term=_cap(term), todo=todo,
+            focus=_focus(points=[point for each in lead for point in by_element[each]],
+                         signs=[sign for sign in SIGNS if element_of(sign) in lead]),
+        ))
 
+        if accent := self._accents(facts):
+            parts.append(accent)
+
+        for key, label, title in (("tension", "Главная точка роста", N.TENSION_TITLE), ("gift", "Главный дар", N.GIFT_TITLE)):
+            aspect = facts[key]
+            if not aspect:
+                continue
+            a, b, kind = aspect["a"], aspect["b"], aspect["type"]
+            parts.append(_part(
+                label, self.natal_aspect(a, b, kind),
+                title=title.format(a=_cap(N.POINT_WORD[a]), b=N.POINT_WORD[b]),
+                term=f"{POINTS[a][0]} и {POINTS[b][0]} · {_ASPECT_NAMES.get(kind, 'соединение')}",
+                todo=N.ASPECT_TODO.get(kind), focus=_focus(points=[a, b]),
+            ))
+
+        if phase := facts["phase"]:
+            parts.append(_part(
+                "Луна при рождении", N.PHASE[phase], title=N.PHASE_TITLE[phase],
+                term=f"Фаза Луны: {N.PHASE_NAME[phase]}", todo=N.PHASE_TODO[phase], focus=_focus(points=["sun", "moon"]),
+            ))
+
+        node = facts["node"]
+        path, term = [N.NODE_SIGN[node["sign"]]], f"Северный узел {SIGNS[node['sign']][0]}"
+        if node["house"]:
+            path.append(N.NODE_HOUSE.format(theme=HOUSES[node["house"] - 1], house=ROMAN[node["house"] - 1]))
+            term += f" · {ROMAN[node['house'] - 1]} дом"
+        parts.append(_part(
+            "Путь", " ".join(path), title=N.NODE_TITLE[node["sign"]], term=term, todo=N.NODE_TODO[node["sign"]],
+            focus=_focus(points=["node"], houses=[node["house"]] if node["house"] else []),
+        ))
+
+        if not element and pair:
+            essence = N.ESSENCE_PAIR.format(a=N.ELEMENT_NAMES[pair[0]], b=N.ELEMENT_NAMES[pair[1]])
+        else:
+            essence = N.ESSENCE[element]
+        return {"essence": f"{essence}.", "parts": parts}
+
+    @staticmethod
+    def _accents(facts: dict) -> dict | None:
+        """What stands out in the chart, as one chapter named after its strongest accent (three at most)."""
         accents = []
         for group in facts["stellium_signs"]:
             sign = group["sign"]
-            template = N.STELLIUM_SUN if sign == sun else N.STELLIUM_SIGN
-            accents.append(template.format(
-                names=_joined([POINTS[point][0] for point in group["points"]]), where=SIGNS[sign][0], voice=_SIGN_VOICE[sign],
-            ))
+            where = SIGNS[sign][0]
+            template = N.STELLIUM_SUN if sign == facts["sun"] else N.STELLIUM_SIGN
+            accents.append({
+                "text": template.format(names=_joined([POINTS[point][0] for point in group["points"]]), where=where,
+                                        voice=_SIGN_VOICE[sign]),
+                "title": N.ACCENT_TITLE["stellium_sign"].format(count=N.STELLIUM_COUNT[len(group["points"])], where=where),
+                "term": N.ACCENT_TERM["stellium_sign"].format(where=where),
+                "todo": N.ACCENT_TODO["stellium_sign"].format(manner=SIGNS[sign][1]),
+                "points": group["points"], "signs": [sign],
+            })
         for index, group in enumerate(facts["stellium_houses"]):
-            accents.append((N.STELLIUM_HOUSE_MORE if index else N.STELLIUM_HOUSE).format(
-                names=_joined([POINTS[point][0] for point in group["points"]]),
-                house=ROMAN[group["house"] - 1],
-                theme=HOUSES[group["house"] - 1],
-            ))
+            house, scene = ROMAN[group["house"] - 1], N.HOUSE_SCENE[group["house"] - 1]
+            # The same planets gathered in one sign and one house: one accent, not the names twice.
+            same = next((accent for accent in accents if set(accent.get("points", [])) == set(group["points"])), None)
+            if same:
+                same["text"] += " " + N.STELLIUM_SAME_HOUSE.format(house=house, theme=HOUSES[group["house"] - 1])
+                same["houses"] = [group["house"]]
+                same["term"] += f", {house} дом"
+                continue
+            accents.append({
+                "text": (N.STELLIUM_HOUSE_MORE if index else N.STELLIUM_HOUSE).format(
+                    names=_joined([POINTS[point][0] for point in group["points"]]), house=house, theme=HOUSES[group["house"] - 1],
+                ),
+                "title": N.ACCENT_TITLE["stellium_house"].format(scene=scene),
+                "term": N.ACCENT_TERM["stellium_house"].format(house=house),
+                "todo": N.ACCENT_TODO["stellium_house"].format(scene=scene),
+                "points": group["points"], "houses": [group["house"]],
+            })
         for entry in facts["on_angles"]:
             name, _, theme = POINTS[entry["id"]]
-            accents.append(N.ON_ANGLE[entry["angle"]].format(name=name, theme=re.split(r"[:,]", theme, maxsplit=1)[0]))
+            angle = entry["angle"]
+            accents.append({
+                "text": N.ON_ANGLE[angle].format(name=name, theme=re.split(r"[:,]", theme, maxsplit=1)[0]),
+                "title": N.ACCENT_TITLE[angle].format(name=name),
+                "term": N.ACCENT_TERM[angle].format(name=name),
+                "todo": N.ACCENT_TODO[angle],
+                "points": [entry["id"], angle],
+            })
         for lean in (facts["hemispheres"] or {}).values():
             if lean:
-                accents.append(N.HEMISPHERE[lean])
-        if accents:
-            parts.append(_part("Акценты", " ".join(accents)))
-
-        if facts["tension"]:
-            aspect = facts["tension"]
-            parts.append(_part("Главная точка роста", self.natal_aspect(aspect["a"], aspect["b"], aspect["type"])))
-        if facts["gift"]:
-            aspect = facts["gift"]
-            parts.append(_part("Главный дар", self.natal_aspect(aspect["a"], aspect["b"], aspect["type"])))
-        if facts["phase"]:
-            parts.append(_part("Луна при рождении", N.PHASE[facts["phase"]]))
-
-        node = facts["node"]
-        path = [N.NODE_SIGN[node["sign"]]]
-        if node["house"]:
-            path.append(f"Узел стоит в {ROMAN[node['house'] - 1]} доме: {HOUSES[node['house'] - 1]} — сфера, где этот рост случается.")
-        parts.append(_part("Путь", " ".join(path)))
-        if not facts["element"] and pair:
-            essence = N.ESSENCE_PAIR.format(a=N.ELEMENT_NAMES[pair[0]], b=N.ELEMENT_NAMES[pair[1]])
-        else:
-            essence = N.ESSENCE[facts["element"]]
-        return {"essence": f"{essence}.", "parts": parts}
+                accents.append({
+                    "text": N.HEMISPHERE[lean], "title": N.ACCENT_TITLE[lean], "term": N.ACCENT_TERM[lean],
+                    "todo": N.ACCENT_TODO[lean], "houses": N.HEMISPHERE_HOUSES[lean],
+                })
+        if not accents:
+            return None
+        accents = accents[:3]
+        first = accents[0]
+        return _part(
+            "Акценты", " ".join(accent["text"] for accent in accents), title=first["title"],
+            term=_cap(" · ".join(accent["term"] for accent in accents)), todo=first["todo"],
+            focus=_focus(
+                points=[point for accent in accents for point in accent.get("points", [])],
+                signs=[sign for accent in accents for sign in accent.get("signs", [])],
+                houses=[house for accent in accents for house in accent.get("houses", [])],
+            ),
+        )
 
     def natal_aspect(self, a: str, b: str, kind: str) -> str:
         pair = frozenset({a, b})

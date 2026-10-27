@@ -125,6 +125,15 @@ def history(user_id: int) -> dict:
     }
 
 
+def questions_of(user_id: int) -> dict:
+    """The questions in numbers, for the «Небосвод» page: asked so far, the trial, the day's limit and what it still holds."""
+    user = get_user(user_id)
+    daily = talk.config()["daily"]
+    with pool.connection() as conn:
+        asked, today = _counts(conn, user_id)
+    return {"asked": asked, "trial": TRIAL, "left": _left(user["sky"], asked), "daily": daily, "today_left": max(0, daily - today)}
+
+
 def _context(user_id: int, user: dict, chart: dict) -> dict:
     """What the astrologer knows besides the chart: today's sky over it, the month ahead, the pairs, the date."""
     zone = user["birth"].get("tz") or "UTC"

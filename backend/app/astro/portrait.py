@@ -106,6 +106,12 @@ def facts(chart: dict) -> dict:
     if chart["time_known"]:
         phase = moon_phase(points["sun"]["lon"], points["moon"]["lon"])
 
+    # The planets behind each element, for the wheel to light (the same ten the balance counts).
+    element_points = {element: [] for element in ELEMENTS}
+    for point in chart["points"]:
+        if point["id"] in PLANETS:
+            element_points[element_of(point["sign"])].append(point["id"])
+
     node = points["node"]
     return {
         "sun": points["sun"]["sign"],
@@ -113,6 +119,7 @@ def facts(chart: dict) -> dict:
         "asc": angles["asc"]["sign"] if angles else None,
         "element": _strongest(elements),
         "element_pair": _pair(elements),
+        "element_points": element_points,
         "missing": [element for element in ELEMENTS if elements[element] == 0],
         "mode": _strongest(modes),
         "ruler": ruler,

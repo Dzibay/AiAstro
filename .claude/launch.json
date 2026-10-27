@@ -23,6 +23,21 @@
       "env": { "PORT": "5175", "API_TARGET": "http://127.0.0.1:8012" },
       "port": 5175,
       "url": "http://127.0.0.1:5175"
+    },
+    {
+      "name": "api-check",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-I", "C:/Users/4857~1/AppData/Local/Temp/astra-check/mock.py", "backend", "8013"],
+      "port": 8013,
+      "url": "http://127.0.0.1:8013"
+    },
+    {
+      "name": "frontend-check",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "env": { "PORT": "5176", "API_TARGET": "http://127.0.0.1:8013" },
+      "port": 5176,
+      "url": "http://127.0.0.1:5176"
     }
   ]
 }

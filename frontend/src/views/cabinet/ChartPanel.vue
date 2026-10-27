@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
 import ReadingText from '../../components/cabinet/ReadingText.vue'
-import LockedReading from '../../components/cabinet/LockedReading.vue'
+import PortraitWalk from '../../components/cabinet/PortraitWalk.vue'
 import SkyNudge from '../../components/sky/SkyNudge.vue'
 import { markStep, stepDone } from '../../utils/newcomer.js'
 import { gameSupported, startGame } from '../../components/game/state.js'
@@ -313,12 +313,7 @@ const nudge = computed(() => {
       <section class="block" aria-labelledby="portrait-title">
         <h3 id="portrait-title" class="block-title">Портрет</h3>
         <p v-if="portraitError" class="error">{{ portraitError }}</p>
-        <LockedReading
-          v-else-if="portrait"
-          :reading="portrait.reading"
-          :locked="portrait.locked"
-          :note="`Открыта первая из ${portrait.total} глав: ядро карты. Восход и управитель, темперамент, акценты, главная точка роста и главный дар, ваш путь — в «Небосводе».`"
-        />
+        <PortraitWalk v-else-if="portrait" :portrait="portrait" />
         <p v-else class="loading">Складываем карту в одно целое…</p>
       </section>
 

@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useSky } from '../../composables/useSky.js'
 import { useSkyOffer } from '../../composables/useSkyOffer.js'
+import { useSkyTeasers } from '../../composables/useSkyTeasers.js'
 import { wheelSpot } from '../cabinet/layout.js'
 import { FEATURES } from './features.js'
 
@@ -9,8 +10,10 @@ import { FEATURES } from './features.js'
  * «Небосвод» on the sky: a round star map in the free middle of it, where the natal wheel stands
  * in the chart. Each feature of the subscription is a constellation on it; the person's own chart
  * burns in the middle from the start, the others are faint until the subscription lights them.
+ * Under each name, on a desktop, a sample of what it holds for this person (useSkyTeasers):
+ * «ещё 6 глав портрета», «5 лёгких дней в ноябре».
  *
- * A constellation under the pointer (here or in the panel's list) comes forward with its name;
+ * A constellation under the pointer (here or in the panel's cards) comes forward with its name;
  * the try-on lights them all for a while, and after a payment they catch fire one by one.
  */
 
@@ -30,6 +33,9 @@ const fixed = (n) => n.toFixed(1)
 const rad = (deg) => (deg * Math.PI) / 180
 const spot = computed(() => wheelSpot(geo.value))
 const narrow = computed(() => geo.value.narrow)
+const { notes } = useSkyTeasers()
+// The samples need room: not on a phone, nor on a dome too small to keep them apart.
+const samples = computed(() => (!narrow.value && spot.value.r >= 150 ? notes.value : {}))
 
 const SPARK = (s) => `M0 ${-s}Q${s * 0.16} ${-s * 0.16} ${s} 0Q${s * 0.16} ${s * 0.16} 0 ${s}Q${-s * 0.16} ${s * 0.16} ${-s} 0Q${-s * 0.16} ${-s * 0.16} 0 ${-s}Z`
 
@@ -192,6 +198,12 @@ const aria = computed(() => {
             :y="fixed(item.scale * 1.15 + (narrow ? 11 : 16))"
             text-anchor="middle"
           >{{ item.name }}</text>
+          <text
+            v-if="samples[item.id]"
+            class="figure-sample"
+            :y="fixed(item.scale * 1.15 + 33)"
+            text-anchor="middle"
+          >{{ samples[item.id].short }}</text>
           <circle
             class="figure-hit"
             :r="item.scale * 1.55"
@@ -254,6 +266,20 @@ const aria = computed(() => {
   stroke-width: 3px;
   transition: fill 0.4s ease, opacity 0.4s ease;
 }
+/* What it holds for this person, under the name: quiet until its constellation comes forward. */
+.figure-sample {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 13.5px;
+  fill: rgba(242, 232, 214, 0.5);
+  paint-order: stroke;
+  stroke: rgba(4, 6, 12, 0.85);
+  stroke-width: 3px;
+  animation: figure-in 0.6s ease both;
+  transition: fill 0.4s ease;
+}
+.figure.is-on .figure-sample { fill: rgba(242, 232, 214, 0.68); }
+.figure.is-hot .figure-sample { fill: #f3dcae; }
 .figure-flash { fill: none; stroke: #ffe7b4; stroke-width: 1.2; opacity: 0; }
 .figure-hit { fill: transparent; pointer-events: auto; cursor: pointer; }
 
@@ -283,7 +309,7 @@ const aria = computed(() => {
 @keyframes flash { 0% { opacity: 0.9; transform: scale(0.3); } 100% { opacity: 0; transform: scale(2.4); } }
 @keyframes ignite { 0% { fill: rgba(214, 222, 238, 0.4); } 35% { fill: #ffffff; filter: drop-shadow(0 0 10px #ffe2a8); } }
 
-.motion-off .vault, .motion-off .figure { animation: none; }
+.motion-off .vault, .motion-off .figure, .motion-off .figure-sample { animation: none; }
 .motion-off .is-burst .figure-flash, .motion-off .is-burst .figure-star { animation: none; }
 .motion-off .figure-line, .motion-off .figure-star, .motion-off .figure-glow { transition: none !important; }
 </style>

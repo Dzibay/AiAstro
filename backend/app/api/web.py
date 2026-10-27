@@ -20,6 +20,7 @@ from app.partners import (
     list_partners, mine_changed, open_invite, seen, share, synastry_of, update_partner,
 )
 from app.places import search
+from app.sky_teasers import teasers
 from app.security import make_web_session
 from app.throttle import Window, address
 from app.track import attach, server_event
@@ -436,6 +437,15 @@ def my_month(tz: str = Query(default="", max_length=64), user_id: int = Depends(
     """The star calendar of thirty days; without «Небосвод» only its first week is open."""
     try:
         return month_of(user_id, tz)
+    except DomainError as exc:
+        raise as_http(exc) from exc
+
+
+@router.get("/me/sky")
+def my_sky(tz: str = Query(default="", max_length=64), user_id: int = Depends(require_member)) -> dict:
+    """What «Небосвод» holds for the person now: the chapters, screens, light days and questions, in numbers."""
+    try:
+        return teasers(user_id, tz)
     except DomainError as exc:
         raise as_http(exc) from exc
 

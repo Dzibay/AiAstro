@@ -1,11 +1,15 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import LiveText from './LiveText.vue'
 
 /**
  * An answer of the ИИ-астролог ({ kind: 'talk', parts, key, follow }): conversational paragraphs,
  * then «Ключ — …» in gold, then what to ask next as chips. The answer arrives whole, already
  * checked; a new one is printed out letter by letter (a click shows it at once), an old one stands
  * as it is. Screen readers get the whole text at once, not the letters.
+ *
+ * Once printed, the answer knows its astrology (LiveText): a planet it names lights on the wheel
+ * beside the conversation and leads to its reading, a term explains itself, the dates are gold.
  */
 const props = defineProps({
   reading: { type: Object, required: true },
@@ -89,7 +93,10 @@ onBeforeUnmount(() => {
   <div class="chat-answer" :class="{ 'is-typing': !done }" @click="finish">
     <span v-if="animated" class="visually-hidden">{{ whole }}</span>
     <div :aria-hidden="animated || undefined">
-      <p v-for="(line, index) in visible" :key="index" :class="{ 'is-key': line.key }">{{ line.text }}<i v-if="line.typing" class="caret" aria-hidden="true" /></p>
+      <p v-for="(line, index) in visible" :key="index" :class="{ 'is-key': line.key }">
+        <LiveText v-if="done" :text="line.text" dates :untabbable="animated" />
+        <template v-else>{{ line.text }}<i v-if="line.typing" class="caret" aria-hidden="true" /></template>
+      </p>
     </div>
     <Transition name="follow">
       <ul v-if="done && followable && reading.follow?.length" class="follow" aria-label="Можно спросить дальше">
@@ -105,9 +112,15 @@ onBeforeUnmount(() => {
 .chat-answer { display: grid; gap: 12px; }
 .chat-answer.is-typing { cursor: pointer; }
 .chat-answer p { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
-.chat-answer p + p { margin-top: 10px; }
-/* The key: the one line to carry away, in the gold of the stars. */
-.chat-answer .is-key { color: #f0cd8a; }
+.chat-answer p + p { margin-top: 0.8em; }
+/* The key: the one line to carry away, the only one in the italic serif, in the gold of the stars. */
+.chat-answer .is-key {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 1.08em;
+  line-height: 1.5;
+  color: #f0cd8a;
+}
 .caret {
   display: inline-block;
   width: 6px;

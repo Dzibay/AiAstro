@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useSky } from '../../composables/useSky.js'
 import { useChart } from '../../composables/useChart.js'
 import { clamp } from '../hero/sky.js'
-import { wheelSpot } from './layout.js'
+import { talkWheelSpot, wheelSpot } from './layout.js'
 import { ASPECTS, POINTS, SIGN_LIST, spread } from './astro.js'
 
 /**
@@ -14,6 +14,12 @@ import { ASPECTS, POINTS, SIGN_LIST, spread } from './astro.js'
  *
  * With a forecast the natal wheel steps inward and the sky of the day walks around it in cool
  * silver: the key transits are drawn as lines from the moving planet to the natal point it touches.
+ *
+ * Beside the ИИ-астролог's conversation it stands aside, quiet: a planet named in an answer
+ * (LiveText) lights on it under the pointer.
+ *
+ * A chapter of the portrait (PortraitWalk) lights what it speaks of at once: its planets, the
+ * aspects between them, its signs and houses as soft gold bands; the rest of the wheel dims.
  */
 
 const props = defineProps({
@@ -24,15 +30,17 @@ const props = defineProps({
   forecast: { type: Object, default: null },
   /** Drawn under the last picture of the natal sky game (NatalGame): the planets come at once, where its bodies fade. */
   landing: { type: Boolean, default: false },
+  /** Beside the conversation (talkWheelSpot): quiet until a planet named in an answer lights. */
+  aside: { type: Boolean, default: false },
 })
 const emit = defineEmits(['select'])
 // Read once: the drawing-in is decided when the wheel appears, a later change must not replay it.
 const landed = props.landing
 
 const { geo } = useSky()
-const { hot } = useChart()
+const { hot, lens } = useChart()
 
-const spot = computed(() => wheelSpot(geo.value))
+const spot = computed(() => (props.aside && talkWheelSpot(geo.value)) || wheelSpot(geo.value))
 const reduce = ref(false)
 onMounted(() => {
   reduce.value = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -146,6 +154,48 @@ const ends = computed(() => {
 
 const focus = computed(() => hot.value || props.selected)
 
+/** The portrait's chapter, while nothing is under the pointer or chosen and no forecast circles the chart. */
+const glow = computed(() => {
+  const value = lens.value
+  if (!value || focus.value || props.forecast) return null
+  const points = new Set(value.points || [])
+  const signs = new Set(value.signs || [])
+  const houses = new Set(value.houses || [])
+  return points.size || signs.size || houses.size ? { points, signs, houses } : null
+})
+/** Lit by the pointer, the choice or the chapter. */
+const isOn = (id) => focus.value === id || Boolean(glow.value?.points.has(id))
+
+/** A band of the wheel between two degrees and two radii (degrees grow anticlockwise on screen). */
+function sector(from, to, r1, r2) {
+  const span = (((to - from) % 360) + 360) % 360
+  const large = span > 180 ? 1 : 0
+  const [ax, ay] = at(from, r2)
+  const [bx, by] = at(to, r2)
+  const [cx, cy] = at(to, r1)
+  const [dx, dy] = at(from, r1)
+  return `M${fixed(ax)} ${fixed(ay)}A${fixed(r2)} ${fixed(r2)} 0 ${large} 0 ${fixed(bx)} ${fixed(by)}`
+    + `L${fixed(cx)} ${fixed(cy)}A${fixed(r1)} ${fixed(r1)} 0 ${large} 1 ${fixed(dx)} ${fixed(dy)}Z`
+}
+/** The chapter's signs in the belt of signs, its houses in the ring of their numbers. */
+const bands = computed(() => {
+  const { outer, signs: belt, houses: ring } = radii.value
+  const list = SIGN_LIST.map((sign, index) => ({
+    key: `s-${sign.id}`,
+    d: sector(index * 30, index * 30 + 30, belt, outer),
+    lit: Boolean(glow.value?.signs.has(sign.id)),
+  }))
+  const cusps = props.chart.houses
+  if (cusps) {
+    cusps.forEach((cusp, index) => list.push({
+      key: `h-${index + 1}`,
+      d: sector(cusp.lon, cusps[(index + 1) % 12].lon, ring, belt),
+      lit: Boolean(glow.value?.houses.has(index + 1)),
+    }))
+  }
+  return list
+})
+
 /* ---- The day's sky around the chart ---- */
 
 const transitKey = (transit) => `${transit.a}-${transit.b}-${transit.type}`
@@ -207,7 +257,12 @@ const aspects = computed(() => (props.forecast ? [] : props.chart.aspects)
   .map((aspect, index) => {
     const [x1, y1] = ends.value[aspect.a]
     const [x2, y2] = ends.value[aspect.b]
-    const lit = focus.value && (aspect.a === focus.value || aspect.b === focus.value)
+    let lit = focus.value && (aspect.a === focus.value || aspect.b === focus.value)
+    if (glow.value) {
+      // One point of the chapter: its aspects; several: the aspects between them.
+      const { points } = glow.value
+      lit = points.size === 1 ? points.has(aspect.a) || points.has(aspect.b) : points.has(aspect.a) && points.has(aspect.b)
+    }
     return {
       key: `${aspect.a}-${aspect.b}`,
       tone: ASPECTS[aspect.type].tone,
@@ -215,7 +270,7 @@ const aspects = computed(() => (props.forecast ? [] : props.chart.aspects)
       // A conjunction is a dot just inside the circle between the two.
       dot: [((x1 + x2) / 2) * 0.9, ((y1 + y2) / 2) * 0.9],
       lit,
-      dim: Boolean(focus.value) && !lit,
+      dim: Boolean(focus.value || glow.value) && !lit,
       // The tighter the orb, the stronger the line.
       strength: clamp(1 - aspect.orb / 9, 0.35, 1),
       index,
@@ -252,7 +307,7 @@ function choose(id) {
 </script>
 
 <template>
-  <div class="natal-wheel" :class="{ 'is-landed': landed, 'motion-off': reduce, 'has-focus': Boolean(focus), 'with-transits': Boolean(forecast) }" :style="frame.style">
+  <div class="natal-wheel" :class="{ 'is-landed': landed, 'motion-off': reduce, 'has-focus': Boolean(focus || glow), 'with-transits': Boolean(forecast), 'is-aside': aside }" :style="frame.style">
     <svg :viewBox="frame.viewBox" role="img" :aria-label="forecast ? 'Транзиты над натальной картой. Ключевые транзиты — в панели.' : 'Колесо натальной карты. Те же планеты списком — в панели.'">
       <g class="rings">
         <circle class="ring" :r="radii.outer" pathLength="1" />
@@ -260,12 +315,16 @@ function choose(id) {
         <circle v-if="houses" class="ring ring-faint" :r="radii.houses" pathLength="1" style="--i: 2" />
         <circle class="ring ring-faint" :r="radii.aspects" pathLength="1" style="--i: 3" />
       </g>
+      <g class="bands" aria-hidden="true">
+        <path v-for="band in bands" :key="band.key" class="band" :class="{ 'is-lit': band.lit }" :d="band.d" />
+      </g>
       <path class="ticks" :d="ticks" />
       <path class="dividers" :d="dividers" />
       <text
         v-for="(sign, index) in signs"
         :key="sign.id"
         class="sign-glyph"
+        :class="{ 'is-lit': glow?.signs.has(sign.id) }"
         :x="sign.x"
         :y="sign.y"
         :font-size="sizes.sign"
@@ -273,11 +332,18 @@ function choose(id) {
       >{{ sign.glyph }}</text>
 
       <g v-if="houses" class="houses">
-        <path v-for="cusp in houses.lines" :key="cusp.key" class="cusp" :class="{ 'is-axis': cusp.axis }" :d="cusp.d" />
+        <path
+          v-for="cusp in houses.lines"
+          :key="cusp.key"
+          class="cusp"
+          :class="{ 'is-axis': cusp.axis, 'is-lit': cusp.axis && isOn(cusp.key === 0 ? 'asc' : 'mc') }"
+          :d="cusp.d"
+        />
         <text
           v-for="number in houses.numbers"
           :key="number.key"
           class="house-number"
+          :class="{ 'is-lit': glow?.houses.has(number.label) }"
           :x="number.x"
           :y="number.y"
           :font-size="sizes.house"
@@ -287,7 +353,7 @@ function choose(id) {
         v-for="axis in axes"
         :key="axis.id"
         class="axis-label"
-        :class="{ 'is-on': focus === axis.id }"
+        :class="{ 'is-on': isOn(axis.id) }"
         :x="axis.x"
         :y="axis.y"
         :font-size="sizes.axis"
@@ -350,7 +416,7 @@ function choose(id) {
         v-for="planet in planets"
         :key="planet.id"
         class="planet"
-        :class="{ 'is-on': focus === planet.id, 'is-partner': partners.has(planet.id), 'is-selected': selected === planet.id }"
+        :class="{ 'is-on': isOn(planet.id), 'is-partner': partners.has(planet.id), 'is-selected': selected === planet.id }"
         :style="{ '--i': planet.index }"
         @click="choose(planet.id)"
         @pointerenter="setHot(planet.id)"
@@ -379,6 +445,10 @@ function choose(id) {
   pointer-events: none;
   --d0: 0.55s;
 }
+/* Beside the conversation the wheel stays in the background, and comes forward with a planet named. */
+/* On the picture, not the wheel itself: the wheel's own opacity is CabinetView's fade in and out. */
+.natal-wheel.is-aside svg { opacity: 0.5; transition: opacity 0.5s ease; }
+.natal-wheel.is-aside.has-focus svg { opacity: 1; }
 .natal-wheel svg { display: block; width: 100%; height: 100%; overflow: visible; }
 
 .ring {
@@ -418,7 +488,13 @@ function choose(id) {
   filter: drop-shadow(0 0 4px rgba(255, 200, 110, 0.4));
   animation: show 0.6s ease calc(var(--d0) + 0.8s + var(--i) * 0.05s) forwards;
   --o: 0.8;
+  transition: fill 0.35s ease, filter 0.35s ease;
 }
+/* The chapter's signs and houses: the glyph brightens over a soft gold band (the fade-in owns the opacity). */
+.sign-glyph.is-lit, .house-number.is-lit { fill: #fff6df; filter: drop-shadow(0 0 6px rgba(255, 210, 130, 0.95)); }
+.band { fill: #f0cd8a; fill-opacity: 0; stroke: none; transition: fill-opacity 0.45s ease; }
+.band.is-lit { fill-opacity: 0.13; }
+.cusp.is-lit { stroke: #fff3d6; filter: drop-shadow(0 0 3px rgba(255, 210, 130, 0.8)); }
 .house-number {
   font-family: var(--serif);
   font-style: italic;
@@ -426,6 +502,7 @@ function choose(id) {
   opacity: 0;
   animation: show 0.8s ease calc(var(--d0) + 1s) forwards;
   --o: 0.45;
+  transition: fill 0.35s ease, filter 0.35s ease;
 }
 .axis-label {
   font-family: var(--serif);
@@ -438,7 +515,7 @@ function choose(id) {
   --o: 0.75;
   transition: fill 0.25s ease;
 }
-.axis-label.is-on { fill: #fff3d6; }
+.axis-label.is-on { fill: #fff3d6; filter: drop-shadow(0 0 5px rgba(255, 210, 130, 0.9)); }
 
 .aspect {
   fill: none;

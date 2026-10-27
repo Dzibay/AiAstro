@@ -613,6 +613,29 @@ def pairs_of(user_id: int, mine: dict, limit: int = 3) -> list[dict]:
     return pairs
 
 
+def pairs_in_short(user_id: int) -> dict:
+    """The pairs for the «Небосвод» page: how many, how many opened, and one to name.
+
+    The one named is an opened pair (its day burns with «Небосвод»), else one ready to be opened.
+    """
+    with pool.connection() as conn:
+        rows = conn.execute(
+            f"SELECT {_cols()} FROM partners p WHERE p.user_id = %s ORDER BY p.created_at, p.id",
+            (user_id,),
+        ).fetchall()
+    bought = _bought(user_id)
+    ready = [row for row in rows if _birth(row) is not None]
+    opened = [row for row in ready if row["pair_id"] in bought]
+    named = (opened or ready or [None])[0]
+    return {
+        "pairs": len(rows),
+        "opened": len(opened),
+        "name": named["name"] if named else "",
+        "id": named["id"] if named else None,
+        "named_open": bool(named and named["pair_id"] in bought),
+    }
+
+
 # ---- The operator's side ----
 
 def admin_partners(user_id: int) -> list[dict]:

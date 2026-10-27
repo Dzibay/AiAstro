@@ -319,7 +319,7 @@ function fit() {
 .from-you {
   font-family: var(--book);
   justify-self: end;
-  max-width: 86%;
+  max-width: min(86%, 520px);
   padding: 9px 14px;
   border-radius: 16px 16px 4px 16px;
   background: rgba(255, 240, 210, 0.08);
@@ -330,16 +330,17 @@ function fit() {
   overflow-wrap: anywhere;
 }
 .from-you:not(:first-child) { margin-top: 6px; }
-/* The astrologer's: italic serif on the glass itself, under a gold hairline. */
+/* The astrologer's: the upright book face on the glass itself, under a gold hairline, at a page's measure. */
 .from-astrologer {
-  padding-left: 14px;
+  max-width: 64ch;
+  padding-left: 16px;
   border-left: 1px solid rgba(240, 205, 138, 0.35);
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 17px;
-  line-height: 1.45;
+  font-family: var(--book);
+  font-size: 16.5px;
+  line-height: 1.7;
   color: rgba(242, 232, 214, 0.92);
 }
+.from-astrologer p + p { margin-top: 0.8em; }
 /* An answer in parts carries its own gold bar and labels, as the readings do. */
 .from-astrologer.has-reading { padding-left: 0; border-left: 0; font-family: inherit; font-style: normal; }
 .from-astrologer.has-reading + .from-you { margin-top: 10px; }
@@ -347,7 +348,7 @@ function fit() {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-left: 14px;
+  padding-left: 17px;
   font-family: var(--serif);
   font-style: italic;
   font-size: 16px;

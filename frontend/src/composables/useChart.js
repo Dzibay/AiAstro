@@ -14,6 +14,11 @@ const status = ref('idle')
 const message = ref('')
 /** The point under the pointer, in the wheel or in the panel's list: its aspects light up. */
 const hot = ref('')
+/**
+ * What a chapter of the portrait speaks of, lit on the wheel together: { points, signs, houses }.
+ * The pointer wins over it: a point under the pointer lights alone.
+ */
+const lens = shallowRef(null)
 const readings = new Map()
 let portraitRequest = null
 let pending = null
@@ -52,6 +57,7 @@ function forget() {
   generation += 1
   pending = null
   chart.value = null
+  lens.value = null
   status.value = 'idle'
   forgetReadings()
 }
@@ -88,5 +94,5 @@ function reading(id) {
 }
 
 export function useChart() {
-  return { chart, status, message, hot, load, forget, forgetReadings, reading, portrait }
+  return { chart, status, message, hot, lens, load, forget, forgetReadings, reading, portrait }
 }

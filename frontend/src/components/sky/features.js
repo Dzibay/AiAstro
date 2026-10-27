@@ -1,6 +1,6 @@
 /**
  * What «Небосвод» lights: one constellation per feature on the dome (SkyDome) and one row in
- * the section's list (SkyPanel). The natal chart is free and always lit: the first constellation
+ * the section's cards (SkyPanel). The natal chart is free and always lit: the first constellation
  * is already yours, the others wait for the subscription.
  *
  * `stars`: [x, y, size] in a unit box around the constellation's place; `edges` join them.

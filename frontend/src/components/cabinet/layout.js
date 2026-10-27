@@ -78,6 +78,18 @@ export function panelLeft(W) {
   return W - clamp(W * 0.08, 20, 150) - panelWidth(W)
 }
 
+/** Where the fan of sections ends on the right, with their captions (cabinetLayout, a section open). */
+const FAN_RIGHT = 410
+
+/**
+ * The conversation's column on a desktop ({ left, width }), as CabinetView's `.is-talk` draws it:
+ * in the middle of the screen, or right of the fan of sections where the middle would touch it.
+ */
+export function talkColumn(W) {
+  const width = clamp(W - 450, 420, 700)
+  return { width, left: Math.min(Math.max((W - width) / 2, FAN_RIGHT), W - 20 - width) }
+}
+
 /** On phones the sky is kept at least 780px tall for the home page; the sheet follows the window. */
 export function skyHeight(geo) {
   return geo.narrow ? Math.min(geo.H, window.innerHeight || geo.H) : geo.H
@@ -229,6 +241,38 @@ export function wheelSpot(geo) {
     }
   }
   return { x: right - 96, y: bottom - 96, r: 96 }
+}
+
+/**
+ * The natal wheel beside the conversation ({ x, y, r }): under the fan of sections, left of the
+ * column, where the planets the answers name light up. Null on a phone, or where no wheel that
+ * still reads fits.
+ */
+export function talkWheelSpot(geo) {
+  const { W, H, narrow } = geo
+  if (narrow) return null
+  const { star, points } = cabinetLayout(geo, 'chat')
+  const starHalf = (star.span * star.k) / 2
+  const left = 24
+  const right = talkColumn(W).left - 30
+  const top = 100
+  const bottom = H - 36
+  const clear = (spot) => points.every((point) => Math.hypot(point.x - spot.x, point.y - spot.y) > spot.r + 66)
+    && Math.hypot(star.x - spot.x, star.y - spot.y) > spot.r + starHalf + 12
+  // As large as it goes, low and in the middle of the free strip, then sliding to its sides.
+  for (let r = Math.min((right - left) / 2, (bottom - top) / 2, 260); r >= 100; r -= 4) {
+    const middle = (left + right) / 2
+    for (let y = bottom - r; y >= top + r; y -= 12) {
+      for (let step = 0; step <= right - left; step += 12) {
+        for (const x of [middle - step, middle + step]) {
+          if (x < left + r || x > right - r) continue
+          const spot = { x, y, r }
+          if (clear(spot)) return spot
+        }
+      }
+    }
+  }
+  return null
 }
 
 const mix = (a, b, t) => a + (b - a) * t

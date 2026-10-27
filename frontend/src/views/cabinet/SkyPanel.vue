@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import PanelHead from '../../components/cabinet/PanelHead.vue'
 import { FEATURES } from '../../components/sky/features.js'
 import { useSkyOffer } from '../../composables/useSkyOffer.js'
+import { useSkyTeasers } from '../../composables/useSkyTeasers.js'
 import { usePrices } from '../../utils/prices.js'
 import { skyEnding, skyLine } from '../../utils/skyTerm.js'
 import { usePayment } from '../../composables/usePayment.js'
@@ -11,10 +12,12 @@ import { startTour } from '../../utils/tour.js'
 import { queue } from '../../utils/track.js'
 
 /**
- * «Небосвод»: what the subscription lights, for how long and the way to pay for it. The list of
- * features and the dome on the sky (SkyDome) answer each other: a row under the pointer lights
- * its constellation, a constellation under the pointer lights its row; a press opens a row,
- * smoothly, and the rest slides down with it.
+ * «Небосвод»: what the subscription lights, for how long and the way to pay for it. Every feature
+ * is an open card that speaks in the person's own numbers (useSkyTeasers): the chapters of the
+ * portrait still closed, the light days of the month ahead, the questions already asked. With the
+ * subscription the same cards are «Что горит сегодня», each a way to its screen, and the renewal
+ * waits below. The cards and the dome on the sky (SkyDome) answer each other: a card under the
+ * pointer lights its constellation, a constellation under the pointer lights its card.
  *
  * The person comes back to the cabinet after ЮKassa; the subscription opens on the notification.
  */
@@ -58,18 +61,39 @@ watch(plan, (id) => queue('pick', id, PLANS.find((item) => item.id === id)?.mont
 const ending = computed(() => skyEnding(props.user))
 const state = computed(() => (props.user.sky ? `Небосвод ${skyLine(props.user)}.` : ''))
 
-/* ---- The features, in step with the dome ---- */
+/* ---- The features, in the person's numbers and in step with the dome ---- */
 
-const open = computed(() => offer.opened)
+const { teasers, notes, load } = useSkyTeasers()
+onMounted(load)
+// Lit by a payment while the page is open: the cards turn into the day's ways.
+watch(() => props.user.sky, () => load())
+
+/** Where each feature burns, when its note names no place of its own. */
+const PLACES = {
+  chart: { name: 'cabinet-chart' },
+  day: { name: 'cabinet-forecast' },
+  week: { name: 'cabinet-forecast', query: { period: 'week' } },
+  calendar: { name: 'cabinet-forecast', query: { period: 'month' } },
+  chat: { name: 'cabinet-chat' },
+  pair: { name: 'cabinet-pair' },
+}
+const cards = computed(() => FEATURES.map((feature) => {
+  const note = notes.value[feature.id]
+  return {
+    ...feature,
+    line: note?.line || feature.about,
+    personal: Boolean(note),
+    to: props.user.sky ? note?.to || PLACES[feature.id] : null,
+  }
+}))
+// The numbers are on their way: meanwhile the cards speak in general words, quietly.
+const waiting = computed(() => teasers.loading && !teasers.data)
+
 function hover(id) {
   offer.focus = id
 }
 function unhover(id) {
-  if (offer.focus === id && offer.opened !== id) offer.focus = ''
-}
-function toggle(id) {
-  offer.opened = offer.opened === id ? '' : id
-  offer.focus = offer.opened
+  if (offer.focus === id) offer.focus = ''
 }
 
 /* ---- Paying, and the way back from ЮKassa ---- */
@@ -94,44 +118,39 @@ onUnmounted(() => {
       Подписка <em>«Небосвод»</em>
       <template #lead>
         <template v-if="user.sky">{{ state }}</template>
-        <template v-else>Пока на вашем небе горит одна звезда — ваша карта. Зажгите остальные.</template>
+        <template v-else>Пока на вашем небе горит одна звезда — ваша карта. Вот что зажжётся рядом с ней — уже посчитано по вашей карте.</template>
       </template>
     </PanelHead>
 
-    <!-- Once lit, the walk through what «Небосвод» opened can be taken again at any time. -->
-    <button v-if="user.sky" type="button" class="sky-replay" @click="startTour('sky')">
-      <svg viewBox="0 0 16 12" aria-hidden="true"><path d="M1.5 10.5L1 3l4 3.2L8 1l3 5.2L15 3l-.5 7.5z" /></svg>
-      Показать, что открыл «Небосвод»
-    </button>
-
     <section aria-labelledby="sky-features">
-      <h3 id="sky-features" class="part-title">Что зажигается</h3>
-      <ul class="features">
+      <h3 id="sky-features" class="part-title">{{ user.sky ? 'Что горит сегодня' : 'Что зажжётся для вас' }}</h3>
+      <ul class="features" :class="{ 'is-waiting': waiting }" :aria-busy="waiting ? 'true' : 'false'">
         <li
-          v-for="feature in FEATURES"
-          :key="feature.id"
+          v-for="card in cards"
+          :key="card.id"
           class="feature"
-          :class="{ 'is-open': open === feature.id, 'is-hot': offer.focus === feature.id, 'is-on': feature.always || user.sky || offer.preview }"
-          @pointerenter="hover(feature.id)"
-          @pointerleave="unhover(feature.id)"
+          :class="{ 'is-hot': offer.focus === card.id, 'is-on': card.always || user.sky || offer.preview }"
+          @pointerenter="hover(card.id)"
+          @pointerleave="unhover(card.id)"
         >
-          <button
-            type="button"
-            class="feature-head"
-            :aria-expanded="open === feature.id ? 'true' : 'false'"
-            :aria-controls="`feature-${feature.id}`"
-            @click="toggle(feature.id)"
-            @focus="hover(feature.id)"
+          <RouterLink
+            v-if="card.to"
+            class="feature-card is-link"
+            :to="card.to"
+            :data-track="`skyhub:${card.id}`"
+            @focus="hover(card.id)"
+            @blur="unhover(card.id)"
           >
             <svg class="feature-star" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
-            <span class="feature-name">{{ feature.name }}</span>
-            <span class="feature-sky">{{ feature.always ? 'уже ваша' : feature.sky }}</span>
-          </button>
-          <div :id="`feature-${feature.id}`" class="feature-more" :aria-hidden="open === feature.id ? 'false' : 'true'">
-            <div class="feature-more-in">
-              <p>{{ feature.about }}</p>
-              <p v-if="!feature.always" class="feature-free">Без подписки: {{ feature.free }}</p>
-            </div>
+            <span class="feature-name">{{ card.name }}</span>
+            <svg class="feature-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5L12 8l-3.5 3.5" /></svg>
+            <span class="feature-line" :class="{ 'is-personal': card.personal }">{{ card.line }}</span>
+          </RouterLink>
+          <div v-else class="feature-card">
+            <svg class="feature-star" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0Q11 9 20 10Q11 11 10 20Q9 11 0 10Q9 9 10 0Z" /></svg>
+            <span class="feature-name">{{ card.name }}</span>
+            <span class="feature-sky">{{ card.always ? 'уже ваша' : card.sky }}</span>
+            <span class="feature-line" :class="{ 'is-personal': card.personal }">{{ card.line }}</span>
           </div>
         </li>
       </ul>
@@ -144,29 +163,11 @@ onUnmounted(() => {
       >
         {{ offer.preview ? 'Погасить примерку' : 'Примерить зажжённое небо' }}
       </button>
-    </section>
-
-    <section aria-labelledby="sky-compare">
-      <h3 id="sky-compare" class="part-title">Без подписки и с ней</h3>
-      <table class="compare" :class="{ 'is-lit': user.sky }">
-        <thead>
-          <tr>
-            <th scope="col"><span class="visually-hidden">Что</span></th>
-            <th scope="col">Бесплатно</th>
-            <th scope="col" class="compare-sky">
-              <svg viewBox="0 0 16 12" aria-hidden="true"><path d="M1.5 10.5L1 3l4 3.2L8 1l3 5.2L15 3l-.5 7.5z" /></svg>
-              С «Небосводом»
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="feature in FEATURES" :key="feature.id">
-            <th scope="row">{{ feature.name }}</th>
-            <td>{{ feature.free }}</td>
-            <td class="compare-sky">{{ feature.sky }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <!-- Once lit, the walk through what «Небосвод» opened can be taken again at any time. -->
+      <button v-else type="button" class="sky-replay" @click="startTour('sky')">
+        <svg viewBox="0 0 16 12" aria-hidden="true"><path d="M1.5 10.5L1 3l4 3.2L8 1l3 5.2L15 3l-.5 7.5z" /></svg>
+        Показать, что открыл «Небосвод»
+      </button>
     </section>
 
     <section aria-labelledby="sky-plans">
@@ -219,10 +220,11 @@ onUnmounted(() => {
 .sky-panel > * { min-width: 0; }
 
 .sky-replay {
-  justify-self: center;
-  display: inline-flex;
+  display: flex;
+  width: fit-content;
   align-items: center;
   gap: 8px;
+  margin: 12px auto 0;
   padding: 8px 16px;
   border-radius: 999px;
   border: 1px solid rgba(240, 205, 138, 0.45);
@@ -239,45 +241,50 @@ onUnmounted(() => {
 
 .part-title { margin: 0 0 10px; font-family: var(--caps); font-weight: 600; font-size: 15px; letter-spacing: 0.12em; color: rgba(240, 205, 138, 0.85); }
 
-/* The features: a quiet list; the open row shows what it gives and what stays free. */
-.features { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.feature { border-radius: 12px; transition: background 0.25s ease; }
-.feature.is-hot { background: rgba(240, 205, 138, 0.035); }
-.feature.is-open { background: rgba(240, 205, 138, 0.06); }
-.feature-head {
+/* The features: open cards, each in the person's own numbers; lit, each a way to its screen. */
+.features { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.feature-card {
   display: grid;
-  grid-template-columns: 14px auto 1fr;
+  grid-template-columns: 14px 1fr auto;
   align-items: baseline;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 10px;
-  border: 0;
-  border-radius: 12px;
-  background: none;
-  font: inherit;
-  text-align: left;
+  gap: 3px 10px;
+  padding: 11px 14px 12px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(240, 210, 150, 0.1);
+  background: rgba(255, 240, 210, 0.02);
   color: inherit;
-  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.25s ease, border-color 0.25s ease;
 }
-.feature-head:focus-visible { outline: 1px solid #f0cd8a; outline-offset: -1px; }
+.feature.is-hot .feature-card { border-color: rgba(240, 205, 138, 0.32); background: rgba(240, 205, 138, 0.05); }
+.feature-card.is-link:focus-visible { outline: 2px solid #ffe2a8; outline-offset: 2px; }
 .feature-star { width: 11px; height: 11px; align-self: center; fill: rgba(214, 222, 238, 0.4); transition: fill 0.5s ease, filter 0.5s ease; }
 .feature.is-on .feature-star { fill: #f0cd8a; filter: drop-shadow(0 0 4px rgba(255, 205, 120, 0.85)); }
-.feature-name { font-family: var(--serif); font-size: 18px; color: #f6efe2; }
-.feature-sky { justify-self: end; text-align: right; font-size: 12.5px; line-height: 1.35; color: rgba(226, 220, 210, 0.6); }
-.feature.is-on .feature-sky { color: rgba(240, 205, 138, 0.85); }
-/* A row opens by height, not by a jump: the rest of the page slides down with it. */
-.feature-more {
-  display: grid;
-  grid-template-rows: 0fr;
-  visibility: hidden;
-  transition: grid-template-rows 0.4s cubic-bezier(0.3, 0.7, 0.2, 1), visibility 0s linear 0.4s;
+.feature-name { font-family: var(--serif); font-size: 18px; line-height: 1.3; color: #f6efe2; }
+.feature-sky { justify-self: end; text-align: right; font-size: 12px; line-height: 1.35; color: rgba(240, 205, 138, 0.75); }
+.feature-line {
+  grid-column: 2 / -1;
+  font-family: var(--book);
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: rgba(226, 220, 210, 0.62);
+  transition: color 0.4s ease, opacity 0.4s ease;
 }
-.feature.is-open .feature-more { grid-template-rows: 1fr; visibility: visible; transition-delay: 0s; }
-.feature-more-in { min-height: 0; overflow: hidden; padding: 0 12px 0 34px; opacity: 0; transition: opacity 0.25s ease; }
-.feature.is-open .feature-more-in { opacity: 1; transition: opacity 0.35s ease 0.12s; }
-.feature-more p { margin: 0; font-family: var(--book); font-size: 14.5px; line-height: 1.55; color: rgba(239, 231, 216, 0.85); }
-.feature-more .feature-free { margin-top: 6px; font-size: 12.5px; color: rgba(226, 220, 210, 0.55); }
-.feature-more-in > :last-child { margin-bottom: 12px; }
+.feature-line.is-personal { color: rgba(242, 232, 214, 0.9); }
+.is-waiting .feature-line { opacity: 0.55; }
+.feature-go {
+  justify-self: end;
+  align-self: center;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: rgba(240, 205, 138, 0.7);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.25s ease, stroke 0.25s ease;
+}
+.feature.is-hot .feature-go { stroke: #f0cd8a; transform: translateX(2px); }
 
 .try {
   margin-top: 8px;
@@ -367,27 +374,16 @@ onUnmounted(() => {
 .terms li::before { content: '✦'; position: absolute; left: 0; top: 0.1em; font-size: 0.75em; color: rgba(240, 205, 138, 0.7); }
 .inline { color: #f0cd8a; text-decoration: underline; text-decoration-color: rgba(240, 205, 138, 0.35); text-underline-offset: 3px; }
 .inline:hover { text-decoration-color: currentColor; }
-
-/* Free and lit side by side: one row per feature, the subscription's column in gold. */
-.compare { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.35; }
-.compare th, .compare td { padding: 7px 6px; text-align: left; vertical-align: top; border-top: 1px solid rgba(240, 210, 150, 0.1); }
-.compare thead th { border-top: 0; padding-top: 0; font-size: 11px; font-weight: 400; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(226, 220, 210, 0.55); }
-.compare tbody th { font-family: var(--serif); font-weight: 400; font-size: 15px; color: #f6efe2; }
-.compare td { color: rgba(226, 220, 210, 0.7); }
-.compare .compare-sky { color: rgba(240, 205, 138, 0.9); }
-.compare thead .compare-sky { color: rgba(240, 205, 138, 0.85); white-space: nowrap; }
-.compare-sky svg { width: 11px; height: 9px; margin-right: 3px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linejoin: round; }
-.compare.is-lit .compare-sky svg { fill: currentColor; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 @media (max-width: 760px) {
-  .feature-head { min-height: 44px; align-items: center; }
   .feature-name { font-size: 17px; }
+  .feature-line { font-size: 14px; }
   .plans { gap: 6px; }
   .plan-price { font-size: 19px; }
   .try { min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pay-cta, .feature-star, .feature-more, .feature-more-in { transition: none; }
+  .pay-cta, .feature-star, .feature-card, .feature-line, .feature-go { transition: none; }
 }
 </style>

@@ -94,7 +94,11 @@ def portrait_of(user_id: int) -> dict:
     facts = portrait.facts(chart_of(user_id))
     reading = cached("portrait", [facts], lambda: interpreter.portrait(facts))
     return {
-        "reading": reading if user["sky"] else {**reading, "parts": reading["parts"][:1]},
+        # Without «Небосвод» the other chapters are only named, as in the forecasts.
+        "reading": reading if user["sky"] else {
+            **reading, "parts": reading["parts"][:1],
+            "outline": [part.get("title") or part["label"] for part in reading["parts"][1:]],
+        },
         "total": len(reading["parts"]),
         "locked": not user["sky"],
     }
